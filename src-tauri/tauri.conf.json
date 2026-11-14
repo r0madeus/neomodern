@@ -51,7 +51,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPCACHE/**"
+          "$APPCACHE/**",
+          "$APPDATA/images/**"
         ]
       }
     }

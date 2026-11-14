@@ -392,7 +392,11 @@ impl Hooks {
 
 pub struct Library {
     conn: Mutex<Connection>,
+    /// Cache: album covers and other files that can be made again.
     covers_dir: PathBuf,
+    /// User data: images the user chose (playlist covers). Never in the
+    /// cache, so clearing the cache does not lose them.
+    user_images_dir: PathBuf,
     version: AtomicU64,
     scanning: AtomicBool,
     queue: Mutex<VecDeque<(i64, PathBuf)>>,
@@ -414,6 +418,7 @@ impl Library {
         Self {
             conn: Mutex::new(conn),
             covers_dir: covers_dir.to_path_buf(),
+            user_images_dir: covers_dir.to_path_buf(),
             version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
             queue: Mutex::new(VecDeque::new()),
@@ -427,6 +432,94 @@ impl Library {
 
     pub fn covers_dir(&self) -> &Path {
         &self.covers_dir
+    }
+
+    /// Keeps user-chosen images (playlist covers) in `dir`, a data folder,
+    /// and moves the ones an older version saved in the cache folder.
+    pub fn with_user_images_dir(mut self, dir: PathBuf) -> Self {
+        self.user_images_dir = dir;
+        if let Err(e) = self.move_playlist_covers_out_of_cache() {
+            log::warn!("could not move playlist covers out of the cache: {e}");
+        }
+        self
+    }
+
+    fn playlist_covers_dir(&self) -> PathBuf {
+        self.user_images_dir.join("playlists")
+    }
+
+    fn legacy_playlist_covers_dir(&self) -> PathBuf {
+        self.covers_dir.join("playlists")
+    }
+
+    fn move_playlist_covers_out_of_cache(&self) -> Result<()> {
+        let legacy = self.legacy_playlist_covers_dir();
+        let target = self.playlist_covers_dir();
+        if legacy == target {
+            return Ok(());
+        }
+        let covers = db::playlist_cover_paths(&self.conn())?;
+        for (id, cover) in covers {
+            let old = PathBuf::from(&cover);
+            if !old.starts_with(&legacy) {
+                continue;
+            }
+            let new_path = match old.file_name() {
+                Some(name) if old.is_file() => {
+                    std::fs::create_dir_all(&target)?;
+                    let new_path = target.join(name);
+                    if std::fs::rename(&old, &new_path).is_err() {
+                        std::fs::copy(&old, &new_path)?;
+                        let _ = std::fs::remove_file(&old);
+                    }
+                    Some(scan::display_path(&new_path))
+                }
+                // The cache was already cleared: fall back to the collage.
+                _ => None,
+            };
+            db::set_playlist_cover(&self.conn(), id, new_path.as_deref())?;
+        }
+        Ok(())
+    }
+
+    /// Albums whose cover file is gone (cache cleared, data folder moved to
+    /// another computer): their cover is cleared and their tracks are marked
+    /// changed, so the next scan writes the cover again. Returns the folders
+    /// to scan.
+    pub fn repair_missing_covers(&self) -> Result<Vec<FolderInfo>> {
+        let conn = self.conn();
+        let missing: Vec<i64> = {
+            let mut st = conn.prepare("SELECT id, cover FROM albums WHERE cover IS NOT NULL")?;
+            st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+                .filter_map(std::result::Result::ok)
+                .filter(|(_, cover)| !Path::new(cover).is_file())
+                .map(|(id, _)| id)
+                .collect()
+        };
+        if missing.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut folder_ids = std::collections::BTreeSet::new();
+        for id in &missing {
+            conn.execute("UPDATE albums SET cover = NULL WHERE id = ?1", [id])?;
+            // mtime -1 never matches a file, so the scan parses these again.
+            conn.execute("UPDATE tracks SET mtime = -1 WHERE album_id = ?1", [id])?;
+            let mut st =
+                conn.prepare("SELECT DISTINCT folder_id FROM tracks WHERE album_id = ?1")?;
+            for f in st.query_map([id], |r| r.get::<_, i64>(0))? {
+                folder_ids.insert(f?);
+            }
+        }
+        log::info!(
+            "{} album covers are missing; rescanning to restore them",
+            missing.len()
+        );
+        drop(conn);
+        Ok(self
+            .folders()?
+            .into_iter()
+            .filter(|f| folder_ids.contains(&f.id))
+            .collect())
     }
 
     pub fn version(&self) -> u64 {
@@ -584,7 +677,7 @@ impl Library {
         )
         .map_err(|e| LibraryError::Other(format!("failed to encode cover: {e}")))?;
 
-        let dir = self.covers_dir().join("playlists");
+        let dir = self.playlist_covers_dir();
         std::fs::create_dir_all(&dir)?;
         let hash = scan::fnv1a(&buf);
         let dest = dir.join(format!("{id}_{hash:016x}.jpg"));
@@ -625,9 +718,10 @@ impl Library {
         if old.starts_with("preset:") {
             return;
         }
-        let dir = self.covers_dir().join("playlists");
         let path = Path::new(&old);
-        if path.starts_with(&dir) {
+        if path.starts_with(self.playlist_covers_dir())
+            || path.starts_with(self.legacy_playlist_covers_dir())
+        {
             let _ = std::fs::remove_file(path);
         }
     }

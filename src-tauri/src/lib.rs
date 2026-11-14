@@ -196,8 +196,16 @@ pub fn run() {
                 .map_err(|e| {
                     log::error!("failed to open library: {e}");
                     e
-                })?,
+                })?
+                // Playlist covers the user picked are data, not cache.
+                .with_user_images_dir(data_dir.join("images")),
             );
+            // Covers lost with the cache (or a moved data folder) come back.
+            match library.repair_missing_covers() {
+                Ok(folders) if !folders.is_empty() => library.start_scan(folders),
+                Ok(_) => {}
+                Err(e) => log::warn!("could not check album covers: {e}"),
+            }
             app.manage(library);
 
             let lyrics = Arc::new(

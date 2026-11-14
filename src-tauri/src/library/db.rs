@@ -968,6 +968,15 @@ pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// (playlist id, cover) for every playlist with an image file as cover.
+pub fn playlist_cover_paths(conn: &Connection) -> Result<Vec<(i64, String)>> {
+    let mut st = conn.prepare(
+        "SELECT id, cover FROM playlists WHERE cover IS NOT NULL AND cover NOT LIKE 'preset:%'",
+    )?;
+    let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
 pub fn set_playlist_cover(
     conn: &Connection,
     id: i64,

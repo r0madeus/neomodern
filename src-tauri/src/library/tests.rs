@@ -2066,3 +2066,88 @@ fn genres_group_case_insensitively_and_match_queue_order() {
             .is_empty()
     );
 }
+
+#[test]
+fn lost_album_covers_come_back_on_the_next_scan() {
+    let e = env();
+    let png = [&[0x89u8, b'P', b'N', b'G'][..], b"fake png payload"].concat();
+    tagged_wav(
+        &e.music.join("1.wav"),
+        &Meta {
+            title: "One",
+            artist: "A",
+            album: "Covered",
+            picture: Some(&png),
+            ..Default::default()
+        },
+    );
+    e.scan();
+    assert!(e.lib.repair_missing_covers().unwrap().is_empty());
+    let cover = PathBuf::from(e.lib.albums_page(0, 10).unwrap()[0].cover.clone().unwrap());
+
+    // The cache folder was cleared.
+    std::fs::remove_file(&cover).unwrap();
+    let folders = e.lib.repair_missing_covers().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].id, e.folder_id);
+    assert_eq!(e.lib.albums_page(0, 10).unwrap()[0].cover, None);
+
+    e.scan();
+    let again = PathBuf::from(e.lib.albums_page(0, 10).unwrap()[0].cover.clone().unwrap());
+    assert_eq!(std::fs::read(&again).unwrap(), png);
+    assert!(e.lib.repair_missing_covers().unwrap().is_empty());
+}
+
+#[test]
+fn playlist_covers_move_from_the_cache_to_the_data_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db_path = tmp.path().join("data/library.sqlite3");
+    let covers = tmp.path().join("cache/covers");
+    let src = tmp.path().join("pick.png");
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([20, 140, 200, 255]))
+        .save(&src)
+        .unwrap();
+
+    // An older version kept custom covers in the cache.
+    let (kept, lost) = {
+        let lib = Library::open(&db_path, &covers, Hooks::none()).unwrap();
+        let kept = lib.create_playlist("Kept", &[]).unwrap().id;
+        let lost = lib.create_playlist("Lost", &[]).unwrap().id;
+        lib.set_playlist_cover_file(kept, &src).unwrap();
+        lib.set_playlist_cover_file(lost, &src).unwrap();
+        (kept, lost)
+    };
+    let cover_of = |lib: &Library, id: i64| {
+        lib.playlists()
+            .unwrap()
+            .into_iter()
+            .find(|p| p.id == id)
+            .unwrap()
+            .cover
+    };
+    let old_kept = {
+        let lib = Library::open(&db_path, &covers, Hooks::none()).unwrap();
+        let old_lost = cover_of(&lib, lost).unwrap();
+        std::fs::remove_file(old_lost).unwrap(); // already cleared by the user
+        cover_of(&lib, kept).unwrap()
+    };
+    assert!(Path::new(&old_kept).starts_with(covers.join("playlists")));
+
+    let images = tmp.path().join("data/images");
+    let lib = Library::open(&db_path, &covers, Hooks::none())
+        .unwrap()
+        .with_user_images_dir(images.clone());
+    let new_kept = cover_of(&lib, kept).unwrap();
+    assert!(Path::new(&new_kept).starts_with(images.join("playlists")));
+    assert!(Path::new(&new_kept).is_file());
+    assert!(!Path::new(&old_kept).exists());
+    assert_eq!(
+        cover_of(&lib, lost),
+        None,
+        "a cover lost with the cache falls back to the collage"
+    );
+
+    // New covers go straight to the data folder.
+    lib.set_playlist_cover_file(lost, &src).unwrap();
+    assert!(Path::new(&cover_of(&lib, lost).unwrap()).starts_with(images.join("playlists")));
+}

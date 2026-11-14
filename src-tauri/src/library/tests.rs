@@ -2044,7 +2044,14 @@ fn genres_group_case_insensitively_and_match_queue_order() {
     assert_eq!(detail.albums.len(), 2);
     assert_eq!(detail.tracks.len(), 2);
     assert_eq!(
-        detail.tracks.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(),
-        queue.iter().map(|t| t.path.to_str().unwrap()).collect::<Vec<_>>(),
+        detail
+            .tracks
+            .iter()
+            .map(|t| t.path.as_str())
+            .collect::<Vec<_>>(),
+        queue
+            .iter()
+            .map(|t| t.path.to_str().unwrap())
+            .collect::<Vec<_>>(),
     );
 }

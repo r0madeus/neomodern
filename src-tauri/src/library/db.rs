@@ -2069,8 +2069,7 @@ pub fn artist_profile(conn: &Connection, name: &str) -> Result<ArtistProfile> {
 }
 
 const GENRE_FILTER: &str = "LOWER(TRIM(COALESCE(t.genre, ''))) = LOWER(TRIM(?1))";
-const GENRE_TRACK_ORDER: &str =
-    "t.artist COLLATE NOCASE, COALESCE(a.title, '') COLLATE NOCASE, t.disc_no, t.track_no, t.title COLLATE NOCASE, t.id";
+const GENRE_TRACK_ORDER: &str = "t.artist COLLATE NOCASE, COALESCE(a.title, '') COLLATE NOCASE, t.disc_no, t.track_no, t.title COLLATE NOCASE, t.id";
 
 pub fn genres(conn: &Connection) -> Result<Vec<GenreRow>> {
     let mut st = conn.prepare(

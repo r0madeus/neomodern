@@ -359,7 +359,8 @@ mod ytdlp_process {
             cover: None,
             cover_url: None,
         };
-        let path = download_one_track(&track, tmp.path(), &bin, true, None, &|| false).unwrap();
+        let path =
+            download_one_track(&track, tmp.path(), &bin, true, None, None, &|| false).unwrap();
         assert_eq!(path, dir.join("01 - Çakıl Taşları.m4a"));
     }
 }
@@ -629,6 +630,7 @@ fn queued_downloads_are_skipped_without_starting_ytdlp() {
             tracks: vec![album_track("Song", "Artist", 100.0)],
             download_dir: dir.path().join("out"),
             ytdlp_bin: script.to_string_lossy().into_owned(),
+            ffmpeg_bin: "ffmpeg".into(),
             lib: Arc::clone(&lib),
         })
         .unwrap();

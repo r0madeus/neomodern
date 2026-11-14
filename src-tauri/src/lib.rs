@@ -225,7 +225,7 @@ pub fn run() {
                 .unwrap_or_else(|_| data_dir.join("Downloads"))
                 .join("NeoModern");
             let online_handle = app.handle().clone();
-            let online = Arc::new(OnlineService::new(
+            let online = OnlineService::new(
                 cache_dir.join("covers/online"),
                 default_downloads,
                 Arc::new(move |jobs| {
@@ -234,7 +234,15 @@ pub fn run() {
                     }
                 }),
                 app.state::<Arc<SessionStore>>().net_policy(),
-            ));
+            );
+            // Downloaded yt-dlp/ffmpeg: local data, not the cache, so a
+            // cache clean-up does not remove working tools.
+            #[cfg(not(target_os = "android"))]
+            let online = match app.path().app_local_data_dir() {
+                Ok(dir) => online.with_tools_dir(dir.join("tools")),
+                Err(_) => online,
+            };
+            let online = Arc::new(online);
             app.manage(online);
 
             app.manage(tray::TrayStatus::default());
@@ -327,6 +335,7 @@ pub fn run() {
             commands::online_status,
             commands::online_set_download_dir,
             commands::online_set_ytdlp_path,
+            commands::online_install_tool,
             commands::online_search,
             commands::online_album_detail,
             commands::online_play_tracks,

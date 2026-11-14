@@ -622,4 +622,18 @@ const TR: Record<string, string> = {
   'Artist scan cancelled ({done}/{total}).': 'Sanatçı taraması iptal edildi ({done}/{total}).',
   'Turn on “Artist profiles & albums” above to fetch artist info online.':
     'Çevrimiçi sanatçı bilgisi indirmek için yukarıdaki “Sanatçı profilleri ve albümleri” ayarını aç.',
+
+  // Automatic yt-dlp / ffmpeg setup
+  'Set up automatically': 'Otomatik kur',
+  'Update yt-dlp': 'yt-dlp’yi güncelle',
+  'Using the copies NeoModern downloaded.': 'NeoModern’in indirdiği kopyalar kullanılıyor.',
+  'NeoModern can download the right version for your computer and keep it in its own folder.':
+    'NeoModern bilgisayarına uygun sürümü indirip kendi klasöründe tutabilir.',
+  'yt-dlp was not found. You can still browse albums; set it up with one click to stream and download.':
+    'yt-dlp bulunamadı. Albümlere yine göz atabilirsin; dinlemek ve indirmek için tek tıkla kur.',
+  'Downloading {name}…': '{name} indiriliyor…',
+  'Downloading {name}: {got} / {total} MB': '{name} indiriliyor: {got} / {total} MB',
+  'Checking {name}…': '{name} doğrulanıyor…',
+  'Unpacking {name}…': '{name} açılıyor…',
+  '{name} is ready': '{name} hazır',
 }

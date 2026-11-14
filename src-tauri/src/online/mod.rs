@@ -33,6 +33,9 @@ use std::process::Command;
 #[cfg(not(target_os = "android"))]
 use std::sync::mpsc;
 
+#[cfg(not(target_os = "android"))]
+pub mod tools;
+
 const HTTP_TIMEOUT: Duration = Duration::from_secs(12);
 const USER_AGENT: &str = concat!("NeoModern/", env!("CARGO_PKG_VERSION"));
 #[cfg(not(target_os = "android"))]
@@ -72,6 +75,11 @@ pub struct OnlineStatus {
     pub ffmpeg_available: bool,
     pub download_dir: String,
     pub ytdlp_path: Option<String>,
+    /// The app can download yt-dlp and ffmpeg itself on this machine.
+    pub can_install_tools: bool,
+    /// yt-dlp / ffmpeg in use are the app's own downloaded copies.
+    pub managed_ytdlp: bool,
+    pub managed_ffmpeg: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -190,6 +198,7 @@ struct DownloadWork {
     tracks: Vec<OnlineTrack>,
     download_dir: PathBuf,
     ytdlp_bin: String,
+    ffmpeg_bin: String,
     lib: Arc<Library>,
 }
 
@@ -209,6 +218,9 @@ pub struct OnlineService {
     worker_tx: mpsc::Sender<DownloadWork>,
     artist_scan_cancel: Arc<AtomicBool>,
     artist_scan_status: Arc<Mutex<ArtistScanProgress>>,
+    /// Folder for downloaded copies of yt-dlp and ffmpeg.
+    #[cfg(not(target_os = "android"))]
+    tools: Option<tools::ToolsDir>,
 }
 
 impl OnlineService {
@@ -272,7 +284,55 @@ impl OnlineService {
             worker_tx,
             artist_scan_cancel: Arc::new(AtomicBool::new(false)),
             artist_scan_status: Arc::new(Mutex::new(ArtistScanProgress::default())),
+            #[cfg(not(target_os = "android"))]
+            tools: None,
         }
+    }
+
+    /// Where downloaded copies of yt-dlp and ffmpeg live.
+    #[cfg(not(target_os = "android"))]
+    pub fn with_tools_dir(mut self, dir: PathBuf) -> Self {
+        self.tools = Some(tools::ToolsDir::new(dir));
+        self
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn managed_ytdlp(&self) -> Option<PathBuf> {
+        self.tools.as_ref()?.installed_ytdlp()
+    }
+
+    #[cfg(target_os = "android")]
+    fn managed_ytdlp(&self) -> Option<PathBuf> {
+        None
+    }
+
+    /// The app's own ffmpeg if it was installed, otherwise `ffmpeg` on PATH.
+    #[cfg(not(target_os = "android"))]
+    pub fn resolve_ffmpeg_bin(&self) -> String {
+        self.tools
+            .as_ref()
+            .and_then(tools::ToolsDir::installed_ffmpeg)
+            .map(|p| display_path(&p))
+            .unwrap_or_else(|| "ffmpeg".into())
+    }
+
+    /// Downloads the official build of `tool` for this machine into the
+    /// app's tools folder (see `tools`). Needs online features on.
+    #[cfg(not(target_os = "android"))]
+    pub async fn install_tool(
+        &self,
+        tool: tools::Tool,
+        progress: &(dyn Fn(tools::InstallProgress) + Sync),
+    ) -> Result<String, OnlineError> {
+        self.http(Feature::Online)?;
+        let dir = self
+            .tools
+            .as_ref()
+            .ok_or_else(|| OnlineError::Message("no folder for downloaded tools".into()))?;
+        let net = Arc::clone(&self.net);
+        let allowed = move || net.allowed(Feature::Online);
+        let path = dir.install(tool, &allowed, progress).await?;
+        Ok(display_path(&path))
     }
 
     /// The HTTP client for `feature`; every request of this service goes
@@ -297,11 +357,14 @@ impl OnlineService {
         self.default_download_dir.clone()
     }
 
+    /// The yt-dlp to run: the path set in Settings, else the app's own
+    /// downloaded copy, else `yt-dlp` on PATH.
     pub fn resolve_ytdlp_bin(&self, store: &SessionStore) -> String {
         store
             .ytdlp_path()
             .map(|p| display_path(&p))
             .filter(|s| !s.trim().is_empty())
+            .or_else(|| self.managed_ytdlp().map(|p| display_path(&p)))
             .unwrap_or_else(|| "yt-dlp".into())
     }
 
@@ -373,6 +436,9 @@ impl OnlineService {
             ffmpeg_available: false,
             download_dir: display_path(&self.resolve_download_dir(store, lib)),
             ytdlp_path: store.ytdlp_path().map(|p| display_path(&p)),
+            can_install_tools: false,
+            managed_ytdlp: false,
+            managed_ffmpeg: false,
         }
     }
 
@@ -386,17 +452,31 @@ impl OnlineService {
                 ffmpeg_available: false,
                 download_dir: display_path(&self.resolve_download_dir(store, lib)),
                 ytdlp_path: store.ytdlp_path().map(|p| display_path(&p)),
+                can_install_tools: false,
+                managed_ytdlp: false,
+                managed_ffmpeg: false,
             };
         }
         let ytdlp_bin = self.resolve_ytdlp_bin(store);
+        let ffmpeg_bin = self.resolve_ffmpeg_bin();
         let ytdlp_version = command_first_line(&ytdlp_bin, &["--version"]);
-        let ffmpeg_available = command_first_line("ffmpeg", &["-version"]).is_some();
+        let ffmpeg_available = command_first_line(&ffmpeg_bin, &["-version"]).is_some();
+        let managed =
+            |bin: &str, path: Option<PathBuf>| path.is_some_and(|p| display_path(&p) == bin);
         OnlineStatus {
             ytdlp_available: ytdlp_version.is_some(),
             ytdlp_version,
             ffmpeg_available,
             download_dir: display_path(&self.resolve_download_dir(store, lib)),
             ytdlp_path: store.ytdlp_path().map(|p| display_path(&p)),
+            can_install_tools: self.tools.is_some() && tools::current_assets().is_some(),
+            managed_ytdlp: managed(&ytdlp_bin, self.managed_ytdlp()),
+            managed_ffmpeg: managed(
+                &ffmpeg_bin,
+                self.tools
+                    .as_ref()
+                    .and_then(tools::ToolsDir::installed_ffmpeg),
+            ),
         }
     }
 
@@ -595,6 +675,7 @@ impl OnlineService {
         }
         let download_dir = self.resolve_download_dir(store, lib);
         let ytdlp_bin = self.resolve_ytdlp_bin(store);
+        let ffmpeg_bin = self.resolve_ffmpeg_bin();
         let job_id = self.next_id();
         let job = DownloadJob {
             id: job_id,
@@ -624,6 +705,7 @@ impl OnlineService {
                 tracks: req.tracks,
                 download_dir,
                 ytdlp_bin,
+                ffmpeg_bin,
                 lib: Arc::clone(lib),
             })
             .map_err(|_| OnlineError::Message("download worker is not running".into()))?;
@@ -1327,7 +1409,10 @@ fn download_worker(
             });
             continue;
         }
-        let ffmpeg_ok = command_first_line("ffmpeg", &["-version"]).is_some();
+        let ffmpeg_ok = command_first_line(&work.ffmpeg_bin, &["-version"]).is_some();
+        // A managed ffmpeg is not on PATH, so yt-dlp must be told where it is.
+        let ffmpeg_location =
+            (ffmpeg_ok && work.ffmpeg_bin != "ffmpeg").then_some(work.ffmpeg_bin.as_str());
         update_job(&jobs, &on_jobs, work.job_id, |j| {
             j.state = DownloadState::Downloading;
             j.current_track = work.tracks.first().map(|t| t.title.clone());
@@ -1359,6 +1444,7 @@ fn download_worker(
                 &work.download_dir,
                 &work.ytdlp_bin,
                 ffmpeg_ok,
+                ffmpeg_location,
                 cover_bytes.as_deref(),
                 &is_cancelled,
             ) {
@@ -1461,6 +1547,7 @@ fn download_one_track(
     download_dir: &Path,
     ytdlp_bin: &str,
     ffmpeg_available: bool,
+    ffmpeg_location: Option<&str>,
     cover_bytes: Option<&[u8]>,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<PathBuf, OnlineError> {
@@ -1483,6 +1570,9 @@ fn download_one_track(
         "--print",
         "after_move:filepath",
     ];
+    if let Some(location) = ffmpeg_location {
+        args.extend(["--ffmpeg-location", location]);
+    }
     if ffmpeg_available {
         args.extend(["-x", "--audio-format", "m4a", "-f", "bestaudio/best"]);
     } else {
@@ -1533,15 +1623,8 @@ fn no_window_cmd(bin: &str) -> Command {
 
 #[cfg(not(target_os = "android"))]
 fn command_first_line(bin: &str, args: &[&str]) -> Option<String> {
-    let out = no_window_cmd(bin).args(args).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .map(str::to_owned)
+    // Version probes get a time limit like every other external program.
+    tools::probe_first_line(bin, args, tools::PROBE_TIMEOUT)
 }
 
 /// Kills `child` with everything it started (yt-dlp runs ffmpeg, and the

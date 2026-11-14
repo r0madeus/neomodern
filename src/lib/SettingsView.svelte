@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ToolSetup from './ToolSetup.svelte'
   import { i18n, t, type LangChoice } from './i18n.svelte'
   import { onMount } from 'svelte'
   import { getVersion } from '@tauri-apps/api/app'
@@ -751,6 +752,20 @@
                 </div>
                 {#if online.status?.ytdlpPath}
                   <p class="mt-1 truncate text-xs text-zinc-400">{online.status.ytdlpPath}</p>
+                {:else if online.status?.managedYtdlp || online.status?.managedFfmpeg}
+                  <p class="mt-1 text-xs text-zinc-400">{t('Using the copies NeoModern downloaded.')}</p>
+                {/if}
+                {#if appSettings.allowOnline && online.status?.canInstallTools}
+                  <div class="mt-3">
+                    {#if online.missingTools.length > 0}
+                      <p class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {t('NeoModern can download the right version for your computer and keep it in its own folder.')}
+                      </p>
+                      <ToolSetup />
+                    {:else if online.status.managedYtdlp}
+                      <ToolSetup tools={['ytdlp']} label={t('Update yt-dlp')} />
+                    {/if}
+                  </div>
                 {/if}
               </div>
               <div class="flex shrink-0 items-center gap-2">

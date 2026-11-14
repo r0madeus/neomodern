@@ -6,6 +6,7 @@
   import ExtBadge from './ExtBadge.svelte'
   import FavoriteButton from './FavoriteButton.svelte'
   import GenreView from './GenreView.svelte'
+  import ToolSetup from './ToolSetup.svelte'
   import Icon from './Icon.svelte'
   import OnlineAlbumDetail from './OnlineAlbumDetail.svelte'
   import TrackDownloadButton from './TrackDownloadButton.svelte'
@@ -170,10 +171,15 @@
         <div class="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
           <span class="min-w-0 flex-1">
             {t(
-              'yt-dlp was not found. You can still browse albums; install yt-dlp or set its path in Settings to stream and download.',
+              online.status.canInstallTools
+                ? 'yt-dlp was not found. You can still browse albums; set it up with one click to stream and download.'
+                : 'yt-dlp was not found. You can still browse albums; install yt-dlp or set its path in Settings to stream and download.',
             )}
           </span>
           <div class="flex shrink-0 items-center gap-2">
+            {#if online.status.canInstallTools}
+              <ToolSetup compact />
+            {/if}
             <button
               type="button"
               class="rounded-lg border border-amber-300 px-2.5 py-1 font-medium hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/50"

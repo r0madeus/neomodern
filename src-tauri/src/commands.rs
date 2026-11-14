@@ -1156,6 +1156,44 @@ pub async fn online_set_download_dir(
         .map_err(|e| e.to_string())
 }
 
+/// Downloads yt-dlp or ffmpeg ("ytdlp" / "ffmpeg") for this machine into
+/// the app's tools folder, reporting progress as `online://tools` events.
+#[tauri::command]
+pub async fn online_install_tool(
+    app: AppHandle,
+    store: State<'_, Arc<SessionStore>>,
+    lib: State<'_, Arc<Library>>,
+    online: State<'_, Arc<OnlineService>>,
+    tool: String,
+) -> Res<OnlineStatus> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = (app, store, lib, online, tool);
+        Err("not available on Android".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let which = crate::online::tools::Tool::parse(&tool)
+            .ok_or_else(|| format!("unknown tool: {tool}"))?;
+        let emit = |p: crate::online::tools::InstallProgress| {
+            if let Err(e) = app.emit("online://tools", &p) {
+                log::warn!("failed to emit tool progress: {e}");
+            }
+        };
+        online
+            .install_tool(which, &emit)
+            .await
+            .map_err(|e| e.to_string())?;
+        log::info!("installed {tool}");
+        let store = Arc::clone(&store);
+        let lib = Arc::clone(&lib);
+        let online = Arc::clone(&online);
+        tokio::task::spawn_blocking(move || online.status(&store, &lib))
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
 #[tauri::command]
 pub async fn online_set_ytdlp_path(
     store: State<'_, Arc<SessionStore>>,

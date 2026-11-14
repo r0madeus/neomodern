@@ -12,6 +12,19 @@ export interface OnlineStatus {
   ffmpegAvailable: boolean
   downloadDir: string
   ytdlpPath: string | null
+  /** The app can download yt-dlp and ffmpeg itself on this machine. */
+  canInstallTools: boolean
+  managedYtdlp: boolean
+  managedFfmpeg: boolean
+}
+
+export type ToolName = 'ytdlp' | 'ffmpeg'
+
+export interface ToolProgress {
+  tool: ToolName
+  stage: 'download' | 'verify' | 'extract' | 'done'
+  received: number
+  total: number | null
 }
 
 export interface OnlineAlbum {
@@ -80,6 +93,11 @@ class OnlineStore {
   loadingAlbum = $state(false)
   albumError = $state<string | null>(null)
 
+  /** Progress of an automatic yt-dlp/ffmpeg setup, null when idle. */
+  toolProgress = $state<ToolProgress | null>(null)
+  installingTools = $state(false)
+  toolError = $state<string | null>(null)
+
   playingId = $state<string | null>(null)
   downloads = $state<DownloadJob[]>([])
   error = $state<string | null>(null)
@@ -102,6 +120,9 @@ class OnlineStore {
       this.#initialized = true
       await listen<DownloadJob[]>('online://downloads', (e) => {
         this.downloads = e.payload
+      })
+      await listen<ToolProgress>('online://tools', (e) => {
+        this.toolProgress = e.payload
       })
     }
     await Promise.all([this.refreshStatus(), this.refreshDownloads()])
@@ -130,6 +151,42 @@ class OnlineStore {
       this.error = null
     } catch (e) {
       this.error = String(e)
+    }
+  }
+
+  /** Tools that are missing and could be installed automatically. */
+  get missingTools(): ToolName[] {
+    const s = this.status
+    if (!s?.canInstallTools) return []
+    const out: ToolName[] = []
+    if (!s.ytdlpAvailable) out.push('ytdlp')
+    if (!s.ffmpegAvailable) out.push('ffmpeg')
+    return out
+  }
+
+  /**
+   * Downloads the given tools (default: whatever is missing) into the
+   * app's own folder. With `update`, yt-dlp is fetched again even if one
+   * is present, since YouTube changes often break older versions.
+   */
+  async installTools(tools?: ToolName[]): Promise<boolean> {
+    if (this.installingTools) return false
+    const wanted = tools ?? this.missingTools
+    if (wanted.length === 0) return true
+    this.installingTools = true
+    this.toolError = null
+    try {
+      for (const tool of wanted) {
+        this.toolProgress = { tool, stage: 'download', received: 0, total: null }
+        this.status = await invoke<OnlineStatus>('online_install_tool', { tool })
+      }
+      return true
+    } catch (e) {
+      this.toolError = String(e)
+      return false
+    } finally {
+      this.installingTools = false
+      this.toolProgress = null
     }
   }
 

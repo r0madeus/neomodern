@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SleepTimerButton from './SleepTimerButton.svelte'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
   import AlbumLink from './AlbumLink.svelte'
@@ -195,6 +196,7 @@
   </div>
 
   <div class="relative flex items-center justify-end gap-2">
+    <SleepTimerButton />
     <button
       class={[
         'rounded-full p-2 transition-colors',

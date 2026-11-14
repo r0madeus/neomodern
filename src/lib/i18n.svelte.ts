@@ -690,4 +690,37 @@ const TR: Record<string, string> = {
     '1 dosya açılamadı: bu telefonda kayıtlı değil.',
   '{n} files could not be opened: they are not stored on this phone.':
     '{n} dosya açılamadı: bu telefonda kayıtlı değiller.',
+
+  // Sleep timer, equalizer, crossfade (K16)
+  'Sleep timer': 'Uyku zamanlayıcısı',
+  'Sleep in {time}': '{time} sonra uyku',
+  'Sleep at the end of this song': 'Bu şarkı bitince uyku',
+  End: 'Son',
+  '{n} minutes': '{n} dakika',
+  '1 hour': '1 saat',
+  '{h} hours': '{h} saat',
+  'End of this song': 'Bu şarkı bitince',
+  'Turn off timer': 'Zamanlayıcıyı kapat',
+  Equalizer: 'Ekolayzer',
+  'Ten bands from 31 Hz to 16 kHz. Lower the preamp when you boost, so loud parts do not distort.':
+    '31 Hz ile 16 kHz arası on bant. Yükselttiğinde ön kazancı düşür ki yüksek yerler bozulmasın.',
+  Presets: 'Hazır ayarlar',
+  Flat: 'Düz',
+  'Bass boost': 'Bas güçlendirme',
+  'Treble boost': 'Tiz güçlendirme',
+  Vocal: 'Vokal',
+  Rock: 'Rock',
+  Pop: 'Pop',
+  Jazz: 'Caz',
+  Classical: 'Klasik',
+  Electronic: 'Elektronik',
+  Acoustic: 'Akustik',
+  Preamp: 'Ön kazanç',
+  '{hz} Hz band': '{hz} Hz bandı',
+  Crossfade: 'Geçiş (crossfade)',
+  'Fades the end of a song into the start of the next one.':
+    'Bir şarkının sonunu bir sonrakinin başıyla iç içe geçirir.',
+  'Not available while WASAPI exclusive mode is on (it allows one sound at a time).':
+    'WASAPI özel modu açıkken kullanılamaz (aynı anda tek ses çalınabilir).',
+  '{s} s': '{s} sn',
 }

@@ -9,7 +9,8 @@
   import Icon, { type Name as IconName } from './Icon.svelte'
   import ToggleSwitch from './ToggleSwitch.svelte'
   import FoldersView from './FoldersView.svelte'
-  import { player, type ReplayGain } from './player.svelte'
+  import { MAX_CROSSFADE_SECONDS, player, type ReplayGain } from './player.svelte'
+  import EqualizerEditor from './EqualizerEditor.svelte'
   import { artists } from './artists.svelte'
   import { prefs } from './prefs.svelte'
   import { appSettings, type LyricsSave, type NetFeature } from './appSettings.svelte'
@@ -399,6 +400,39 @@
               ariaDescribedby="gapless-help"
               bind:checked={() => player.snapshot.gapless, (next) => void player.setGapless(next)}
             />
+          </div>
+
+          <div class="flex flex-col gap-3 p-4">
+            <div class="flex items-start justify-between gap-6">
+              <div class="min-w-0">
+                <p id="xfade-label" class="text-sm font-medium">{t('Crossfade')}</p>
+                <p id="xfade-help" class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {player.snapshot.wasapiExclusive
+                    ? t('Not available while WASAPI exclusive mode is on (it allows one sound at a time).')
+                    : t('Fades the end of a song into the start of the next one.')}
+                </p>
+              </div>
+              <span class="shrink-0 text-sm tabular-nums text-zinc-600 dark:text-zinc-300">
+                {player.snapshot.crossfadeSeconds === 0
+                  ? t('Off')
+                  : t('{s} s', { s: player.snapshot.crossfadeSeconds })}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max={MAX_CROSSFADE_SECONDS}
+              step="1"
+              value={player.snapshot.crossfadeSeconds}
+              aria-labelledby="xfade-label"
+              aria-describedby="xfade-help"
+              class="w-full accent-accent-500"
+              onchange={(e) => void player.setCrossfade(Number(e.currentTarget.value))}
+            />
+          </div>
+
+          <div class="p-4">
+            <EqualizerEditor />
           </div>
 
           {#if appSettings.wasapiAvailable}

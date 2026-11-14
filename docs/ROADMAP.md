@@ -1,6 +1,6 @@
 # NeoModern – status and roadmap
 
-Last updated: 2026-11-14. The owner's decision notes live in the 2ncibeyn
+Last updated: 2026-11-14 (evening). The owner's decision notes live in the 2ncibeyn
 vault (`projects/muzik-calar/`); this file is the in-repo summary for
 contributors and agents.
 
@@ -38,8 +38,8 @@ contributors and agents.
   Playing a track queues the rest of its list; stream URLs are resolved
   just in time and never saved with the session. Downloads are tagged,
   get the album cover, land in the library and can be cancelled; every
-  `yt-dlp` run has a time limit. Needs `yt-dlp` on PATH (or set in
-  Settings); `ffmpeg` is optional (converts to m4a).
+  `yt-dlp` run has a time limit. Needs `yt-dlp` (one-click setup, PATH
+  or a path set in Settings); `ffmpeg` is optional (converts to m4a).
 - **Favourites** (schema v4): star tracks, a Favourites list.
 - **Playlist covers** (schema v5): automatic 2×2 collage, gradient+icon
   presets or a custom image.
@@ -140,13 +140,27 @@ contributors and agents.
   (previous/next), Ctrl+Up/Down (volume), M (mute), S (shuffle), R (repeat), Ctrl+K (search). Media keys stay with the
   OS integration in Rust.
 
+### Sharing readiness (2026-11-14)
+- **First-run welcome** (desktop): suggests the OS Music folder with a
+  song count, then offers the online tool setup; shown once.
+- **One-click yt-dlp / ffmpeg** (`src-tauri/src/online/tools.rs`):
+  official builds for Windows and Linux (x86-64, ARM64), checked against
+  the published SHA-256 lists, kept in the local app data `tools`
+  folder. Lookup: path from Settings, then the downloaded copy, then PATH.
+- **Problem report** (Settings → About): version, system, settings and
+  the last 400 log lines with the home folder hidden; copy, save, or
+  open a GitHub issue.
+- **Content Security Policy** instead of `csp: null`.
+- Genre pages load tracks in pages; Linux MPRIS updates without delay
+  (souvlaki's zbus backend).
+
 ## Next
 
 1. **Try metadata matching on real albums** (desktop and phone): the
    MusicBrainz responses so far are recorded fixtures. A live check:
    `cd src-tauri && cargo test live_musicbrainz -- --ignored --nocapture`.
-2. **Signed Android release**: add the `ANDROID_KEYSTORE_*` secrets so APK
-   updates install over the previous version (not urgent).
+2. **First signed NeoModern release** (Android keystore secrets are set)
+   and an app/tray icon.
 3. **Later, not decided**: AcoustID fingerprinting for untagged files;
    matching a whole library in the background.
 

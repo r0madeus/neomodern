@@ -949,6 +949,17 @@ impl Library {
         Ok(())
     }
 
+    /// Removes `cover` from every album that uses it (undo of an added cover).
+    pub fn clear_album_cover_path(&self, cover: &str) -> Result<()> {
+        let n = self
+            .conn()
+            .execute("UPDATE albums SET cover = NULL WHERE cover = ?1", [cover])?;
+        if n > 0 {
+            self.bump();
+        }
+        Ok(())
+    }
+
     /// Next id for a group of tag changes that can be undone together.
     pub fn next_tag_batch_id(&self) -> Result<i64> {
         db::next_tag_batch_id(&self.conn())

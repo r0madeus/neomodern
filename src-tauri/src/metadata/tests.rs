@@ -702,9 +702,10 @@ fn match_apply_and_undo_album() {
     assert_eq!(outcome.updated, 3);
     assert!(outcome.failed.is_empty());
     assert!(outcome.batch_id > 0);
+    // Three tracks and the added cover.
     assert_eq!(
         env.lib.tag_history_batch(outcome.batch_id).unwrap().len(),
-        3
+        4
     );
 
     let t = read_tags(&env.files[0]).unwrap();
@@ -755,6 +756,9 @@ fn match_apply_and_undo_album() {
         env.lib.albums_page(0, 10).unwrap()[0].album_artist,
         "Lanterns"
     );
+    // The cover the change added is gone again.
+    assert!(!Path::new(&cover).exists());
+    assert_eq!(env.lib.albums_page(0, 10).unwrap()[0].cover, None);
     // A second undo has nothing left.
     assert!(block_on(svc.undo(&env.lib, outcome.batch_id, None)).is_err());
     let _ = &env.music;
@@ -836,10 +840,10 @@ fn apply_skips_the_playing_file_and_reports_it() {
     assert_eq!(outcome.updated, 2);
     assert_eq!(outcome.failed.len(), 1);
     assert_eq!(outcome.failed[0].0, playing);
-    assert_eq!(
-        env.lib.tag_history_batch(outcome.batch_id).unwrap().len(),
-        2
-    );
+    // The two written tracks and the added cover; not the playing file.
+    let history = env.lib.tag_history_batch(outcome.batch_id).unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(history.iter().filter(|r| r.track_id.is_some()).count(), 2);
     assert_eq!(
         read_tags(&env.files[0]).unwrap().title.as_deref(),
         Some("night signals")

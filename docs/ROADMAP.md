@@ -175,7 +175,7 @@ contributors and agents.
   (and YouTube); a wrong recording is still possible when no hit is
   close to the album track.
 - Metadata matching has only been tested against recorded MusicBrainz
-  responses, not the live service; "Undo" does not remove an added cover.
+  responses, not the live service.
 - Artist splitting is heuristic: a duet tagged "A, B & C" splits into
   "A" and "B & C"; three single-word rappers joined by `&` stay one name.
 - Android: "Open files" is hidden; online search and download are desktop only.

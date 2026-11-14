@@ -233,9 +233,10 @@ pub async fn app_check_update(
     crate::update::check(&current, &store.net_policy()).await
 }
 
-/// Android: downloads the newer release's APK, checks it and opens the
-/// system installer (asking once for "install unknown apps"). Progress is
-/// sent as `update://progress` events.
+/// Installs the newer release from inside the app. Android: downloads the
+/// APK, checks it and opens the system installer (asking once for "install
+/// unknown apps"). Windows / AppImage: the signed updater. Progress is sent
+/// as `update://progress` events.
 #[tauri::command]
 pub async fn app_install_update(
     app: tauri::AppHandle,
@@ -243,8 +244,39 @@ pub async fn app_install_update(
 ) -> Res<()> {
     #[cfg(not(target_os = "android"))]
     {
-        let _ = (app, store);
-        Err("in-app install is only available on Android".into())
+        // Windows installer or Linux AppImage: the updater plugin checks the
+        // signed manifest, downloads, verifies the signature, installs and
+        // the app restarts.
+        use tauri::Emitter;
+        use tauri_plugin_updater::UpdaterExt;
+        store
+            .net_policy()
+            .require(crate::net::Feature::Updates)
+            .map_err(str::to_owned)?;
+        let update = app
+            .updater()
+            .map_err(|e| e.to_string())?
+            .check()
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("NeoModern is up to date.")?;
+        let progress = app.clone();
+        let mut received = 0u64;
+        update
+            .download_and_install(
+                move |chunk, total| {
+                    received += chunk as u64;
+                    let _ = progress.emit(
+                        "update://progress",
+                        &crate::update::DownloadProgress { received, total },
+                    );
+                },
+                || log::info!("update downloaded, installing"),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        // Windows exits during the install; elsewhere start the new version.
+        app.restart();
     }
     #[cfg(target_os = "android")]
     {

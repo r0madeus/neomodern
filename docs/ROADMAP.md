@@ -160,6 +160,12 @@ contributors and agents.
 - Genre pages load tracks in pages; Linux MPRIS updates without delay
   (souvlaki's zbus backend).
 
+### v0.9 distribution
+- **Linux AppImage** next to the Windows installer and the APK.
+- **In-app updates everywhere**: Windows and the AppImage through the
+  Tauri updater (signed `latest.json`, key in `TAURI_SIGNING_PRIVATE_KEY`),
+  Android through the system installer.
+
 ### Listening features (K16, 2026-11-14; desktop and Android)
 - **Sleep timer**: 15 min to 2 h or "end of this song" from the moon
   button; the volume fades over the last 10 s, then playback pauses.

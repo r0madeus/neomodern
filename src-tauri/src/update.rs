@@ -24,8 +24,7 @@ pub struct UpdateInfo {
     pub version: String,
     /// Release page.
     pub url: String,
-    /// This device can install it from inside the app (Android arm64 and
-    /// the release has a signed APK).
+    /// This copy can install it from inside the app (see `can_install`).
     pub installable: bool,
 }
 
@@ -79,11 +78,23 @@ fn checksum_for(list: &str, name: &str) -> Option<String> {
     })
 }
 
-/// In-app install is offered on arm64 Android only (the release APK is
-/// built for arm64).
-fn device_can_install() -> bool {
-    cfg!(target_os = "android") && std::env::consts::ARCH == "aarch64"
+/// Whether this copy can update itself from `release`: Android arm64 with
+/// a signed APK; the Windows installer and a Linux AppImage when the
+/// release has the signed updater manifest (`latest.json`).
+fn can_install(release: &Release) -> bool {
+    if cfg!(target_os = "android") {
+        return std::env::consts::ARCH == "aarch64" && pick_apk(&release.assets).is_some();
+    }
+    let self_updating = cfg!(target_os = "windows")
+        || (cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_some());
+    self_updating
+        && release.assets.iter().any(|a| {
+            a.name == UPDATER_MANIFEST && a.browser_download_url.starts_with(DOWNLOAD_PREFIX)
+        })
 }
+
+/// Signed manifest the in-app updater reads (see `tauri.conf.json`).
+const UPDATER_MANIFEST: &str = "latest.json";
 
 fn client(timeout: Duration) -> Result<reqwest::Client, reqwest::Error> {
     crate::net::client_builder()
@@ -139,7 +150,7 @@ async fn check_at(
 async fn fetch_release(url: &str, current: &str) -> Result<Option<UpdateInfo>, reqwest::Error> {
     Ok(newer_release(url, current).await?.map(|r| UpdateInfo {
         version: r.tag_name.trim_start_matches('v').to_string(),
-        installable: device_can_install() && pick_apk(&r.assets).is_some(),
+        installable: can_install(&r),
         url: r.html_url,
     }))
 }

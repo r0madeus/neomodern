@@ -83,8 +83,21 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+      # With the updater key the installer is also signed for in-app updates
+      # (NeoModern_x.y.z_x64-setup.exe.sig, read into latest.json below).
       - name: Build NSIS installer
-        run: npm run tauri -- build --bundles nsis
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            Write-Host '::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no in-app update for this release.'
+            npm run tauri -- build --bundles nsis
+          } else {
+            npm run tauri -- build --bundles nsis --config src-tauri/tauri.updater.conf.json
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish GitHub Release
         shell: pwsh
@@ -108,6 +121,7 @@ jobs:
           if (-not $installers) {
             throw 'No NSIS .exe installer found in src-tauri/target/release/bundle/nsis'
           }
+          $signatures = @(Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -Filter '*.exe.sig')
 
           $staging = Join-Path $env:RUNNER_TEMP 'release-assets'
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
@@ -118,6 +132,12 @@ jobs:
             Copy-Item -Path $file.FullName -Destination $dest -Force
             $hash = (Get-FileHash -Path $dest -Algorithm SHA256).Hash.ToLowerInvariant()
             $hashes += "$hash  $($file.Name)"
+            $assets += $dest
+          }
+
+          foreach ($sig in $signatures) {
+            $dest = Join-Path $staging $sig.Name
+            Copy-Item -Path $sig.FullName -Destination $dest -Force
             $assets += $dest
           }
 
@@ -267,3 +287,142 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$RELEASE_TAG" "$ANDROID_ASSETS"/* --clobber
+
+  # Linux AppImage (self-contained, updates itself in the app). Built on
+  # Ubuntu 24.04: its libmpv is the 0.37 (libmpv.so.2) libmpv2 needs; the
+  # AppImage runs on distributions with glibc 2.39 or newer.
+  linux-release:
+    name: Linux Release (AppImage)
+    needs: windows-release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev libmpv-dev libdbus-1-dev \
+            patchelf file
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Resolve release tag and sync version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
+            tag="$(echo "$INPUT_TAG" | xargs)"
+          else
+            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          fi
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          ver="${tag#v}"
+          if [[ "$ver" =~ ^[0-9]+\.[0-9]+$ ]]; then ver="$ver.0"; fi
+          if [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            VER="$ver" node -e '
+              const fs = require("fs")
+              const p = "src-tauri/tauri.conf.json"
+              const conf = JSON.parse(fs.readFileSync(p, "utf8"))
+              conf.version = process.env.VER
+              fs.writeFileSync(p, JSON.stringify(conf, null, 2) + "\n")
+            '
+          fi
+
+      # linuxdeploy is itself an AppImage; without FUSE on the runner it
+      # has to extract itself.
+      - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            npm run tauri -- build --bundles appimage --config src-tauri/tauri.updater.conf.json
+          else
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no in-app update for this AppImage."
+            npm run tauri -- build --bundles appimage
+          fi
+
+      - name: Upload to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dir="src-tauri/target/release/bundle/appimage"
+          staging="$RUNNER_TEMP/linux-assets"
+          mkdir -p "$staging"
+          cp "$dir"/*.AppImage "$staging"/
+          cp "$dir"/*.AppImage.sig "$staging"/ 2>/dev/null || true
+          (cd "$staging" && sha256sum *.AppImage > SHA256SUMS-linux.txt)
+          ls -lh "$staging"
+          gh release upload "$RELEASE_TAG" "$staging"/* --clobber
+
+  # The manifest the in-app updater reads: version, notes and, per
+  # platform, the installer URL and its signature.
+  updater-manifest:
+    name: Updater manifest (latest.json)
+    needs: [windows-release, linux-release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Write and upload latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
+            tag="$(echo "$INPUT_TAG" | xargs)"
+          else
+            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          fi
+          work="$RUNNER_TEMP/manifest"
+          mkdir -p "$work"
+          gh release download "$tag" --dir "$work" --pattern '*.sig' || true
+          if ! ls "$work"/*.sig >/dev/null 2>&1; then
+            echo "::warning::No updater signatures in $tag; latest.json is not published."
+            exit 0
+          fi
+          TAG="$tag" WORK="$work" REPO="$GITHUB_REPOSITORY" node -e '
+            const fs = require("fs"), path = require("path")
+            const { TAG, WORK, REPO } = process.env
+            const base = `https://github.com/${REPO}/releases/download/${TAG}/`
+            const platforms = {}
+            for (const sig of fs.readdirSync(WORK).filter((f) => f.endsWith(".sig"))) {
+              const file = sig.slice(0, -4)
+              const key = file.endsWith(".exe") ? "windows-x86_64"
+                : file.endsWith(".AppImage") ? "linux-x86_64" : null
+              if (!key) continue
+              platforms[key] = {
+                signature: fs.readFileSync(path.join(WORK, sig), "utf8").trim(),
+                url: base + encodeURIComponent(file),
+              }
+            }
+            const manifest = {
+              version: TAG.replace(/^v/, ""),
+              notes: `NeoModern ${TAG}`,
+              pub_date: new Date().toISOString(),
+              platforms,
+            }
+            fs.writeFileSync(path.join(WORK, "latest.json"), JSON.stringify(manifest, null, 2))
+            console.log(JSON.stringify(manifest, null, 2))
+          '
+          gh release upload "$tag" "$work/latest.json" --clobber

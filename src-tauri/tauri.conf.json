@@ -74,5 +74,16 @@
         "installMode": "currentUser"
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "PENDING_UPDATER_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/r0madeus/neomodern/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

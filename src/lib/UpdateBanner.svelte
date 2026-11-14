@@ -4,8 +4,9 @@
   import Icon from './Icon.svelte'
   import { updates } from './updates.svelte'
 
-  // Android arm64 installs from inside the app; elsewhere the release page opens.
-  const inApp = $derived(appSettings.platform === 'android' && updates.available?.installable === true)
+  // Android arm64, the Windows installer and the Linux AppImage install from
+  // inside the app; anything else opens the release page.
+  const inApp = $derived(updates.available?.installable === true)
   const percent = $derived(updates.progress === null ? null : Math.round(updates.progress * 100))
 </script>
 

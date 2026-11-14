@@ -48,6 +48,27 @@ pub fn queue_play_next(
     s(player.insert_next(track))
 }
 
+/// Several tracks to play next, keeping their order.
+#[tauri::command]
+pub fn queue_play_next_many(
+    lib: State<'_, Arc<Library>>,
+    player: State<'_, Arc<Player>>,
+    paths: Vec<String>,
+) -> Res<PlayerSnapshot> {
+    let tracks = paths
+        .into_iter()
+        .map(|path| match lib.track_meta(&path).ok().flatten() {
+            Some(meta) => crate::queue::Track {
+                path: PathBuf::from(&path),
+                title: Some(meta.title),
+                artist: Some(meta.artist),
+            },
+            None => crate::queue::Track::from(PathBuf::from(path)),
+        })
+        .collect();
+    s(player.insert_next_many(tracks))
+}
+
 #[tauri::command]
 pub fn queue_remove(player: State<'_, Arc<Player>>, index: usize) -> Res<PlayerSnapshot> {
     s(player.remove(index))
@@ -139,6 +160,31 @@ pub fn player_set_wasapi_exclusive(
 }
 
 #[tauri::command]
+pub fn player_set_equalizer(
+    player: State<'_, Arc<Player>>,
+    equalizer: crate::audio::Equalizer,
+) -> Res<PlayerSnapshot> {
+    s(player.set_equalizer(equalizer))
+}
+
+/// Crossfade length in seconds; 0 turns it off.
+#[tauri::command]
+pub fn player_set_crossfade(player: State<'_, Arc<Player>>, seconds: f64) -> Res<PlayerSnapshot> {
+    s(player.set_crossfade(seconds))
+}
+
+/// Sleep timer: pause after `minutes`, or at the end of the current track
+/// with `endOfTrack`; neither turns it off.
+#[tauri::command]
+pub fn player_set_sleep_timer(
+    player: State<'_, Arc<Player>>,
+    minutes: Option<f64>,
+    end_of_track: bool,
+) -> Res<PlayerSnapshot> {
+    s(player.set_sleep_timer(minutes, end_of_track))
+}
+
+#[tauri::command]
 pub fn player_snapshot(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     Ok(player.snapshot())
 }
@@ -187,6 +233,83 @@ pub async fn app_check_update(
     crate::update::check(&current, &store.net_policy()).await
 }
 
+/// Installs the newer release from inside the app. Android: downloads the
+/// APK, checks it and opens the system installer (asking once for "install
+/// unknown apps"). Windows / AppImage: the signed updater. Progress is sent
+/// as `update://progress` events.
+#[tauri::command]
+pub async fn app_install_update(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<SessionStore>>,
+) -> Res<()> {
+    #[cfg(not(target_os = "android"))]
+    {
+        // Windows installer or Linux AppImage: the updater plugin checks the
+        // signed manifest, downloads, verifies the signature, installs and
+        // the app restarts.
+        use tauri::Emitter;
+        use tauri_plugin_updater::UpdaterExt;
+        store
+            .net_policy()
+            .require(crate::net::Feature::Updates)
+            .map_err(str::to_owned)?;
+        let update = app
+            .updater()
+            .map_err(|e| e.to_string())?
+            .check()
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("NeoModern is up to date.")?;
+        let progress = app.clone();
+        let mut received = 0u64;
+        update
+            .download_and_install(
+                move |chunk, total| {
+                    received += chunk as u64;
+                    let _ = progress.emit(
+                        "update://progress",
+                        &crate::update::DownloadProgress { received, total },
+                    );
+                },
+                || log::info!("update downloaded, installing"),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        // Windows exits during the install; elsewhere start the new version.
+        app.restart();
+    }
+    #[cfg(target_os = "android")]
+    {
+        use tauri::{Emitter, Manager};
+        #[derive(serde::Deserialize)]
+        struct Started {
+            started: bool,
+        }
+        let current = app.package_info().version.to_string();
+        let dir = app
+            .path()
+            .app_cache_dir()
+            .map_err(|e| e.to_string())?
+            .join("updates");
+        let emit = |p: crate::update::DownloadProgress| {
+            let _ = app.emit("update://progress", &p);
+        };
+        let apk = crate::update::download_apk(&current, &store.net_policy(), &dir, &emit).await?;
+        log::info!("update downloaded: {}", apk.display());
+        let started: Started = android(
+            &app,
+            "installApk",
+            serde_json::json!({ "path": apk.display().to_string() }),
+        )
+        .await?;
+        if started.started {
+            Ok(())
+        } else {
+            Err("Allow NeoModern to install apps, then tap Update again.".into())
+        }
+    }
+}
+
 /// Opens a release page of this project in the browser.
 #[tauri::command]
 pub fn app_open_release(
@@ -215,6 +338,164 @@ pub fn app_log_dir(app: tauri::AppHandle) -> Res<String> {
         .app_log_dir()
         .map(|p| p.display().to_string())
         .map_err(|e| e.to_string())
+}
+
+fn diagnostics_text(app: &tauri::AppHandle) -> String {
+    use tauri::Manager;
+    let version = app.package_info().version.to_string();
+    let stats = app
+        .try_state::<Arc<Library>>()
+        .and_then(|lib| lib.stats().ok());
+    let settings = match (
+        app.try_state::<Arc<SessionStore>>(),
+        app.try_state::<TrayStatus>(),
+    ) {
+        (Some(store), Some(tray)) => {
+            serde_json::to_string_pretty(&app_settings_now(&store, &tray)).ok()
+        }
+        _ => None,
+    };
+    let info = crate::diagnostics::ReportInfo {
+        version: &version,
+        webview: tauri::webview_version().ok(),
+        tracks: stats.as_ref().map(|s| s.tracks),
+        albums: stats.as_ref().map(|s| s.albums),
+        settings_json: settings,
+    };
+    let log_dir = app.path().app_log_dir().ok();
+    let home = app.path().home_dir().ok();
+    crate::diagnostics::build_report(&info, log_dir.as_deref(), home.as_deref())
+}
+
+/// A problem report (version, system, settings, end of the log) with the
+/// home folder hidden, for copying into a bug report.
+#[tauri::command]
+pub async fn app_diagnostics(app: tauri::AppHandle) -> Res<String> {
+    tokio::task::spawn_blocking(move || diagnostics_text(&app))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Writes the problem report to `path` (chosen in a save dialog).
+#[tauri::command]
+pub async fn app_save_diagnostics(app: tauri::AppHandle, path: String) -> Res<()> {
+    tokio::task::spawn_blocking(move || {
+        std::fs::write(&path, diagnostics_text(&app)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Shows the newest log file in the OS file manager (desktop only).
+#[tauri::command]
+pub fn app_open_log_dir(app: tauri::AppHandle) -> Res<()> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = app;
+        Err("not supported on Android".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use tauri::Manager;
+        use tauri_plugin_opener::OpenerExt;
+        let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+        let opener = app.opener();
+        match crate::diagnostics::log_files(&dir).pop() {
+            Some(file) => opener.reveal_item_in_dir(file),
+            None => opener.open_path(dir.display().to_string(), None::<&str>),
+        }
+        .map_err(|e| e.to_string())
+    }
+}
+
+/// Opens the "new issue" page of the project; the user pastes the report.
+#[tauri::command]
+pub fn app_report_issue(app: tauri::AppHandle) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(crate::diagnostics::ISSUE_URL, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WelcomeInfo {
+    /// First run: the welcome was never finished and no folder is added.
+    show: bool,
+    /// The OS music folder, when it exists.
+    music_dir: Option<String>,
+    /// Audio files found there (counting stops at `WELCOME_COUNT_CAP`).
+    music_dir_files: u32,
+}
+
+const WELCOME_COUNT_CAP: u32 = 5000;
+
+/// Counts audio files under `dir`, giving up after `cap` files or `limit`.
+fn count_audio_files(dir: &std::path::Path, cap: u32, limit: std::time::Duration) -> u32 {
+    let started = std::time::Instant::now();
+    let mut n = 0;
+    for entry in walkdir::WalkDir::new(dir)
+        .max_depth(8)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if entry.file_type().is_file() && crate::library::scan::is_audio_file(entry.path()) {
+            n += 1;
+            if n >= cap {
+                break;
+            }
+        }
+        if started.elapsed() >= limit {
+            break;
+        }
+    }
+    n
+}
+
+/// What the first-run welcome needs: whether to show it and the OS music
+/// folder to suggest.
+#[tauri::command]
+pub async fn app_welcome(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<SessionStore>>,
+    lib: State<'_, Arc<Library>>,
+) -> Res<WelcomeInfo> {
+    use tauri::Manager;
+    let show = !store.welcome_done() && le(lib.folders())?.is_empty();
+    if !show {
+        return Ok(WelcomeInfo {
+            show,
+            music_dir: None,
+            music_dir_files: 0,
+        });
+    }
+    // Android: no suggestion; reading needs a permission and the folder
+    // comes from the system picker.
+    let dir = if cfg!(target_os = "android") {
+        None
+    } else {
+        app.path().audio_dir().ok().filter(|d| d.is_dir())
+    };
+    let files = match dir.clone() {
+        Some(d) => tokio::task::spawn_blocking(move || {
+            count_audio_files(&d, WELCOME_COUNT_CAP, std::time::Duration::from_secs(3))
+        })
+        .await
+        .unwrap_or(0),
+        None => 0,
+    };
+    Ok(WelcomeInfo {
+        show,
+        music_dir: dir.map(|d| crate::library::scan::display_path(&d)),
+        music_dir_files: files,
+    })
+}
+
+/// Marks the welcome as finished (or skipped) so it is not shown again.
+#[tauri::command]
+pub fn app_finish_welcome(store: State<'_, Arc<SessionStore>>, player: State<'_, Arc<Player>>) {
+    store.set_welcome_done(true);
+    store.save_now(&player.export_session());
 }
 
 /// Highlights `path` in the OS file manager (desktop only).
@@ -337,6 +618,28 @@ pub async fn library_android_pick_folder(app: tauri::AppHandle) -> Res<Option<St
     }
     let picked: PickedPath = android(&app, "pickFolder", serde_json::json!({})).await?;
     Ok(picked.path)
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct PickedAudio {
+    paths: Vec<String>,
+    /// Picked files without a path on the device (e.g. from a cloud drive).
+    skipped: u32,
+}
+
+/// Android "Open files": asks for read access to music, then lets the user
+/// pick audio files; their paths (empty when cancelled).
+#[tauri::command]
+pub async fn android_pick_audio_files(app: tauri::AppHandle) -> Res<PickedAudio> {
+    #[derive(serde::Deserialize)]
+    struct Access {
+        granted: bool,
+    }
+    let access: Access = android(&app, "requestAudioAccess", serde_json::json!({})).await?;
+    if !access.granted {
+        return Err("Permission to read music was denied.".into());
+    }
+    android(&app, "pickAudioFiles", serde_json::json!({})).await
 }
 
 /// Lets the user pick one file on device storage; its path, or `None`.
@@ -1156,6 +1459,44 @@ pub async fn online_set_download_dir(
         .map_err(|e| e.to_string())
 }
 
+/// Downloads yt-dlp or ffmpeg ("ytdlp" / "ffmpeg") for this machine into
+/// the app's tools folder, reporting progress as `online://tools` events.
+#[tauri::command]
+pub async fn online_install_tool(
+    app: AppHandle,
+    store: State<'_, Arc<SessionStore>>,
+    lib: State<'_, Arc<Library>>,
+    online: State<'_, Arc<OnlineService>>,
+    tool: String,
+) -> Res<OnlineStatus> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = (app, store, lib, online, tool);
+        Err("not available on Android".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let which = crate::online::tools::Tool::parse(&tool)
+            .ok_or_else(|| format!("unknown tool: {tool}"))?;
+        let emit = |p: crate::online::tools::InstallProgress| {
+            if let Err(e) = app.emit("online://tools", &p) {
+                log::warn!("failed to emit tool progress: {e}");
+            }
+        };
+        online
+            .install_tool(which, &emit)
+            .await
+            .map_err(|e| e.to_string())?;
+        log::info!("installed {tool}");
+        let store = Arc::clone(&store);
+        let lib = Arc::clone(&lib);
+        let online = Arc::clone(&online);
+        tokio::task::spawn_blocking(move || online.status(&store, &lib))
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
 #[tauri::command]
 pub async fn online_set_ytdlp_path(
     store: State<'_, Arc<SessionStore>>,
@@ -1424,6 +1765,19 @@ pub fn favorites_toggle(app: AppHandle, lib: State<'_, Arc<Library>>, track_id: 
     Ok(added)
 }
 
+/// Adds (`favorite`) or removes several tracks at once; returns how many changed.
+#[tauri::command]
+pub fn favorites_set_many(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    track_ids: Vec<i64>,
+    favorite: bool,
+) -> Res<usize> {
+    let n = le(lib.set_favorites(&track_ids, favorite))?;
+    favorites_changed(&app);
+    Ok(n)
+}
+
 #[tauri::command]
 pub fn favorites_toggle_by_path(
     app: AppHandle,
@@ -1518,6 +1872,16 @@ pub fn library_genre_detail(
     name: String,
 ) -> Res<crate::library::GenreDetail> {
     le(lib.genre_detail(&name))
+}
+
+#[tauri::command]
+pub fn library_genre_tracks_page(
+    lib: State<'_, Arc<Library>>,
+    name: String,
+    offset: u64,
+    limit: u64,
+) -> Res<crate::library::Page<crate::library::TrackRow>> {
+    le(lib.genre_tracks_page(&name, offset, limit))
 }
 
 #[tauri::command]

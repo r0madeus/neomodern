@@ -137,7 +137,7 @@ fn schema_version_is_set() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
 }
 
 #[test]
@@ -692,7 +692,7 @@ fn migrates_a_v1_database_to_latest() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
     let tracks = lib.tracks_page(0, 10, SortOrder::Title).unwrap();
     assert_eq!(tracks.len(), 1, "existing data survives the migration");
     let pl = lib.create_playlist("Mix", &[tracks[0].id]).unwrap();
@@ -733,7 +733,7 @@ fn migrates_a_v2_database_and_keeps_a_folder_album_whole() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 10);
+        assert_eq!(v, 11);
         let fk_issues = conn
             .prepare("PRAGMA foreign_key_check")
             .unwrap()
@@ -1769,7 +1769,7 @@ fn migrating_to_v8_merges_year_split_albums_and_resplits_artists() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
     let albums = lib.albums_page(0, 10).unwrap();
     assert_eq!(albums.len(), 1);
     assert_eq!((albums[0].year, albums[0].track_count), (Some(1994), 4));
@@ -1812,7 +1812,7 @@ fn migrating_a_v8_database_adds_tag_history() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
     assert_eq!(lib.folders().unwrap().len(), 1);
     let cols: Vec<String> = lib
         .conn()
@@ -2042,9 +2042,124 @@ fn genres_group_case_insensitively_and_match_queue_order() {
     let detail = e.lib.genre_detail("rock").unwrap();
     let queue = e.lib.genre_tracks("rock").unwrap();
     assert_eq!(detail.albums.len(), 2);
-    assert_eq!(detail.tracks.len(), 2);
-    assert_eq!(
-        detail.tracks.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(),
-        queue.iter().map(|t| t.path.to_str().unwrap()).collect::<Vec<_>>(),
+    assert_eq!(detail.track_count, 2);
+
+    // Paged rows follow the queue order, so row i plays queue entry i.
+    let first = e.lib.genre_tracks_page("rock", 0, 1).unwrap();
+    let second = e.lib.genre_tracks_page("rock", 1, 1).unwrap();
+    assert_eq!(first.total, 2);
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(second.items.len(), 1);
+    let paged: Vec<&str> = first
+        .items
+        .iter()
+        .chain(&second.items)
+        .map(|t| t.path.as_str())
+        .collect();
+    let queued: Vec<&str> = queue.iter().map(|t| t.path.to_str().unwrap()).collect();
+    assert_eq!(paged, queued);
+    assert!(
+        e.lib
+            .genre_tracks_page("rock", 2, 10)
+            .unwrap()
+            .items
+            .is_empty()
     );
+}
+
+#[test]
+fn lost_album_covers_come_back_on_the_next_scan() {
+    let e = env();
+    let png = [&[0x89u8, b'P', b'N', b'G'][..], b"fake png payload"].concat();
+    tagged_wav(
+        &e.music.join("1.wav"),
+        &Meta {
+            title: "One",
+            artist: "A",
+            album: "Covered",
+            picture: Some(&png),
+            ..Default::default()
+        },
+    );
+    e.scan();
+    assert!(e.lib.repair_missing_covers().unwrap().is_empty());
+    let cover = PathBuf::from(e.lib.albums_page(0, 10).unwrap()[0].cover.clone().unwrap());
+
+    // The cache folder was cleared.
+    std::fs::remove_file(&cover).unwrap();
+    let folders = e.lib.repair_missing_covers().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].id, e.folder_id);
+    assert_eq!(e.lib.albums_page(0, 10).unwrap()[0].cover, None);
+
+    e.scan();
+    let again = PathBuf::from(e.lib.albums_page(0, 10).unwrap()[0].cover.clone().unwrap());
+    assert_eq!(std::fs::read(&again).unwrap(), png);
+    assert!(e.lib.repair_missing_covers().unwrap().is_empty());
+}
+
+#[test]
+fn playlist_covers_move_from_the_cache_to_the_data_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db_path = tmp.path().join("data/library.sqlite3");
+    let covers = tmp.path().join("cache/covers");
+    let src = tmp.path().join("pick.png");
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([20, 140, 200, 255]))
+        .save(&src)
+        .unwrap();
+
+    // An older version kept custom covers in the cache.
+    let (kept, lost) = {
+        let lib = Library::open(&db_path, &covers, Hooks::none()).unwrap();
+        let kept = lib.create_playlist("Kept", &[]).unwrap().id;
+        let lost = lib.create_playlist("Lost", &[]).unwrap().id;
+        lib.set_playlist_cover_file(kept, &src).unwrap();
+        lib.set_playlist_cover_file(lost, &src).unwrap();
+        (kept, lost)
+    };
+    let cover_of = |lib: &Library, id: i64| {
+        lib.playlists()
+            .unwrap()
+            .into_iter()
+            .find(|p| p.id == id)
+            .unwrap()
+            .cover
+    };
+    let old_kept = {
+        let lib = Library::open(&db_path, &covers, Hooks::none()).unwrap();
+        let old_lost = cover_of(&lib, lost).unwrap();
+        std::fs::remove_file(old_lost).unwrap(); // already cleared by the user
+        cover_of(&lib, kept).unwrap()
+    };
+    assert!(Path::new(&old_kept).starts_with(covers.join("playlists")));
+
+    let images = tmp.path().join("data/images");
+    let lib = Library::open(&db_path, &covers, Hooks::none())
+        .unwrap()
+        .with_user_images_dir(images.clone());
+    let new_kept = cover_of(&lib, kept).unwrap();
+    assert!(Path::new(&new_kept).starts_with(images.join("playlists")));
+    assert!(Path::new(&new_kept).is_file());
+    assert!(!Path::new(&old_kept).exists());
+    assert_eq!(
+        cover_of(&lib, lost),
+        None,
+        "a cover lost with the cache falls back to the collage"
+    );
+
+    // New covers go straight to the data folder.
+    lib.set_playlist_cover_file(lost, &src).unwrap();
+    assert!(Path::new(&cover_of(&lib, lost).unwrap()).starts_with(images.join("playlists")));
+}
+
+#[test]
+fn favorites_can_be_set_for_many_tracks() {
+    let e = env();
+    let ids = scanned_tracks(&e, &["Alpha", "Beta", "Gamma"]);
+    assert_eq!(e.lib.set_favorites(&ids, true).unwrap(), 3);
+    // Already there, or not in the library: nothing more changes.
+    assert_eq!(e.lib.set_favorites(&[ids[0], 999_999], true).unwrap(), 0);
+    assert_eq!(e.lib.favorites().unwrap().len(), 3);
+    assert_eq!(e.lib.set_favorites(&ids[..2], false).unwrap(), 2);
+    assert_eq!(e.lib.favorites().unwrap().len(), 1);
 }

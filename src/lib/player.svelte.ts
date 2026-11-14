@@ -30,7 +30,25 @@ export interface PlayerSnapshot {
   replaygain: ReplayGain
   gapless: boolean
   wasapiExclusive: boolean
+  equalizer: Equalizer
+  /** Crossfade length in seconds; 0 = off. */
+  crossfadeSeconds: number
+  /** Sleep timer end (unix ms) when set to a time. */
+  sleepEndsAt: number | null
+  /** Sleep timer set to the end of the current track. */
+  sleepEndOfTrack: boolean
 }
+
+/** Ten octave bands, 31 Hz to 16 kHz; values in dB (±12). */
+export interface Equalizer {
+  enabled: boolean
+  preampDb: number
+  gainsDb: number[]
+}
+
+export const EQ_BANDS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+export const EQ_MAX_DB = 12
+export const MAX_CROSSFADE_SECONDS = 12
 
 interface PositionPayload {
   seconds: number
@@ -51,6 +69,10 @@ const EMPTY: PlayerSnapshot = {
   replaygain: 'album',
   gapless: true,
   wasapiExclusive: false,
+  equalizer: { enabled: false, preampDb: 0, gainsDb: Array(10).fill(0) },
+  crossfadeSeconds: 0,
+  sleepEndsAt: null,
+  sleepEndOfTrack: false,
 }
 
 /** Queue rows are fetched in pages; never the whole list in one IPC call. */
@@ -142,6 +164,11 @@ class PlayerStore {
   }
   setReplayGain = (mode: ReplayGain) => this.#run('player_set_replaygain', { mode })
   setGapless = (enabled: boolean) => this.#run('player_set_gapless', { enabled })
+  setEqualizer = (equalizer: Equalizer) => this.#run('player_set_equalizer', { equalizer })
+  setCrossfade = (seconds: number) => this.#run('player_set_crossfade', { seconds })
+  /** Minutes, or `endOfTrack`; `(null, false)` turns the timer off. */
+  setSleepTimer = (minutes: number | null, endOfTrack = false) =>
+    this.#run('player_set_sleep_timer', { minutes, endOfTrack })
   setWasapiExclusive = (enabled: boolean) => this.#run('player_set_wasapi_exclusive', { enabled })
   seek = (seconds: number) => {
     this.#setAnchor(seconds)

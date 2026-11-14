@@ -670,19 +670,23 @@ impl MetadataService {
             && !proposal.release_group_id.is_empty()
             && !track_ids.is_empty()
         {
-            outcome.cover = self.add_missing_cover(lib, &proposal, &track_ids).await;
+            outcome.cover = self
+                .add_missing_cover(lib, &proposal, &track_ids, outcome.batch_id)
+                .await;
         }
         Ok(outcome)
     }
 
     /// Adds the release group's front cover to the albums of the written
-    /// tracks that have none. Errors are logged, never fatal: the tags are
+    /// tracks that have none, and records it in `batch_id` so that undo
+    /// removes it again. Errors are logged, never fatal: the tags are
     /// already written.
     async fn add_missing_cover(
         &self,
         lib: &Arc<Library>,
         proposal: &Proposal,
         track_ids: &[i64],
+        batch_id: i64,
     ) -> Option<String> {
         let missing: Vec<AlbumRow> = {
             let (lib, ids) = (Arc::clone(lib), track_ids.to_vec());
@@ -730,6 +734,11 @@ impl MetadataService {
                         .set_album_cover(a.id, &scan_display(&dest))
                         .map_err(|e| log::warn!("cannot set cover: {e}"))
                         .is_ok();
+                if done && batch_id != 0 {
+                    let _ = lib
+                        .save_tag_history(batch_id, None, &scan_display(&dest), ADDED_COVER)
+                        .map_err(|e| log::warn!("cannot record the added cover: {e}"));
+                }
                 if done && first.is_none() {
                     first = Some(scan_display(&dest));
                 }
@@ -743,7 +752,7 @@ impl MetadataService {
 
     /// Puts back the tags saved for `batch_id` and forgets them. Rows whose
     /// file could not be restored stay in the history so the undo can be
-    /// retried. A cover that was added stays.
+    /// retried. A cover the change added is removed again.
     pub async fn undo(
         &self,
         lib: &Arc<Library>,
@@ -759,6 +768,10 @@ impl MetadataService {
         .await?
     }
 }
+
+/// `tag_history` marker for a cover file added by an apply (its path is the
+/// row's path); undo removes it.
+const ADDED_COVER: &str = r#"{"addedCover":true}"#;
 
 fn scan_display(p: &Path) -> String {
     crate::library::scan::display_path(p)
@@ -827,6 +840,9 @@ fn undo_batch(lib: &Library, batch_id: i64, current: Option<&str>) -> Result<App
         batch_id,
         ..ApplyOutcome::default()
     };
+    let (covers, rows): (Vec<_>, Vec<_>) = rows
+        .into_iter()
+        .partition(|r| r.track_id.is_none() && r.old_json == ADDED_COVER);
     for row in rows {
         // The track id can have changed if the file was re-added: go by path.
         let id = lib.track_id_by_path(&row.path)?.or(row.track_id);
@@ -850,6 +866,16 @@ fn undo_batch(lib: &Library, batch_id: i64, current: Option<&str>) -> Result<App
                 out.updated += 1;
             }
         }
+    }
+    // Added covers go last, after the tags put the albums back.
+    for row in covers {
+        lib.clear_album_cover_path(&row.path)?;
+        if let Err(e) = std::fs::remove_file(&row.path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            log::warn!("could not remove the added cover {}: {e}", row.path);
+        }
+        lib.delete_tag_history_row(row.id)?;
     }
     Ok(out)
 }

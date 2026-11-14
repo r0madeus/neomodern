@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Logo from './lib/Logo.svelte'
   import { count, i18n, t } from './lib/i18n.svelte'
   import { onMount, tick, untrack } from 'svelte'
   import { fly } from 'svelte/transition'
@@ -36,6 +37,9 @@
   import MobileApp from './lib/mobile/MobileApp.svelte'
   import NowPlayingView from './lib/NowPlayingView.svelte'
   import UpdateBanner from './lib/UpdateBanner.svelte'
+  import Welcome from './lib/Welcome.svelte'
+  import SelectionBar from './lib/SelectionBar.svelte'
+  import { selection } from './lib/trackSelection.svelte'
   import { updates } from './lib/updates.svelte'
   import { nowCover } from './lib/nowCover.svelte'
   import SidebarDownloads from './lib/SidebarDownloads.svelte'
@@ -178,6 +182,14 @@
   let playlistId = $state<number | null>(null)
   let selectedAlbumId = $state<number | null>(null)
   let selectedArtist = $state<string | null>(null)
+  // A selection belongs to the page it was made on.
+  $effect(() => {
+    void view
+    void playlistId
+    void selectedAlbumId
+    void selectedArtist
+    selection.clear()
+  })
   let selectedMixId = $state<string | null>(null)
   let creatingPlaylist = $state(false)
   let newPlaylistName = $state('')
@@ -407,7 +419,7 @@
         {#if !sidebarCollapsed}
           <div class="flex min-w-0 items-center gap-2">
             <span class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent-400 to-accent-700 text-white shadow-xs">
-              <Icon name="music" class="size-4" />
+              <Logo class="size-4" />
             </span>
             <h1 class="truncate text-base font-bold tracking-tight">NeoModern</h1>
           </div>
@@ -752,6 +764,9 @@
     {/if}
   </div>
 
+  {#if selection.size > 0}
+    <div class="border-t border-zinc-200 px-4 py-2 dark:border-zinc-800"><SelectionBar /></div>
+  {/if}
   <PlayerBar
     nowPlayingPanel={rightPanel === 'nowPlaying' && !nowPlaying}
     onToggleNowPlayingPanel={() => {
@@ -766,6 +781,8 @@
   />
 </div>
 {/if}
+
+<Welcome />
 
 <TagEditor />
 <MetadataMatchModal />

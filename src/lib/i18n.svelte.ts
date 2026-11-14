@@ -352,8 +352,6 @@ const TR: Record<string, string> = {
   'You have the latest version.': 'En son sürümü kullanıyorsun.',
   'Could not reach GitHub.': 'GitHub’a ulaşılamadı.',
   'Version {v} is available.': '{v} sürümü çıktı.',
-  'Log files': 'Log dosyaları',
-  'Attach these when reporting a problem.': 'Bir sorun bildirirken bunları ekle.',
   Copy: 'Kopyala',
   Copied: 'Kopyalandı',
 
@@ -622,4 +620,116 @@ const TR: Record<string, string> = {
   'Artist scan cancelled ({done}/{total}).': 'Sanatçı taraması iptal edildi ({done}/{total}).',
   'Turn on “Artist profiles & albums” above to fetch artist info online.':
     'Çevrimiçi sanatçı bilgisi indirmek için yukarıdaki “Sanatçı profilleri ve albümleri” ayarını aç.',
+
+  // Automatic yt-dlp / ffmpeg setup
+  'Set up automatically': 'Otomatik kur',
+  'Update yt-dlp': 'yt-dlp’yi güncelle',
+  'Using the copies NeoModern downloaded.': 'NeoModern’in indirdiği kopyalar kullanılıyor.',
+  'NeoModern can download the right version for your computer and keep it in its own folder.':
+    'NeoModern bilgisayarına uygun sürümü indirip kendi klasöründe tutabilir.',
+  'yt-dlp was not found. You can still browse albums; set it up with one click to stream and download.':
+    'yt-dlp bulunamadı. Albümlere yine göz atabilirsin; dinlemek ve indirmek için tek tıkla kur.',
+  'Downloading {name}…': '{name} indiriliyor…',
+  'Downloading {name}: {got} / {total} MB': '{name} indiriliyor: {got} / {total} MB',
+  'Checking {name}…': '{name} doğrulanıyor…',
+  'Unpacking {name}…': '{name} açılıyor…',
+  '{name} is ready': '{name} hazır',
+
+  // Problem report
+  'Report a problem': 'Sorun bildir',
+  'The report has the app version, your system, your settings and the latest log lines. Your home folder is hidden.':
+    'Rapor uygulama sürümünü, sistemini, ayarlarını ve son günlük satırlarını içerir. Kullanıcı klasörünün yolu gizlenir.',
+  'Copy report': 'Raporu kopyala',
+  'Report on GitHub': 'GitHub’da bildir',
+  'Save report…': 'Raporu kaydet…',
+  'Open log folder': 'Günlük klasörünü aç',
+  'Save problem report': 'Sorun raporunu kaydet',
+  'Text file': 'Metin dosyası',
+  'Report saved.': 'Rapor kaydedildi.',
+  'Report copied. Paste it wherever you ask for help.': 'Rapor kopyalandı. Yardım istediğin yere yapıştırabilirsin.',
+  'Report copied. Paste it into the issue that just opened in your browser.':
+    'Rapor kopyalandı. Tarayıcıda açılan sayfaya yapıştır.',
+
+  // First-run welcome
+  'Welcome to NeoModern': 'NeoModern’e hoş geldin',
+  'Let’s find your music. It stays where it is; NeoModern only reads it.':
+    'Önce müziklerini bulalım. Dosyalar yerinde kalır; NeoModern yalnızca okur.',
+  'Optional: search and download music from the internet.': 'İsteğe bağlı: internetten müzik ara ve indir.',
+  'Your Music folder': 'Müzik klasörün',
+  'No songs found here yet.': 'Burada henüz şarkı yok.',
+  'More than 5,000 songs found.': '5.000’den fazla şarkı bulundu.',
+  '{n} song found': '{n} şarkı bulundu',
+  '{n} songs found': '{n} şarkı bulundu',
+  Added: 'Eklendi',
+  'Use this folder': 'Bu klasörü kullan',
+  'Add another folder…': 'Başka klasör ekle…',
+  'Choose your music folder…': 'Müzik klasörünü seç…',
+  'Scanning in the background, you can start listening right away.':
+    'Arka planda taranıyor, hemen dinlemeye başlayabilirsin.',
+  '{n} track in your library': 'Kütüphanende {n} şarkı var',
+  '{n} tracks in your library': 'Kütüphanende {n} şarkı var',
+  'Online search and download': 'Çevrimiçi arama ve indirme',
+  'Needs two free tools, yt-dlp and ffmpeg. NeoModern can fetch the right version for your computer. You can also do this later in Settings.':
+    'İki ücretsiz araç gerekir: yt-dlp ve ffmpeg. NeoModern bilgisayarına uygun sürümü indirebilir. Bunu daha sonra Ayarlar’dan da yapabilirsin.',
+  Skip: 'Geç',
+  'Start listening': 'Dinlemeye başla',
+  'Pick the folder with your music. NeoModern asks for permission to read it, and only reads it.':
+    'Müziklerinin olduğu klasörü seç. NeoModern okumak için izin ister ve yalnızca okur.',
+  'Usually this is the Music or Download folder on your phone.':
+    'Genellikle telefonundaki Music ya da Download klasörüdür.',
+
+  // In-app update (Android)
+  Update: 'Güncelle',
+  'Downloading the update…': 'Güncelleme indiriliyor…',
+  'Downloading the update… {p}%': 'Güncelleme indiriliyor… %{p}',
+  'Allow NeoModern to install apps, then tap Update again.':
+    'NeoModern’in uygulama yüklemesine izin ver, sonra yeniden Güncelle’ye dokun.',
+
+  // Android open files
+  '1 file could not be opened: it is not stored on this phone.':
+    '1 dosya açılamadı: bu telefonda kayıtlı değil.',
+  '{n} files could not be opened: they are not stored on this phone.':
+    '{n} dosya açılamadı: bu telefonda kayıtlı değiller.',
+
+  // Sleep timer, equalizer, crossfade (K16)
+  'Sleep timer': 'Uyku zamanlayıcısı',
+  'Sleep in {time}': '{time} sonra uyku',
+  'Sleep at the end of this song': 'Bu şarkı bitince uyku',
+  End: 'Son',
+  '{n} minutes': '{n} dakika',
+  '1 hour': '1 saat',
+  '{h} hours': '{h} saat',
+  'End of this song': 'Bu şarkı bitince',
+  'Turn off timer': 'Zamanlayıcıyı kapat',
+  Equalizer: 'Ekolayzer',
+  'Ten bands from 31 Hz to 16 kHz. Lower the preamp when you boost, so loud parts do not distort.':
+    '31 Hz ile 16 kHz arası on bant. Yükselttiğinde ön kazancı düşür ki yüksek yerler bozulmasın.',
+  Presets: 'Hazır ayarlar',
+  Flat: 'Düz',
+  'Bass boost': 'Bas güçlendirme',
+  'Treble boost': 'Tiz güçlendirme',
+  Vocal: 'Vokal',
+  Rock: 'Rock',
+  Pop: 'Pop',
+  Jazz: 'Caz',
+  Classical: 'Klasik',
+  Electronic: 'Elektronik',
+  Acoustic: 'Akustik',
+  Preamp: 'Ön kazanç',
+  '{hz} Hz band': '{hz} Hz bandı',
+  Crossfade: 'Geçiş (crossfade)',
+  'Fades the end of a song into the start of the next one.':
+    'Bir şarkının sonunu bir sonrakinin başıyla iç içe geçirir.',
+  'Not available while WASAPI exclusive mode is on (it allows one sound at a time).':
+    'WASAPI özel modu açıkken kullanılamaz (aynı anda tek ses çalınabilir).',
+  '{s} s': '{s} sn',
+
+  // Multi-select
+  'Selected songs': 'Seçili şarkılar',
+  'Playing {n}': '{n} çalınıyor',
+  'Added to favorites': 'Favorilere eklendi',
+  Favorite: 'Favori',
+  Experimental: 'Deneysel',
+  'Fades the end of a song into the start of the next one. Experimental: a short skip can be heard at the change, and gapless playback is not used while it is on.':
+    'Bir şarkının sonunu bir sonrakinin başıyla iç içe geçirir. Deneysel: geçiş anında kısa bir atlama duyulabilir ve açıkken boşluksuz (gapless) çalma kullanılmaz.',
 }

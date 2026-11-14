@@ -1,13 +1,16 @@
 <script lang="ts">
+  import Logo from './Logo.svelte'
+  import ToolSetup from './ToolSetup.svelte'
   import { i18n, t, type LangChoice } from './i18n.svelte'
   import { onMount } from 'svelte'
   import { getVersion } from '@tauri-apps/api/app'
-  import { open } from '@tauri-apps/plugin-dialog'
+  import { open, save } from '@tauri-apps/plugin-dialog'
   import { invoke } from '@tauri-apps/api/core'
   import Icon, { type Name as IconName } from './Icon.svelte'
   import ToggleSwitch from './ToggleSwitch.svelte'
   import FoldersView from './FoldersView.svelte'
-  import { player, type ReplayGain } from './player.svelte'
+  import { MAX_CROSSFADE_SECONDS, player, type ReplayGain } from './player.svelte'
+  import EqualizerEditor from './EqualizerEditor.svelte'
   import { artists } from './artists.svelte'
   import { prefs } from './prefs.svelte'
   import { appSettings, type LyricsSave, type NetFeature } from './appSettings.svelte'
@@ -136,6 +139,57 @@
       setTimeout(() => (copied = false), 1500)
     } catch {
       // clipboard unavailable: the path is still selectable
+    }
+  }
+
+  // Problem report: version, system, settings and the end of the log,
+  // with the home folder hidden (built in Rust, see diagnostics.rs).
+  let reportNote = $state<string | null>(null)
+  let reportBusy = $state(false)
+
+  async function withReport(action: (text: string) => Promise<string | null>) {
+    if (reportBusy) return
+    reportBusy = true
+    reportNote = null
+    try {
+      reportNote = await action(await invoke<string>('app_diagnostics'))
+    } catch (e) {
+      reportNote = String(e)
+    } finally {
+      reportBusy = false
+    }
+  }
+
+  const copyReport = () =>
+    withReport(async (text) => {
+      await navigator.clipboard.writeText(text)
+      return t('Report copied. Paste it wherever you ask for help.')
+    })
+
+  const reportOnGitHub = () =>
+    withReport(async (text) => {
+      await navigator.clipboard.writeText(text)
+      await invoke('app_report_issue')
+      return t('Report copied. Paste it into the issue that just opened in your browser.')
+    })
+
+  async function saveReport() {
+    const day = new Date().toISOString().slice(0, 10)
+    const path = await save({
+      title: t('Save problem report'),
+      defaultPath: `NeoModern-report-${day}.txt`,
+      filters: [{ name: t('Text file'), extensions: ['txt'] }],
+    })
+    if (!path) return
+    reportBusy = true
+    reportNote = null
+    try {
+      await invoke('app_save_diagnostics', { path })
+      reportNote = t('Report saved.')
+    } catch (e) {
+      reportNote = String(e)
+    } finally {
+      reportBusy = false
     }
   }
 
@@ -346,6 +400,44 @@
               ariaDescribedby="gapless-help"
               bind:checked={() => player.snapshot.gapless, (next) => void player.setGapless(next)}
             />
+          </div>
+
+          <div class="flex flex-col gap-3 p-4">
+            <div class="flex items-start justify-between gap-6">
+              <div class="min-w-0">
+                <p id="xfade-label" class="flex flex-wrap items-center gap-2 text-sm font-medium">
+                  {t('Crossfade')}
+                  <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                    {t('Experimental')}
+                  </span>
+                </p>
+                <p id="xfade-help" class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {player.snapshot.wasapiExclusive
+                    ? t('Not available while WASAPI exclusive mode is on (it allows one sound at a time).')
+                    : t('Fades the end of a song into the start of the next one. Experimental: a short skip can be heard at the change, and gapless playback is not used while it is on.')}
+                </p>
+              </div>
+              <span class="shrink-0 text-sm tabular-nums text-zinc-600 dark:text-zinc-300">
+                {player.snapshot.crossfadeSeconds === 0
+                  ? t('Off')
+                  : t('{s} s', { s: player.snapshot.crossfadeSeconds })}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max={MAX_CROSSFADE_SECONDS}
+              step="1"
+              value={player.snapshot.crossfadeSeconds}
+              aria-labelledby="xfade-label"
+              aria-describedby="xfade-help"
+              class="w-full accent-accent-500"
+              onchange={(e) => void player.setCrossfade(Number(e.currentTarget.value))}
+            />
+          </div>
+
+          <div class="p-4">
+            <EqualizerEditor />
           </div>
 
           {#if appSettings.wasapiAvailable}
@@ -751,6 +843,20 @@
                 </div>
                 {#if online.status?.ytdlpPath}
                   <p class="mt-1 truncate text-xs text-zinc-400">{online.status.ytdlpPath}</p>
+                {:else if online.status?.managedYtdlp || online.status?.managedFfmpeg}
+                  <p class="mt-1 text-xs text-zinc-400">{t('Using the copies NeoModern downloaded.')}</p>
+                {/if}
+                {#if appSettings.allowOnline && online.status?.canInstallTools}
+                  <div class="mt-3">
+                    {#if online.missingTools.length > 0}
+                      <p class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {t('NeoModern can download the right version for your computer and keep it in its own folder.')}
+                      </p>
+                      <ToolSetup />
+                    {:else if online.status.managedYtdlp}
+                      <ToolSetup tools={['ytdlp']} label={t('Update yt-dlp')} />
+                    {/if}
+                  </div>
                 {/if}
               </div>
               <div class="flex shrink-0 items-center gap-2">
@@ -789,7 +895,7 @@
           <div class="flex flex-wrap items-center justify-between gap-3 p-4">
             <div class="flex items-center gap-3">
               <span class="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent-400 to-accent-700 text-white shadow-sm">
-                <Icon name="music" class="size-5" />
+                <Logo class="size-5" />
               </span>
               <div>
                 <div class="flex items-center gap-2">
@@ -825,13 +931,41 @@
             </button>
           </div>
 
-          {#if logDir}
-            <div class="p-4 text-sm">
-              <p class="font-medium">{t('Log files')}</p>
-              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                {t('Attach these when reporting a problem.')}
-              </p>
-              <div class="mt-2 flex items-center gap-2">
+          <div class="p-4 text-sm">
+            <p class="font-medium">{t('Report a problem')}</p>
+            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              {t('The report has the app version, your system, your settings and the latest log lines. Your home folder is hidden.')}
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="rounded-full bg-accent-500 px-3.5 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-accent-400 disabled:opacity-50"
+                disabled={reportBusy}
+                onclick={() => void copyReport()}
+              >
+                {t('Copy report')}
+              </button>
+              <button type="button" class={actionBtn} disabled={reportBusy} onclick={() => void reportOnGitHub()}>
+                {t('Report on GitHub')}
+              </button>
+              {#if appSettings.platform !== 'android'}
+                <button type="button" class={actionBtn} disabled={reportBusy} onclick={() => void saveReport()}>
+                  {t('Save report…')}
+                </button>
+                <button
+                  type="button"
+                  class={actionBtn}
+                  onclick={() => invoke('app_open_log_dir').catch((e) => (reportNote = String(e)))}
+                >
+                  {t('Open log folder')}
+                </button>
+              {/if}
+            </div>
+            {#if reportNote}
+              <p class="mt-2 text-xs text-zinc-600 dark:text-zinc-300" role="status">{reportNote}</p>
+            {/if}
+            {#if logDir}
+              <div class="mt-3 flex items-center gap-2">
                 <code
                   class="min-w-0 flex-1 truncate rounded-xl bg-zinc-100 px-3 py-2 text-xs select-all dark:bg-zinc-950/70"
                   title={logDir}
@@ -842,8 +976,8 @@
                   {copied ? t('Copied') : t('Copy')}
                 </button>
               </div>
-            </div>
-          {/if}
+            {/if}
+          </div>
         </div>
       </section>
     {/if}

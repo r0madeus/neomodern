@@ -1,5 +1,6 @@
 pub mod audio;
 mod commands;
+mod diagnostics;
 pub mod library;
 pub mod lyrics;
 #[cfg(not(target_os = "android"))]
@@ -41,6 +42,9 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         tray::show_main_window(app);
     }));
+    // Signed in-app updates (Windows installer, Linux AppImage).
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     let builder = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
@@ -195,8 +199,16 @@ pub fn run() {
                 .map_err(|e| {
                     log::error!("failed to open library: {e}");
                     e
-                })?,
+                })?
+                // Playlist covers the user picked are data, not cache.
+                .with_user_images_dir(data_dir.join("images")),
             );
+            // Covers lost with the cache (or a moved data folder) come back.
+            match library.repair_missing_covers() {
+                Ok(folders) if !folders.is_empty() => library.start_scan(folders),
+                Ok(_) => {}
+                Err(e) => log::warn!("could not check album covers: {e}"),
+            }
             app.manage(library);
 
             let lyrics = Arc::new(
@@ -225,7 +237,7 @@ pub fn run() {
                 .unwrap_or_else(|_| data_dir.join("Downloads"))
                 .join("NeoModern");
             let online_handle = app.handle().clone();
-            let online = Arc::new(OnlineService::new(
+            let online = OnlineService::new(
                 cache_dir.join("covers/online"),
                 default_downloads,
                 Arc::new(move |jobs| {
@@ -234,7 +246,15 @@ pub fn run() {
                     }
                 }),
                 app.state::<Arc<SessionStore>>().net_policy(),
-            ));
+            );
+            // Downloaded yt-dlp/ffmpeg: local data, not the cache, so a
+            // cache clean-up does not remove working tools.
+            #[cfg(not(target_os = "android"))]
+            let online = match app.path().app_local_data_dir() {
+                Ok(dir) => online.with_tools_dir(dir.join("tools")),
+                Err(_) => online,
+            };
+            let online = Arc::new(online);
             app.manage(online);
 
             app.manage(tray::TrayStatus::default());
@@ -246,6 +266,7 @@ pub fn run() {
             commands::queue_replace,
             commands::queue_append,
             commands::queue_play_next,
+            commands::queue_play_next_many,
             commands::queue_remove,
             commands::queue_move,
             commands::queue_page,
@@ -261,11 +282,15 @@ pub fn run() {
             commands::player_set_repeat,
             commands::player_set_replaygain,
             commands::player_set_gapless,
+            commands::player_set_equalizer,
+            commands::player_set_crossfade,
+            commands::player_set_sleep_timer,
             commands::player_set_wasapi_exclusive,
             commands::player_snapshot,
             commands::library_add_folder,
             commands::library_android_pick_folder,
             commands::android_pick_file,
+            commands::android_pick_audio_files,
             commands::app_file_access,
             commands::app_request_file_access,
             commands::android_open_text,
@@ -303,8 +328,15 @@ pub fn run() {
             commands::app_settings,
             commands::app_window_insets,
             commands::app_log_dir,
+            commands::app_welcome,
+            commands::app_finish_welcome,
+            commands::app_diagnostics,
+            commands::app_save_diagnostics,
+            commands::app_open_log_dir,
+            commands::app_report_issue,
             commands::app_reveal_file,
             commands::app_check_update,
+            commands::app_install_update,
             commands::app_open_release,
             commands::app_set_close_to_tray,
             commands::app_set_lyrics_save,
@@ -327,6 +359,7 @@ pub fn run() {
             commands::online_status,
             commands::online_set_download_dir,
             commands::online_set_ytdlp_path,
+            commands::online_install_tool,
             commands::online_search,
             commands::online_album_detail,
             commands::online_play_tracks,
@@ -339,6 +372,7 @@ pub fn run() {
             commands::pinned_toggle,
             commands::favorites_list,
             commands::favorites_toggle,
+            commands::favorites_set_many,
             commands::favorites_toggle_by_path,
             commands::favorites_tracks_page,
             commands::favorites_play,
@@ -349,6 +383,7 @@ pub fn run() {
             commands::library_play_artist,
             commands::library_genres,
             commands::library_genre_detail,
+            commands::library_genre_tracks_page,
             commands::library_play_genre,
             commands::artist_enrich,
             commands::artist_enrich_all,

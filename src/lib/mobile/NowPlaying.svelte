@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SleepTimerButton from '../SleepTimerButton.svelte'
   import { t } from '../i18n.svelte'
   import { fly } from 'svelte/transition'
   import AlbumLink from '../AlbumLink.svelte'
@@ -244,6 +245,7 @@
             <button class="-ml-3 rounded-full p-3 text-white/80 active:bg-white/10" aria-label={t("Lyrics")} onclick={onLyrics}>
               <Icon name="lyrics" class="size-6" />
             </button>
+            <SleepTimerButton mobile />
             <button class="-mr-3 rounded-full p-3 text-white/80 active:bg-white/10" aria-label={t("Queue")} onclick={onQueue}>
               <Icon name="queue" class="size-6" />
             </button>

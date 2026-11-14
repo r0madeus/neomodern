@@ -239,8 +239,37 @@ impl MediaKeys {
     }
 }
 
+/// Linux: whether a D-Bus session bus can be reached. souvlaki's zbus
+/// backend connects in its own thread and panics there when there is none
+/// (a bare X session, containers), so MPRIS is skipped then.
+#[cfg(target_os = "linux")]
+fn session_bus_available() -> bool {
+    let unix_path = |addr: &str| -> Option<std::path::PathBuf> {
+        addr.split(';')
+            .find_map(|a| a.strip_prefix("unix:"))
+            .and_then(|opts| opts.split(',').find_map(|kv| kv.strip_prefix("path=")))
+            .map(std::path::PathBuf::from)
+    };
+    match std::env::var("DBUS_SESSION_BUS_ADDRESS") {
+        // Abstract sockets and other transports cannot be checked here.
+        Ok(addr) if !addr.is_empty() => unix_path(&addr).is_none_or(|p| p.exists()),
+        _ => {
+            use std::os::unix::fs::MetadataExt;
+            let uid = std::fs::metadata("/proc/self")
+                .map(|m| m.uid())
+                .unwrap_or(0);
+            std::path::Path::new(&format!("/run/user/{uid}/bus")).exists()
+        }
+    }
+}
+
 /// Convenience for `lib.rs`: wraps the shared player.
 pub fn create(hwnd: Option<*mut c_void>, player: &Arc<Player>) -> Option<MediaKeys> {
+    #[cfg(target_os = "linux")]
+    if !session_bus_available() {
+        log::warn!("media controls unavailable: no D-Bus session bus");
+        return None;
+    }
     match MediaKeys::new(hwnd, Arc::downgrade(player)) {
         Ok(m) => Some(m),
         Err(e) => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Logo from '../Logo.svelte'
   import Cover from '../Cover.svelte'
   import EmptyLibrary from '../EmptyLibrary.svelte'
   import Icon from '../Icon.svelte'
@@ -114,7 +115,7 @@
           title={t(greetingKey())}
           class="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-accent-400"
         >
-          <Icon name="music" class="size-4" />
+          <Logo class="size-4" />
         </span>
 
         <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">

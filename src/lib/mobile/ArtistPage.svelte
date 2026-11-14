@@ -313,6 +313,8 @@
                 artist=""
                 extraMeta={track.year ? String(track.year) : ''}
                 onPlay={() => void artists.play(profile!.name, idx)}
+                selectScope={`m:artist:${profile!.name}`}
+                index={idx}
               />
             {/each}
           </section>

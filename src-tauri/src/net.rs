@@ -273,6 +273,10 @@ mod tests {
             // (search, album_detail, resolve_stream, enqueue_download, the
             // download worker and status).
             ("online/mod.rs", "Command::new(", 3),
+            // yt-dlp/ffmpeg download: only via OnlineService::install_tool,
+            // which requires Feature::Online; ToolsDir::install re-checks
+            // it before every request and chunk.
+            ("online/tools.rs", "client_builder()", 1),
             // Update check: update::check_at() requires Feature::Updates.
             ("update.rs", "client_builder()", 1),
         ];

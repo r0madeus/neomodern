@@ -1,6 +1,6 @@
 [package]
 name = "neomodern"
-version = "0.2.0"
+version = "0.9.0"
 description = "A fast, modern music player"
 authors = ["r0madeus"]
 license = ""
@@ -38,8 +38,12 @@ image = { version = "=0.25.10", default-features = false, features = ["jpeg", "p
 # Desktop only: libmpv audio, OS media controls (SMTC / MPRIS), single instance, system TLS.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 libmpv2 = "=7.0.1"
-souvlaki = "=0.9.3"
+# zbus backend: the default dbus backend blocks up to 1 s between updates.
+souvlaki = { version = "=0.9.3", default-features = false, features = ["use_zbus"] }
 tauri-plugin-single-instance = "=2.5.5"
+# In-app updates on Windows and Linux (AppImage); signed with the
+# project's updater key (TAURI_SIGNING_PRIVATE_KEY in release CI).
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["native-tls", "system-proxy"] }
 reqwest = { version = "=0.13.5", default-features = false, features = ["native-tls"] }
 
 # Android: audio through Media3/ExoPlayer (Kotlin plugin), rustls with the

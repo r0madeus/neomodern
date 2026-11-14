@@ -123,6 +123,8 @@
           album=""
           number={track.trackNo ?? i + 1}
           onPlay={() => library.playAlbum(albumId, i)}
+          selectScope={`m:album:${albumId}`}
+          index={i}
         />
       {/each}
     {:else}

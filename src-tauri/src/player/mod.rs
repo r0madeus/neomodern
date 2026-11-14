@@ -12,7 +12,9 @@
 //! Known benign race: engine events are asynchronous, so an event produced
 //! just before a user command (e.g. a late `Idle`) can be applied after it.
 
-use crate::audio::{AudioEngine, EndReason, EngineError, EngineEvent, RemoteCommand, ReplayGain};
+use crate::audio::{
+    AudioEngine, EndReason, EngineError, EngineEvent, Equalizer, RemoteCommand, ReplayGain,
+};
 use crate::queue::{EntryId, Queue, RepeatMode, Track};
 use crate::session::{SavedTrack, SessionState};
 use serde::Serialize;
@@ -21,6 +23,26 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MIN_LISTEN_MS: u64 = 3_000;
+/// The sleep timer fades the volume out over its last seconds.
+const SLEEP_FADE_SECS: f64 = 10.0;
+/// Longest crossfade, in seconds.
+pub const MAX_CROSSFADE_SECS: f64 = 12.0;
+
+fn unix_now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
+}
+
+/// When the sleep timer pauses playback.
+#[derive(Debug, Clone, Copy)]
+enum Sleep {
+    /// At a moment (and the same moment as unix milliseconds for the UI).
+    At(Instant, i64),
+    /// When the current track ends.
+    EndOfTrack,
+}
 
 fn unix_now() -> i64 {
     SystemTime::now()
@@ -71,6 +93,13 @@ pub struct PlayerSnapshot {
     pub replaygain: ReplayGain,
     pub gapless: bool,
     pub wasapi_exclusive: bool,
+    pub equalizer: Equalizer,
+    /// Crossfade length in seconds; 0 = off.
+    pub crossfade_seconds: f64,
+    /// Sleep timer: when it pauses (unix ms), if it is set to a time.
+    pub sleep_ends_at: Option<i64>,
+    /// Sleep timer set to "end of this track".
+    pub sleep_end_of_track: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +169,13 @@ struct Inner {
     replaygain: ReplayGain,
     gapless: bool,
     wasapi_exclusive: bool,
+    equalizer: Equalizer,
+    crossfade: f64,
+    /// Entry for which a crossfade was already tried (no second try).
+    crossfaded: Option<EntryId>,
+    sleep: Option<Sleep>,
+    /// The sleep fade lowered the engine volume below `volume`.
+    sleep_fading: bool,
     /// The entry currently sitting in the engine's "next" slot.
     engine_next: Option<EntryId>,
     /// True after a track ends at EOF while gapless is off, so the following
@@ -215,7 +251,97 @@ impl Inner {
             replaygain: self.replaygain,
             gapless: self.gapless,
             wasapi_exclusive: self.wasapi_exclusive,
+            equalizer: self.equalizer.clone(),
+            crossfade_seconds: self.crossfade,
+            sleep_ends_at: match self.sleep {
+                Some(Sleep::At(_, ms)) => Some(ms),
+                _ => None,
+            },
+            sleep_end_of_track: matches!(self.sleep, Some(Sleep::EndOfTrack)),
         }
+    }
+
+    /// Seconds left on the sleep timer, if it is set.
+    fn sleep_remaining(&self) -> Option<f64> {
+        match self.sleep? {
+            Sleep::At(deadline, _) => Some(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_secs_f64(),
+            ),
+            Sleep::EndOfTrack => {
+                let d = self.duration.filter(|d| d.is_finite() && *d > 0.0)?;
+                Some((d - self.position).max(0.0))
+            }
+        }
+    }
+
+    /// Puts the engine volume back after a sleep fade.
+    fn end_sleep_fade(&mut self) {
+        if std::mem::take(&mut self.sleep_fading)
+            && let Err(e) = self.engine.set_volume(self.volume)
+        {
+            log::warn!("failed to restore the volume after the sleep fade: {e}");
+        }
+    }
+
+    /// Runs on every position update while playing: the sleep timer (fade,
+    /// then pause) and the crossfade into the next track. True when the
+    /// state changed.
+    fn tick(&mut self) -> Result<bool, PlayerError> {
+        if self.status != Status::Playing || self.pending_load {
+            return Ok(false);
+        }
+        if let Some(left) = self.sleep_remaining() {
+            if left <= 0.3 {
+                self.sleep = None;
+                self.engine.pause()?;
+                self.status = Status::Paused;
+                self.set_listen_playing(false);
+                self.end_sleep_fade();
+                return Ok(true);
+            }
+            if left <= SLEEP_FADE_SECS {
+                self.engine
+                    .set_volume(self.volume * left / SLEEP_FADE_SECS)?;
+                self.sleep_fading = true;
+            }
+        }
+        self.maybe_crossfade()
+    }
+
+    fn maybe_crossfade(&mut self) -> Result<bool, PlayerError> {
+        let cf = self.crossfade;
+        if cf <= 0.0 || matches!(self.sleep, Some(Sleep::EndOfTrack)) {
+            return Ok(false);
+        }
+        let Some(entry) = self.queue.current() else {
+            return Ok(false);
+        };
+        let id = entry.id;
+        let local = !entry.path.to_string_lossy().starts_with("http");
+        let Some(d) = self.duration.filter(|d| d.is_finite()) else {
+            return Ok(false);
+        };
+        if self.crossfaded == Some(id)
+            || !local
+            || self.queue.repeat() == RepeatMode::One
+            || d < cf * 2.0 + 1.0
+            || d - self.position > cf
+        {
+            return Ok(false);
+        }
+        self.crossfaded = Some(id);
+        let Some(next) = self.queue.next_index() else {
+            return Ok(false);
+        };
+        if !self.engine.begin_crossfade(cf)? {
+            return Ok(false);
+        }
+        // The track counts as finished; the next one starts now, fading in.
+        self.close_listen(true, false);
+        self.start_index(next)?;
+        Ok(true)
     }
 
     /// Load and play the entry at `index` (must be in range).
@@ -341,6 +467,11 @@ impl Player {
                 replaygain: ReplayGain::default(),
                 gapless: true,
                 wasapi_exclusive: false,
+                equalizer: Equalizer::default(),
+                crossfade: 0.0,
+                crossfaded: None,
+                sleep: None,
+                sleep_fading: false,
                 engine_next: None,
                 eof_advance: false,
                 pending_load: false,
@@ -428,6 +559,12 @@ impl Player {
             log::warn!("failed to restore WASAPI exclusive setting: {e}");
         }
         s.wasapi_exclusive = state.wasapi_exclusive;
+        let eq = state.equalizer.clamped();
+        if let Err(e) = s.engine.set_equalizer(&eq) {
+            log::warn!("failed to restore the equalizer: {e}");
+        }
+        s.equalizer = eq;
+        s.crossfade = state.crossfade_seconds.clamp(0.0, MAX_CROSSFADE_SECS);
         s.eof_advance = false;
         let tracks: Vec<Track> = state
             .queue
@@ -478,6 +615,8 @@ impl Player {
             replaygain: s.replaygain,
             gapless: s.gapless,
             wasapi_exclusive: s.wasapi_exclusive,
+            equalizer: s.equalizer.clone(),
+            crossfade_seconds: s.crossfade,
             ..SessionState::default()
         }
         .normalized()
@@ -556,6 +695,25 @@ impl Player {
     /// Insert `track` right after the queue entry `anchor`. Returns the new
     /// entry's id, or `None` when `anchor` is gone (the queue was replaced or
     /// the entry removed), so background fillers know to stop.
+    /// Puts `tracks` right after the current entry, in this order (or at
+    /// the end when nothing is selected).
+    pub fn insert_next_many(&self, tracks: Vec<Track>) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| {
+            let mut anchor: Option<EntryId> = None;
+            for track in tracks {
+                let id = match anchor {
+                    None => Some(s.queue.insert_next(track)),
+                    Some(a) => s.queue.insert_after(a, track),
+                };
+                match id {
+                    Some(id) => anchor = Some(id),
+                    None => break,
+                }
+            }
+            s.sync_next()
+        })
+    }
+
     pub fn insert_after(
         &self,
         anchor: EntryId,
@@ -611,6 +769,13 @@ impl Player {
         self.run(|s| match s.status {
             Status::Playing => Ok(()),
             Status::Paused => {
+                // A timer that ran out while paused is over.
+                if s.sleep_remaining().is_some_and(|left| left <= 0.3)
+                    && matches!(s.sleep, Some(Sleep::At(..)))
+                {
+                    s.sleep = None;
+                    s.end_sleep_fade();
+                }
                 s.engine.play()?;
                 s.status = Status::Playing;
                 s.set_listen_playing(true);
@@ -744,6 +909,52 @@ impl Player {
         })
     }
 
+    pub fn set_equalizer(&self, eq: Equalizer) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| {
+            let eq = eq.clamped();
+            s.engine.set_equalizer(&eq)?;
+            s.equalizer = eq;
+            Ok(())
+        })
+    }
+
+    /// Crossfade length in seconds (0 = off, at most [`MAX_CROSSFADE_SECS`]).
+    pub fn set_crossfade(&self, seconds: f64) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| {
+            s.crossfade = if seconds.is_finite() {
+                seconds.clamp(0.0, MAX_CROSSFADE_SECS)
+            } else {
+                0.0
+            };
+            Ok(())
+        })
+    }
+
+    /// Sleep timer: pause after `minutes`, or at the end of the current
+    /// track; both off with `(None, false)`. The volume fades out over the
+    /// last seconds and is restored after the pause.
+    pub fn set_sleep_timer(
+        &self,
+        minutes: Option<f64>,
+        end_of_track: bool,
+    ) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| {
+            s.sleep = if end_of_track {
+                Some(Sleep::EndOfTrack)
+            } else {
+                minutes.filter(|m| m.is_finite() && *m > 0.0).map(|m| {
+                    let secs = (m * 60.0).min(24.0 * 3600.0);
+                    Sleep::At(
+                        Instant::now() + Duration::from_secs_f64(secs),
+                        unix_now_ms() + (secs * 1000.0) as i64,
+                    )
+                })
+            };
+            s.end_sleep_fade();
+            Ok(())
+        })
+    }
+
     pub fn set_wasapi_exclusive(&self, enabled: bool) -> Result<PlayerSnapshot, PlayerError> {
         self.run(|s| {
             s.engine.set_wasapi_exclusive(enabled)?;
@@ -861,7 +1072,11 @@ impl Player {
                 }
                 EngineEvent::Position { seconds } => {
                     s.position = seconds;
-                    Out::Position(seconds, s.duration)
+                    match s.tick() {
+                        Ok(false) => Out::Position(seconds, s.duration),
+                        Ok(true) => Out::State,
+                        Err(e) => Out::Error(e.to_string()),
+                    }
                 }
                 EngineEvent::TrackEnded { path, reason } => {
                     let same_track = s
@@ -960,6 +1175,8 @@ mod tests {
         ReplayGain(ReplayGain),
         Gapless(bool),
         WasapiExclusive(bool),
+        Eq(bool),
+        Crossfade(f64),
     }
 
     #[derive(Clone, Default)]
@@ -1010,6 +1227,13 @@ mod tests {
         }
         fn set_wasapi_exclusive(&self, enabled: bool) -> Result<(), EngineError> {
             self.rec(Call::WasapiExclusive(enabled))
+        }
+        fn set_equalizer(&self, eq: &Equalizer) -> Result<(), EngineError> {
+            self.rec(Call::Eq(eq.enabled))
+        }
+        fn begin_crossfade(&self, s: f64) -> Result<bool, EngineError> {
+            self.rec(Call::Crossfade(s))?;
+            Ok(true)
         }
     }
 
@@ -1615,6 +1839,7 @@ mod tests {
                 Call::ReplayGain(ReplayGain::Track),
                 Call::Gapless(true),
                 Call::WasapiExclusive(false),
+                Call::Eq(false),
             ]
         );
 
@@ -1836,5 +2061,182 @@ mod tests {
 
         let snap = p.next().unwrap();
         assert_eq!(snap.current.unwrap().path, "urgent");
+    }
+
+    fn playing_with_duration(p: &Player, paths: &[&str], duration: f64) {
+        p.replace_queue(pbs(paths), 0).unwrap();
+        p.handle_engine_event(started(paths[0], false));
+        p.handle_engine_event(EngineEvent::Duration { seconds: duration });
+    }
+
+    #[test]
+    fn sleep_timer_fades_then_pauses_and_restores_volume() {
+        let (p, calls, _) = setup();
+        p.set_volume(80.0).unwrap();
+        playing_with_duration(&p, &["a.mp3", "b.mp3"], 300.0);
+        // 9 s left: inside the fade window.
+        let snap = p.set_sleep_timer(Some(9.0 / 60.0), false).unwrap();
+        assert!(snap.sleep_ends_at.is_some());
+        calls.take();
+        p.handle_engine_event(EngineEvent::Position { seconds: 10.0 });
+        let faded = calls.take();
+        assert!(
+            matches!(faded.as_slice(), [Call::Volume(v)] if *v < 80.0 && *v > 0.0),
+            "{faded:?}"
+        );
+        // Turning the timer off mid-fade puts the volume back.
+        let snap = p.set_sleep_timer(None, false).unwrap();
+        assert_eq!(snap.sleep_ends_at, None);
+        assert_eq!(calls.take(), [Call::Volume(80.0)]);
+
+        // Expired: pause.
+        p.set_sleep_timer(Some(0.0001), false).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        calls.take();
+        p.handle_engine_event(EngineEvent::Position { seconds: 11.0 });
+        let snap = p.snapshot();
+        assert_eq!(snap.status, Status::Paused);
+        assert_eq!(snap.sleep_ends_at, None);
+        assert_eq!(calls.take(), [Call::Pause]);
+    }
+
+    #[test]
+    fn sleep_timer_at_end_of_track_pauses_before_the_next_one() {
+        let (p, calls, _) = setup();
+        playing_with_duration(&p, &["a.mp3", "b.mp3"], 200.0);
+        assert!(p.set_sleep_timer(None, true).unwrap().sleep_end_of_track);
+        calls.take();
+        p.handle_engine_event(EngineEvent::Position { seconds: 100.0 });
+        assert!(calls.take().is_empty(), "no fade far from the end");
+        p.set_volume(50.0).unwrap();
+        calls.take();
+        p.handle_engine_event(EngineEvent::Position { seconds: 195.0 });
+        assert!(matches!(calls.take().as_slice(), [Call::Volume(v)] if *v < 50.0));
+        p.handle_engine_event(EngineEvent::Position { seconds: 199.8 });
+        // Paused, and the volume is back for the next play.
+        assert_eq!(calls.take(), [Call::Pause, Call::Volume(50.0)]);
+        let snap = p.snapshot();
+        assert_eq!(snap.status, Status::Paused);
+        assert!(!snap.sleep_end_of_track);
+        assert_eq!(snap.current_index, Some(0));
+        // Turning it off restores nothing when no fade ran.
+        p.set_sleep_timer(None, false).unwrap();
+    }
+
+    #[test]
+    fn crossfade_starts_the_next_track_early_once() {
+        let (p, calls, events) = setup();
+        p.set_crossfade(5.0).unwrap();
+        playing_with_duration(&p, &["a.mp3", "b.mp3", "c.mp3"], 100.0);
+        calls.take();
+        p.handle_engine_event(EngineEvent::Position { seconds: 90.0 });
+        assert!(calls.take().is_empty(), "too early");
+        p.handle_engine_event(EngineEvent::Position { seconds: 95.5 });
+        assert_eq!(
+            calls.take(),
+            [
+                Call::Crossfade(5.0),
+                Call::Load(pb("b.mp3")),
+                Call::Play,
+                Call::SetNext(Some(pb("c.mp3")))
+            ]
+        );
+        assert_eq!(p.snapshot().current_index, Some(1));
+        // The faded-out track is recorded as completed, not skipped.
+        let listens: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|e| match e {
+                PlayerEvent::Listen(l) => Some(l.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(listens.iter().all(|l| !l.skipped));
+        // Repeat one: no crossfade into the same track.
+        p.set_repeat(RepeatMode::One).unwrap();
+        p.handle_engine_event(started("b.mp3", false));
+        p.handle_engine_event(EngineEvent::Duration { seconds: 100.0 });
+        calls.take();
+        p.handle_engine_event(EngineEvent::Position { seconds: 97.0 });
+        assert!(calls.take().is_empty());
+    }
+
+    #[test]
+    fn equalizer_and_crossfade_survive_a_restart() {
+        let (p, calls, _) = setup();
+        let eq = Equalizer {
+            enabled: true,
+            preamp_db: -40.0,
+            gains_db: [6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 99.0],
+        };
+        let snap = p.set_equalizer(eq).unwrap();
+        assert_eq!(snap.equalizer.preamp_db, -12.0, "clamped");
+        assert_eq!(snap.equalizer.gains_db[9], 12.0);
+        p.set_crossfade(30.0).unwrap();
+        let saved = p.export_session();
+        assert_eq!(saved.crossfade_seconds, MAX_CROSSFADE_SECS);
+
+        let (q, qcalls, _) = setup();
+        q.restore_session(saved);
+        assert!(qcalls.take().contains(&Call::Eq(true)));
+        let snap = q.snapshot();
+        assert_eq!(snap.equalizer.gains_db[0], 6.0);
+        assert_eq!(snap.crossfade_seconds, MAX_CROSSFADE_SECS);
+        let _ = calls;
+    }
+}
+
+#[cfg(test)]
+mod bulk_tests {
+    use super::*;
+
+    struct Silent;
+    impl AudioEngine for Silent {
+        fn load(&self, _: &Path) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_next(&self, _: Option<&Path>) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn play(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn pause(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn seek(&self, _: f64) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_volume(&self, _: f64) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_replaygain(&self, _: ReplayGain) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_gapless(&self, _: bool) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_wasapi_exclusive(&self, _: bool) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn several_tracks_play_next_in_their_order() {
+        let p = Player::new(Box::new(Silent), Box::new(|_| {}));
+        let paths = |v: &[&str]| v.iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+        p.replace_queue(paths(&["a", "b"]), 0).unwrap();
+        let many = paths(&["x", "y", "z"])
+            .into_iter()
+            .map(Track::from)
+            .collect();
+        let snap = p.insert_next_many(many).unwrap();
+        assert_eq!(snap.queue_length, 5);
+        let order: Vec<String> = p.queue_page(0, 10).into_iter().map(|t| t.path).collect();
+        assert_eq!(order, ["a", "x", "y", "z", "b"]);
     }
 }

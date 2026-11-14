@@ -79,6 +79,8 @@
               trackId={track.id}
               {track}
               onPlay={() => library.playAll(i)}
+              selectScope="m:songs"
+              index={i}
             />
           {:else}
             <div class="flex h-16 items-center gap-3 px-4" aria-hidden="true">

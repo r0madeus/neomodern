@@ -16,7 +16,9 @@
 //! field; [`parse_event`] turns them into [`EngineEvent`]s.
 
 use super::android_events::parse_event;
-use super::{AudioEngine, EngineError, EngineEvent, EngineResult, ReplayGain, replaygain};
+use super::{
+    AudioEngine, EngineError, EngineEvent, EngineResult, Equalizer, ReplayGain, replaygain,
+};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
@@ -183,5 +185,20 @@ impl AudioEngine for AndroidEngine {
 
     fn set_wasapi_exclusive(&self, _enabled: bool) -> EngineResult<()> {
         Ok(())
+    }
+
+    fn set_equalizer(&self, eq: &Equalizer) -> EngineResult<()> {
+        let eq = eq.clamped();
+        self.call(
+            "setEqualizer",
+            json!({ "enabled": eq.enabled, "preampDb": eq.preamp_db, "gainsDb": eq.gains_db }),
+        )
+    }
+
+    fn begin_crossfade(&self, seconds: f64) -> EngineResult<bool> {
+        // Queued before the player's next `load`, so the tail starts first
+        // and the load fades in. Kotlin skips it when nothing is loaded.
+        self.call("beginCrossfade", json!({ "seconds": seconds }))?;
+        Ok(true)
     }
 }

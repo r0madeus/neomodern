@@ -1,6 +1,6 @@
 # NeoModern – status and roadmap
 
-Last updated: 2026-11-14. The owner's decision notes live in the 2ncibeyn
+Last updated: 2026-11-14 (evening). The owner's decision notes live in the 2ncibeyn
 vault (`projects/muzik-calar/`); this file is the in-repo summary for
 contributors and agents.
 
@@ -38,8 +38,8 @@ contributors and agents.
   Playing a track queues the rest of its list; stream URLs are resolved
   just in time and never saved with the session. Downloads are tagged,
   get the album cover, land in the library and can be cancelled; every
-  `yt-dlp` run has a time limit. Needs `yt-dlp` on PATH (or set in
-  Settings); `ffmpeg` is optional (converts to m4a).
+  `yt-dlp` run has a time limit. Needs `yt-dlp` (one-click setup, PATH
+  or a path set in Settings); `ffmpeg` is optional (converts to m4a).
 - **Favourites** (schema v4): star tracks, a Favourites list.
 - **Playlist covers** (schema v5): automatic 2×2 collage, gradient+icon
   presets or a custom image.
@@ -140,23 +140,64 @@ contributors and agents.
   (previous/next), Ctrl+Up/Down (volume), M (mute), S (shuffle), R (repeat), Ctrl+K (search). Media keys stay with the
   OS integration in Rust.
 
+### Sharing readiness (2026-11-14)
+- **First-run welcome**: on desktop it suggests the OS Music folder with
+  a song count, then offers the online tool setup; on Android it asks for
+  music access and opens the folder picker. Shown once.
+- **One-click yt-dlp / ffmpeg** (`src-tauri/src/online/tools.rs`):
+  official builds for Windows and Linux (x86-64, ARM64), checked against
+  the published SHA-256 lists, kept in the local app data `tools`
+  folder. Lookup: path from Settings, then the downloaded copy, then PATH.
+- **Problem report** (Settings → About): version, system, settings and
+  the last 400 log lines with the home folder hidden; copy, save, or
+  open a GitHub issue.
+- **In-app update on Android** (arm64): the update banner's Update
+  downloads the release APK, checks it against `SHA256SUMS-android.txt`
+  and opens the system installer (one-time "install unknown apps"
+  permission). Desktop still opens the release page; the Windows updater
+  needs an updater signing key first.
+- **Content Security Policy** instead of `csp: null`.
+- Genre pages load tracks in pages; Linux MPRIS updates without delay
+  (souvlaki's zbus backend).
+
+### v0.9 distribution
+- **Linux AppImage** next to the Windows installer and the APK.
+- **In-app updates everywhere**: Windows and the AppImage through the
+  Tauri updater (signed `latest.json`, key in `TAURI_SIGNING_PRIVATE_KEY`),
+  Android through the system installer.
+
+### Listening features (K16, 2026-11-14; desktop and Android)
+- **Sleep timer**: 15 min to 2 h or "end of this song" from the moon
+  button; the volume fades over the last 10 s, then playback pauses.
+- **Equalizer**: ten octave bands and a preamp (±12 dB) with presets, in
+  Settings > Playback. mpv uses peaking filters; Android maps the curve
+  onto the system equalizer's bands.
+- **Crossfade**: 0–12 s. The old track's tail plays on a second player
+  (mpv instance / ExoPlayer) while the next one fades in. Not with
+  WASAPI exclusive, streams or repeat-one.
+- **Multi-select**: Ctrl/Cmd-click and Shift-click (Ctrl+A, Esc) in the
+  song, favourite, album, genre and artist lists; long press on phones.
+  Bulk play, play next, add to queue, favourite and add to playlist.
+
 ## Next
 
 1. **Try metadata matching on real albums** (desktop and phone): the
    MusicBrainz responses so far are recorded fixtures. A live check:
    `cd src-tauri && cargo test live_musicbrainz -- --ignored --nocapture`.
-2. **Signed Android release**: add the `ANDROID_KEYSTORE_*` secrets so APK
-   updates install over the previous version (not urgent).
+2. **First signed NeoModern release** (Android keystore secrets are set)
+   and an app/tray icon.
 3. **Later, not decided**: AcoustID fingerprinting for untagged files;
    matching a whole library in the background.
 
 ## Known limitations
-- Linux MPRIS state lags ~1–2 s (souvlaki's D-Bus loop).
 - Online search/download is desktop only and depends on `yt-dlp`
   (and YouTube); a wrong recording is still possible when no hit is
   close to the album track.
 - Metadata matching has only been tested against recorded MusicBrainz
-  responses, not the live service; "Undo" does not remove an added cover.
-- Artist splitting is heuristic: a duet tagged "A, B & C" splits into
-  "A" and "B & C"; three single-word rappers joined by `&` stay one name.
-- Android: "Open files" is hidden; online search and download are desktop only.
+  responses, not the live service.
+- Artist splitting is heuristic: a lone "A & B" stays one name (it may be
+  a duo or a band); in a comma list the last `&` splits, except for a short
+  list of known comma bands and tails such as "& Sons" or "& The …".
+- Android: online search and download are desktop only. "Open files"
+  (queue screen) plays files stored on the phone; files from a cloud
+  drive have no path and are skipped with a note.

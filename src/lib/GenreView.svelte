@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selection } from './trackSelection.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import AlbumLink from './AlbumLink.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
@@ -12,7 +13,7 @@
   import { trackMenu } from './contextMenu.svelte'
   import { genreColor } from './genreColor'
   import { count, i18n, t } from './i18n.svelte'
-  import { library, type GenreDetail } from './library.svelte'
+  import { library, type GenreDetail, type TrackRow } from './library.svelte'
   import { formatTime, player, randomTrackIndex } from './player.svelte'
 
   let {
@@ -25,42 +26,90 @@
     onOpenAlbum: (albumId: number) => void
   } = $props()
 
+  // Tracks are loaded in pages as the list scrolls into view, so a genre
+  // with thousands of tracks never goes over IPC (or into the DOM) at once.
+  const TRACK_PAGE = 100
+
   let detail = $state<GenreDetail | null>(null)
   let loading = $state(true)
+  let tracks = $state<TrackRow[]>([])
+  let loadingMore = $state(false)
+  let sentinel = $state<HTMLElement | null>(null)
+  /** Bumped on every reload so late pages of an old load are dropped. */
+  let generation = 0
 
   $effect(() => {
     void library.stats.version
     const wanted = name
-    let stale = false
+    const gen = ++generation
     loading = true
+    tracks = []
+    loadingMore = false
     library
       .genreDetail(wanted)
       .then((res) => {
-        if (stale) return
+        if (gen !== generation) return
         detail = res
         loading = false
+        void loadMore()
       })
       .catch((e) => {
-        if (!stale) {
+        if (gen === generation) {
           player.error = String(e)
           loading = false
         }
       })
-    return () => {
-      stale = true
+  })
+
+  async function loadMore(): Promise<void> {
+    const d = detail
+    if (!d || loadingMore || tracks.length >= d.trackCount) return
+    const gen = generation
+    loadingMore = true
+    try {
+      const page = await library.genreTracksPage(d.name, tracks.length, TRACK_PAGE)
+      if (gen !== generation) return
+      tracks = [...tracks, ...page.items]
+      // The library can shrink while scrolling; stop at what is there.
+      if (page.items.length === 0 && detail) detail.trackCount = tracks.length
+    } catch (e) {
+      player.error = String(e)
+    } finally {
+      if (gen === generation) loadingMore = false
     }
+  }
+
+  // Load the next page whenever the end of the list comes near the viewport.
+  $effect(() => {
+    const el = sentinel
+    if (!el) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void loadMore()
+      },
+      { rootMargin: '600px 0px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  })
+
+  // A page can be shorter than the viewport: keep loading while the
+  // sentinel is still visible after a page lands.
+  $effect(() => {
+    void tracks.length
+    const el = sentinel
+    if (!el || loadingMore) return
+    const r = el.getBoundingClientRect()
+    if (r.top < window.innerHeight + 600) void loadMore()
   })
 
   const baseColor = $derived(genreColor(detail?.name ?? name))
   const heroCover = $derived(
-    detail?.albums.find((a) => a.cover)?.cover ??
-      detail?.tracks.find((tr) => tr.cover)?.cover ??
-      null,
+    detail?.albums.find((a) => a.cover)?.cover ?? tracks.find((tr) => tr.cover)?.cover ?? null,
   )
-  const totalMs = $derived(
-    (detail?.tracks ?? []).reduce((acc, tr) => acc + (tr.durationMs ?? 0), 0),
-  )
+  const totalMs = $derived(detail?.durationMs ?? 0)
   const currentPath = $derived(player.snapshot.current?.path ?? null)
+  const scope = $derived(`genre:${name}`)
 
   function formatDurationSummary(ms: number): string {
     const mins = Math.floor(ms / 60_000)
@@ -107,7 +156,7 @@
       </h2>
       {#if detail}
         <p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white/75">
-          <span>{count(detail.tracks.length, '{n} track', '{n} tracks')}</span>
+          <span>{count(detail.trackCount, '{n} track', '{n} tracks')}</span>
           {#if detail.albums.length > 0}
             <span>·</span>
             <span>{count(detail.albums.length, '{n} album', '{n} albums')}</span>
@@ -122,7 +171,7 @@
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          disabled={!detail || detail.tracks.length === 0}
+          disabled={!detail || detail.trackCount === 0}
           class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 transition hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50"
           onclick={() => detail && void library.playGenre(detail.name, 0, false)}
         >
@@ -130,12 +179,12 @@
           {t('Play')}
         </button>
         <ShuffleButton
-          disabled={!detail || detail.tracks.length === 0}
+          disabled={!detail || detail.trackCount === 0}
           onClick={() =>
             detail &&
             void library.playGenre(
               detail.name,
-              randomTrackIndex(detail.tracks.length),
+              randomTrackIndex(detail.trackCount),
               true,
             )}
         />
@@ -145,7 +194,7 @@
 
   {#if loading && !detail}
     <p class="text-sm text-zinc-500">{t('Loading…')}</p>
-  {:else if detail && detail.tracks.length === 0}
+  {:else if detail && detail.trackCount === 0}
     <p class="text-sm text-zinc-500">{t('No tracks found for this genre.')}</p>
   {:else if detail}
     <div class="flex flex-col gap-8">
@@ -181,7 +230,7 @@
       <section>
         <h3 class="mb-3 text-base font-semibold">{t('Songs')}</h3>
         <div class="flex flex-col gap-0.5">
-          {#each detail.tracks as tr, i (tr.id)}
+          {#each tracks as tr, i (tr.id)}
             {@const active = tr.path === currentPath}
             <div
               role="button"
@@ -189,19 +238,24 @@
               title={tr.path}
               class={[
                 'group grid grid-cols-[1.75rem_2.25rem_minmax(0,2fr)_minmax(0,1.5fr)_4.25rem_3.5rem] items-center gap-3 rounded-lg px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
-                active
-                  ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                  : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+                selection.has(scope, tr.path)
+                  ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
+                  : active
+                    ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                    : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
               ]}
+              aria-pressed={selection.has(scope, tr.path)}
+              onclick={(e) => selection.click(e, scope, i, tr, (j) => tracks[j])}
               ondblclick={() => void library.playGenre(detail!.name, i)}
               oncontextmenu={(e) =>
                 trackMenu.fromEvent(e, tr, {
                   onPlay: () => void library.playGenre(detail!.name, i),
                 })}
-              onkeydown={(e) =>
-                e.target === e.currentTarget &&
-                e.key === 'Enter' &&
-                void library.playGenre(detail!.name, i)}
+              onkeydown={(e) => {
+                if (e.target !== e.currentTarget) return
+                if (selection.key(e, scope, tracks.length, (j) => tracks[j])) return
+                if (e.key === 'Enter') void library.playGenre(detail!.name, i)
+              }}
             >
               <span class="text-right text-xs tabular-nums text-zinc-400">
                 {#if active && player.snapshot.status === 'playing'}
@@ -243,6 +297,11 @@
             </div>
           {/each}
         </div>
+        {#if tracks.length < detail.trackCount}
+          <div bind:this={sentinel} class="py-3 text-center text-xs text-zinc-500" aria-live="polite">
+            {loadingMore ? t('Loading…') : ''}
+          </div>
+        {/if}
       </section>
     </div>
   {/if}

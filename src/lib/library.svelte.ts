@@ -75,7 +75,9 @@ export interface GenreRow {
 export interface GenreDetail {
   name: string
   albums: AlbumRow[]
-  tracks: TrackRow[]
+  /** Tracks come in pages from `genreTracksPage`. */
+  trackCount: number
+  durationMs: number
 }
 
 export interface LibraryStats {
@@ -273,6 +275,17 @@ class LibraryStore {
     }
   }
 
+  /** Adds a known folder (no picker), e.g. the suggested Music folder. */
+  async addFolderPath(path: string): Promise<boolean> {
+    try {
+      this.folders = await invoke<FolderInfo[]>('library_add_folder', { path })
+      return true
+    } catch (e) {
+      player.error = String(e)
+      return false
+    }
+  }
+
   async removeFolder(id: number): Promise<void> {
     try {
       this.folders = await invoke<FolderInfo[]>('library_remove_folder', { id })
@@ -302,6 +315,9 @@ class LibraryStore {
 
   genreDetail(name: string): Promise<GenreDetail> {
     return invoke<GenreDetail>('library_genre_detail', { name })
+  }
+  genreTracksPage(name: string, offset: number, limit: number): Promise<Page<TrackRow>> {
+    return invoke<Page<TrackRow>>('library_genre_tracks_page', { name, offset, limit })
   }
 
   async playGenre(name: string, startIndex: number, shuffle?: boolean): Promise<void> {

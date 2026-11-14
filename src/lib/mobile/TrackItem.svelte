@@ -8,6 +8,8 @@
   import AddToPlaylist from '../AddToPlaylist.svelte'
   import type { TrackRow } from '../library.svelte'
   import { player } from '../player.svelte'
+  import Icon from '../Icon.svelte'
+  import { longPress, selection } from '../trackSelection.svelte'
 
   // One song row on phones: cover, title, clickable artist · album links, and a menu.
   let {
@@ -22,6 +24,8 @@
     albumId,
     extraMeta = '',
     number = null,
+    selectScope = null,
+    index = 0,
     onPlay,
   }: {
     title: string
@@ -36,8 +40,24 @@
     extraMeta?: string
     /** Show a track number instead of the cover (album pages). */
     number?: number | null
+    /** Enables multi-select (long press) in this list; `index` orders it. */
+    selectScope?: string | null
+    index?: number
     onPlay: () => void
   } = $props()
+
+  const selectable = $derived(selectScope !== null && track !== null)
+  const selecting = $derived(selectable && selection.touchMode && selection.scope === selectScope)
+  const picked = $derived(selectable && selection.has(selectScope!, path))
+
+  function activate() {
+    if (selecting && track) selection.tap(selectScope!, index, track)
+    else onPlay()
+  }
+
+  function press() {
+    if (selectable && track) selection.start(selectScope!, index, track)
+  }
 
   const effArtist = $derived(artist !== undefined ? artist : (track?.artist ?? ''))
   const effAlbum = $derived(album !== undefined ? album : (track?.album ?? ''))
@@ -48,14 +68,27 @@
   const playing = $derived(current && player.snapshot.status === 'playing')
 </script>
 
-<div class="flex h-16 items-center gap-3 pr-1 pl-4 active:bg-white/5">
+<div class={['flex h-16 items-center gap-3 pr-1 pl-4 active:bg-white/5', picked && 'bg-accent-500/15']}>
   <div
     role="button"
     tabindex="0"
+    aria-pressed={selecting ? picked : undefined}
     class="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
-    onclick={onPlay}
-    onkeydown={(e) => e.target === e.currentTarget && e.key === 'Enter' && onPlay()}
+    use:longPress={press}
+    onclick={activate}
+    onkeydown={(e) => e.target === e.currentTarget && e.key === 'Enter' && activate()}
   >
+    {#if selecting}
+      <span
+        class={[
+          'flex size-6 shrink-0 items-center justify-center rounded-full border-2',
+          picked ? 'border-accent-400 bg-accent-400 text-zinc-950' : 'border-zinc-500',
+        ]}
+        aria-hidden="true"
+      >
+        {#if picked}<Icon name="check" class="size-4" />{/if}
+      </span>
+    {/if}
     {#if number !== null}
       <span class={['w-6 shrink-0 text-center text-sm tabular-nums', current ? 'text-accent-400' : 'text-zinc-500']}>
         {#if playing}<Equalizer />{:else}{number}{/if}
@@ -88,7 +121,7 @@
       </span>
     </span>
   </div>
-  {#if trackId !== null}
+  {#if trackId !== null && !selecting}
     <FavoriteButton {trackId} {title} size="size-5" light />
     <AddToPlaylist
       trackIds={[trackId]}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selection } from './trackSelection.svelte'
   import { appSettings } from './appSettings.svelte'
   import { count, t } from './i18n.svelte'
   import { invoke } from '@tauri-apps/api/core'
@@ -128,11 +129,19 @@
           <button
             class={[
               'flex h-10 min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm',
-              track.path === currentPath
-                ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+              selection.has(`album:${albumId}`, track.path)
+                ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
+                : track.path === currentPath
+                  ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                  : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
             ]}
-            onclick={() => library.playAlbum(albumId, i)}
+            aria-pressed={selection.has(`album:${albumId}`, track.path)}
+            onclick={(e) => {
+              if (!selection.click(e, `album:${albumId}`, i, track, (j) => data?.tracks[j])) {
+                library.playAlbum(albumId, i)
+              }
+            }}
+            onkeydown={(e) => selection.key(e, `album:${albumId}`, data?.tracks.length ?? 0, (j) => data?.tracks[j])}
           >
             <span class="w-8 text-right text-xs tabular-nums text-zinc-400">
               {#if track.path === currentPath && player.snapshot.status === 'playing'}

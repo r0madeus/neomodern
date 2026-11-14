@@ -373,3 +373,65 @@ fn player_plays_whole_queue_in_order() {
 fn player_plays_whole_queue_with_gapless_off() {
     run_queue_playback(false);
 }
+
+#[test]
+fn equalizer_is_accepted_by_mpv_and_keeps_playing() {
+    use neomodern_lib::audio::Equalizer;
+    let dir = tempfile::tempdir().unwrap();
+    let a = write_wav(dir.path(), "eq.wav", 440.0, 0.5);
+    let (engine, rx) = engine();
+    let mut log = Log::new(rx);
+    let mut eq = Equalizer {
+        enabled: true,
+        preamp_db: -3.0,
+        gains_db: [4.0, 3.0, 0.0, 0.0, -2.0, 0.0, 0.0, 1.5, 3.0, 5.0],
+    };
+    // Set before and during playback; an invalid filter graph would error
+    // here or stop playback with an error.
+    engine.set_equalizer(&eq).unwrap();
+    engine.load(&a).unwrap();
+    log.started(&a, false);
+    eq.gains_db[5] = -6.0;
+    engine.set_equalizer(&eq).unwrap();
+    log.wait(
+        "TrackEnded Eof",
+        |e| matches!(e, EngineEvent::TrackEnded { path, reason: EndReason::Eof } if *path == a),
+    );
+    assert!(
+        !log.seen.iter().any(|e| matches!(e, EngineEvent::Error(_))),
+        "{:#?}",
+        log.seen
+    );
+    // Off again.
+    engine.set_equalizer(&Equalizer::default()).unwrap();
+}
+
+#[test]
+fn crossfade_plays_the_tail_and_the_next_track() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = write_wav(dir.path(), "xa.wav", 440.0, 3.0);
+    let b = write_wav(dir.path(), "xb.wav", 660.0, 1.0);
+    let (engine, rx) = engine_with(false);
+    let mut log = Log::new(rx);
+    // Nothing loaded: nothing to fade.
+    assert!(!engine.begin_crossfade(1.0).unwrap());
+    engine.load(&a).unwrap();
+    log.started(&a, false);
+    log.wait(
+        "position",
+        |e| matches!(e, EngineEvent::Position { seconds } if *seconds > 0.3),
+    );
+    assert!(engine.begin_crossfade(0.5).unwrap());
+    // The player loads the next track; it starts as a normal load.
+    engine.load(&b).unwrap();
+    log.started(&b, false);
+    log.wait(
+        "TrackEnded Eof for b",
+        |e| matches!(e, EngineEvent::TrackEnded { path, reason: EndReason::Eof } if *path == b),
+    );
+    assert!(
+        !log.seen.iter().any(|e| matches!(e, EngineEvent::Error(_))),
+        "{:#?}",
+        log.seen
+    );
+}

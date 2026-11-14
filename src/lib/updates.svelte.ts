@@ -1,11 +1,19 @@
 // "New version available" notice. Rust asks GitHub for the latest release;
 // the UI checks at most once a day and remembers a dismissed version.
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { appSettings } from './appSettings.svelte'
 
 export interface UpdateInfo {
   version: string
   url: string
+  /** Android arm64: can be downloaded and installed from inside the app. */
+  installable: boolean
+}
+
+interface DownloadProgress {
+  received: number
+  total: number | null
 }
 
 const LAST_CHECK = 'neomodern.update.lastCheck'
@@ -34,6 +42,11 @@ class Updates {
   checking = $state(false)
   /** Result of the last manual check, for Settings. */
   status = $state<'idle' | 'upToDate' | 'found' | 'failed' | 'disabled'>('idle')
+  /** In-app install (Android): downloading, with progress 0..1 if known. */
+  installing = $state(false)
+  progress = $state<number | null>(null)
+  installError = $state<string | null>(null)
+  #listening = false
 
   async check(manual = false): Promise<void> {
     if (this.checking) return
@@ -65,6 +78,31 @@ class Updates {
   dismiss(): void {
     if (this.available) write(DISMISSED, this.available.version)
     this.available = null
+  }
+
+  /**
+   * Android: downloads the APK, checks it in Rust and opens the system
+   * installer, which asks the user to confirm.
+   */
+  async install(): Promise<void> {
+    if (!this.available?.installable || this.installing) return
+    if (!this.#listening) {
+      this.#listening = true
+      await listen<DownloadProgress>('update://progress', (e) => {
+        const { received, total } = e.payload
+        this.progress = total ? Math.min(1, received / total) : null
+      })
+    }
+    this.installing = true
+    this.installError = null
+    this.progress = null
+    try {
+      await invoke('app_install_update')
+    } catch (e) {
+      this.installError = String(e)
+    } finally {
+      this.installing = false
+    }
   }
 
   async open(): Promise<void> {

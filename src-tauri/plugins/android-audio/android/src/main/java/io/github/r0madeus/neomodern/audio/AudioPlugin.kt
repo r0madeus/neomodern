@@ -8,12 +8,14 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.result.ActivityResult
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
@@ -31,6 +33,7 @@ import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import com.google.common.util.concurrent.ListenableFuture
@@ -56,6 +59,11 @@ class SaveTextArgs {
 }
 
 @InvokeArg
+class InstallArgs {
+    var path: String? = null
+}
+
+@InvokeArg
 class SeekArgs {
     var seconds: Double = 0.0
 }
@@ -63,6 +71,18 @@ class SeekArgs {
 @InvokeArg
 class VolumeArgs {
     var percent: Double = 100.0
+}
+
+@InvokeArg
+class EqualizerArgs {
+    var enabled: Boolean = false
+    var preampDb: Double = 0.0
+    var gainsDb: DoubleArray = DoubleArray(10)
+}
+
+@InvokeArg
+class CrossfadeArgs {
+    var seconds: Double = 0.0
 }
 
 /**
@@ -98,6 +118,14 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
     /** ReplayGain factor per file path. */
     private val gains = HashMap<String, Float>()
     private var pendingSaveText: String? = null
+
+    /** Equalizer and crossfade tail. */
+    private val fx by lazy { SoundEffects(activity, handler) }
+    /** Crossfade fade-in factor for the main player (1 = full volume). */
+    private var fadeFactor = 1f
+    private var fadeToken = 0
+    /** Fade-in length for the next `loadTrack`, armed by `beginCrossfade`. */
+    private var pendingFadeIn: Double? = null
 
     private val positionTick = object : Runnable {
         override fun run() {
@@ -145,6 +173,10 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             handler.removeCallbacks(positionTick)
             if (isPlaying) handler.post(positionTick) else emitPosition()
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            fx.apply(audioSessionId)
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -223,6 +255,18 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         args.gain?.let { gains[path] = it.toFloat() }
         applyVolume()
         durationSentFor = null
+        fadeToken++
+        val fadeIn = pendingFadeIn
+        pendingFadeIn = null
+        fadeFactor = if (fadeIn != null) 0f else 1f
+        applyVolume()
+        if (fadeIn != null) {
+            val token = fadeToken
+            fx.ramp(fadeIn, { token == fadeToken }, { k ->
+                fadeFactor = k
+                applyVolume()
+            }) {}
+        }
         // `load` keeps a paused engine paused (same as mpv); Rust calls `play`.
         player.setMediaItem(item(path))
         player.prepare()
@@ -250,12 +294,14 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun pause(invoke: Invoke) {
+        fx.stopTail()
         player.pause()
         invoke.resolve()
     }
 
     @Command
     fun stop(invoke: Invoke) {
+        fx.stopTail()
         val was = currentPath
         currentPath = null
         player.stop()
@@ -300,7 +346,32 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun applyVolume() {
         val gain = currentPath?.let { gains[it] } ?: 1f
-        player.volume = (userVolume * gain).coerceIn(0f, 1f)
+        player.volume = (userVolume * gain * fadeFactor).coerceIn(0f, 1f)
+    }
+
+    /** Ten-band equalizer settings from Rust (see SoundEffects). */
+    @Command
+    fun setEqualizer(invoke: Invoke) {
+        val args = invoke.parseArgs(EqualizerArgs::class.java)
+        fx.setEqualizer(player.audioSessionId, args.enabled, args.preampDb, args.gainsDb)
+        invoke.resolve()
+    }
+
+    /**
+     * Crossfade: the rest of the current track keeps playing on its own and
+     * fades out; the next `loadTrack` fades in. Resolves `{ started }`.
+     */
+    @Command
+    fun beginCrossfade(invoke: Invoke) {
+        val seconds = invoke.parseArgs(CrossfadeArgs::class.java).seconds
+        val path = currentPath
+        if (path == null || seconds <= 0.0) {
+            invoke.resolve(JSObject().put("started", false))
+            return
+        }
+        fx.startTail(item(path), player.currentPosition, player.volume, seconds)
+        pendingFadeIn = seconds
+        invoke.resolve(JSObject().put("started", true))
     }
 
     /**
@@ -356,6 +427,65 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         } else {
             invoke.resolve(JSObject().put("path", path))
         }
+    }
+
+    /**
+     * Picks one or more audio files to play. Resolves `{ paths, skipped }`:
+     * file-system paths (ExoPlayer and the library work with paths), and
+     * how many picked files had none (e.g. from a cloud drive).
+     */
+    @Command
+    fun pickAudioFiles(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        startActivityForResult(invoke, intent, "audioFilesPicked")
+    }
+
+    @ActivityCallback
+    fun audioFilesPicked(invoke: Invoke, result: ActivityResult) {
+        val data = result.data
+        val uris = mutableListOf<Uri>()
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            val clip = data.clipData
+            if (clip != null) {
+                for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+            } else {
+                data.data?.let { uris.add(it) }
+            }
+        }
+        val paths = JSArray()
+        var skipped = 0
+        for (uri in uris) {
+            val path = filePath(uri)
+            if (path != null && File(path).isFile) paths.put(path) else skipped++
+        }
+        invoke.resolve(JSObject().put("paths", paths).put("skipped", skipped))
+    }
+
+    /** File-system path of a picked document, from storage or the media store. */
+    private fun filePath(uri: Uri): String? {
+        if (!DocumentsContract.isDocumentUri(activity, uri)) return null
+        val docId = DocumentsContract.getDocumentId(uri)
+        storagePath(uri, docId)?.let { return it }
+        // "Audio" and "Recent" in the picker hand out media ids ("audio:123").
+        if (uri.authority == "com.android.providers.media.documents") {
+            val parts = docId.split(":", limit = 2)
+            if (parts.size == 2 && parts[0] == "audio") {
+                @Suppress("DEPRECATION")
+                val column = MediaStore.Audio.Media.DATA
+                activity.contentResolver.query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(column),
+                    "${MediaStore.Audio.Media._ID} = ?",
+                    arrayOf(parts[1]),
+                    null,
+                )?.use { c -> if (c.moveToFirst()) return c.getString(0) }
+            }
+        }
+        return null
     }
 
     /** Picks a text file (any location) and resolves `{ name, text }` or `{ text: null }`. */
@@ -456,6 +586,70 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }
+
+    private var pendingApk: String? = null
+
+    /**
+     * Opens the system installer for a downloaded update APK (a file in the
+     * app's cache/updates). Asks once for "install unknown apps" first.
+     * Resolves `{ started }`; false when that permission was not given.
+     */
+    @Command
+    fun installApk(invoke: Invoke) {
+        val path = invoke.parseArgs(InstallArgs::class.java).path
+        if (path == null) {
+            invoke.reject("No update file")
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            pendingApk = path
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:" + activity.packageName),
+            )
+            startActivityForResult(invoke, intent, "installPermissionResult")
+            return
+        }
+        launchInstaller(invoke, path)
+    }
+
+    @ActivityCallback
+    fun installPermissionResult(invoke: Invoke, result: ActivityResult) {
+        val path = pendingApk
+        pendingApk = null
+        if (path == null) {
+            invoke.reject("No update file")
+            return
+        }
+        // The settings screen gives no result code; ask the system instead.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            invoke.resolve(JSObject().put("started", false))
+            return
+        }
+        launchInstaller(invoke, path)
+    }
+
+    private fun launchInstaller(invoke: Invoke, path: String) {
+        try {
+            val uri = FileProvider.getUriForFile(
+                activity,
+                activity.packageName + ".neomodern.updates",
+                File(path),
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(intent)
+            invoke.resolve(JSObject().put("started", true))
+        } catch (e: Exception) {
+            invoke.reject("Could not open the installer: ${e.message}")
+        }
+    }
 
     /** Asks for read access to the music library; resolves `{ granted }`. */
     @Command

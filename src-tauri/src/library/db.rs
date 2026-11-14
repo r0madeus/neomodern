@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -260,6 +260,14 @@ pub fn init(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V10)?;
         tx.pragma_update(None, "user_version", 10)?;
+        tx.commit()?;
+    }
+    if version < 11 {
+        // Artist splitting changed ("A, B & C" is three artists unless it is
+        // a known band): split every track's artists again.
+        let tx = conn.unchecked_transaction()?;
+        backfill_track_artists(&tx)?;
+        tx.pragma_update(None, "user_version", 11)?;
         tx.commit()?;
     }
     Ok(())
@@ -968,6 +976,15 @@ pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// (playlist id, cover) for every playlist with an image file as cover.
+pub fn playlist_cover_paths(conn: &Connection) -> Result<Vec<(i64, String)>> {
+    let mut st = conn.prepare(
+        "SELECT id, cover FROM playlists WHERE cover IS NOT NULL AND cover NOT LIKE 'preset:%'",
+    )?;
+    let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
 pub fn set_playlist_cover(
     conn: &Connection,
     id: i64,
@@ -1191,6 +1208,36 @@ pub fn toggle_favorite(conn: &Connection, track_id: i64, now: i64) -> Result<boo
         )));
     }
     Ok(true)
+}
+
+/// Adds (`on`) or removes every track in `track_ids` from the favorites;
+/// returns how many changed. Ids not in the library are ignored.
+pub fn set_favorites(
+    conn: &mut Connection,
+    track_ids: &[i64],
+    on: bool,
+    now: i64,
+) -> Result<usize> {
+    let tx = conn.transaction()?;
+    let mut changed = 0;
+    {
+        let mut add = tx.prepare_cached(
+            "INSERT OR IGNORE INTO favorites(track_id, added_at)
+             SELECT id, ?2 FROM tracks WHERE id = ?1",
+        )?;
+        let mut del = tx.prepare_cached("DELETE FROM favorites WHERE track_id = ?1")?;
+        // Later items get later times, so the list keeps the chosen order
+        // (newest first) like single stars do.
+        for (i, id) in track_ids.iter().enumerate() {
+            changed += if on {
+                add.execute(rusqlite::params![id, now + i as i64])?
+            } else {
+                del.execute([id])?
+            };
+        }
+    }
+    tx.commit()?;
+    Ok(changed)
 }
 
 pub fn favorites_page(conn: &Connection, offset: u64, limit: u64) -> Result<Page<TrackRow>> {
@@ -1776,8 +1823,55 @@ fn starts_with_ignore_ascii_case(s: &str, prefix: &str) -> bool {
         .is_some_and(|b| b.eq_ignore_ascii_case(prefix.as_bytes()))
 }
 
-/// Splits one comma-separated name list, keeping group names whole.
+/// Bands whose name is itself a comma list, compared after
+/// [`normalize_group`]. Any other `"A, B & C"` is three artists.
+const COMMA_GROUPS: &[&str] = &[
+    "earth, wind & fire",
+    "crosby, stills, nash & young",
+    "crosby, stills & nash",
+    "peter, paul & mary",
+    "emerson, lake & palmer",
+    "blood, sweat & tears",
+    "dave dee, dozy, beaky, mick & tich",
+];
+
+/// Words after `&` that make it part of one band name (`"Mumford & Sons"`,
+/// `"Bob Marley & The Wailers"`), not a list.
+const GROUP_TAILS: &[&str] = &[
+    "sons",
+    "daughters",
+    "friends",
+    "co",
+    "co.",
+    "company",
+    "brothers",
+    "sisters",
+];
+const GROUP_TAIL_PREFIXES: &[&str] = &["the ", "his ", "her ", "their "];
+
+/// Lowercase, `and` written as `&`, single spaces.
+fn normalize_group(s: &str) -> String {
+    s.to_lowercase()
+        .split_whitespace()
+        .map(|w| if w == "and" { "&" } else { w })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Whether `"X & tail"` reads as one band (`tail` is the part after `&`).
+fn is_group_tail(tail: &str) -> bool {
+    let t = tail.trim().to_lowercase();
+    GROUP_TAILS.contains(&t.as_str()) || GROUP_TAIL_PREFIXES.iter().any(|p| t.starts_with(p))
+}
+
+/// Splits one comma-separated name list, keeping group names whole. In a
+/// list, the last `&` joins two more names (`"A, B & C"`), unless it is part
+/// of a band name.
 fn split_name_list(list: &str) -> Vec<String> {
+    let whole = strip_unmatched_close(list);
+    if COMMA_GROUPS.contains(&normalize_group(whole).as_str()) {
+        return vec![whole.to_owned()];
+    }
     let mut parts: Vec<String> = Vec::new();
     for part in list
         .split(',')
@@ -1792,28 +1886,18 @@ fn split_name_list(list: &str) -> Vec<String> {
             _ => parts.push(part.to_owned()),
         }
     }
-    if parts.len() > 1 && is_single_word_band(&parts) {
-        return vec![parts.join(", ")];
+    if parts.len() > 1
+        && let Some(last) = parts.pop()
+    {
+        match last.rsplit_once(" & ") {
+            Some((a, b)) if !a.trim().is_empty() && !b.trim().is_empty() && !is_group_tail(b) => {
+                parts.push(a.trim().to_owned());
+                parts.push(b.trim().to_owned());
+            }
+            _ => parts.push(last),
+        }
     }
     parts
-}
-
-/// `"Earth, Wind & Fire"`, `"Crosby, Stills, Nash & Young"`,
-/// `"Peter, Paul and Mary"`: three or more single words, the last two joined
-/// by `&` or `and`.
-fn is_single_word_band(parts: &[String]) -> bool {
-    let Some((last, rest)) = parts.split_last() else {
-        return false;
-    };
-    let lower = last.to_lowercase();
-    let Some((a, b)) = lower
-        .split_once(" & ")
-        .or_else(|| lower.split_once(" and "))
-    else {
-        return false;
-    };
-    let single = |w: &str| !w.trim().is_empty() && !w.trim().contains(char::is_whitespace);
-    rest.len() + 2 >= 3 && rest.iter().all(|w| single(w)) && single(a) && single(b)
 }
 
 pub fn sync_track_artists(conn: &Connection, track_id: i64, raw_artist: &str) -> Result<()> {
@@ -2069,8 +2153,7 @@ pub fn artist_profile(conn: &Connection, name: &str) -> Result<ArtistProfile> {
 }
 
 const GENRE_FILTER: &str = "LOWER(TRIM(COALESCE(t.genre, ''))) = LOWER(TRIM(?1))";
-const GENRE_TRACK_ORDER: &str =
-    "t.artist COLLATE NOCASE, COALESCE(a.title, '') COLLATE NOCASE, t.disc_no, t.track_no, t.title COLLATE NOCASE, t.id";
+const GENRE_TRACK_ORDER: &str = "t.artist COLLATE NOCASE, COALESCE(a.title, '') COLLATE NOCASE, t.disc_no, t.track_no, t.title COLLATE NOCASE, t.id";
 
 pub fn genres(conn: &Connection) -> Result<Vec<GenreRow>> {
     let mut st = conn.prepare(
@@ -2101,12 +2184,13 @@ pub fn genres(conn: &Connection) -> Result<Vec<GenreRow>> {
 }
 
 pub fn genre_detail(conn: &Connection, name: &str) -> Result<GenreDetail> {
-    let mut tr_st = conn.prepare(&format!(
-        "{TRACK_SELECT} WHERE {GENRE_FILTER} ORDER BY {GENRE_TRACK_ORDER}"
-    ))?;
-    let tracks = tr_st
-        .query_map([name], track_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let (track_count, duration_ms): (i64, i64) = conn.query_row(
+        &format!(
+            "SELECT COUNT(*), COALESCE(SUM(t.duration_ms), 0) FROM tracks t WHERE {GENRE_FILTER}"
+        ),
+        [name],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
 
     let mut al_st = conn.prepare(&format!(
         "{ALBUM_SELECT}
@@ -2129,8 +2213,29 @@ pub fn genre_detail(conn: &Connection, name: &str) -> Result<GenreDetail> {
     Ok(GenreDetail {
         name: canonical,
         albums,
-        tracks,
+        track_count: u32::try_from(track_count).unwrap_or(u32::MAX),
+        duration_ms: u64::try_from(duration_ms).unwrap_or(0),
     })
+}
+
+/// One page of a genre's tracks, in queue order (see `genre_queue_tracks`).
+pub fn genre_tracks_page(
+    conn: &Connection,
+    name: &str,
+    offset: u64,
+    limit: u64,
+) -> Result<Page<TrackRow>> {
+    query_page(
+        conn,
+        &format!("SELECT COUNT(*) FROM tracks t WHERE {GENRE_FILTER}"),
+        &format!(
+            "{TRACK_SELECT} WHERE {GENRE_FILTER} ORDER BY {GENRE_TRACK_ORDER} LIMIT ?2 OFFSET ?3"
+        ),
+        vec![name.to_owned()],
+        offset,
+        limit,
+        track_row,
+    )
 }
 
 pub fn genre_queue_tracks(conn: &Connection, name: &str) -> Result<Vec<Track>> {

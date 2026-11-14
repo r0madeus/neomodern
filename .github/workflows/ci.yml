@@ -68,7 +68,10 @@ jobs:
       # not committed yet); the audio plugin's Kotlin code is wired in by
       # tauri-build.
       - name: Generate Android project
-        run: npm run tauri -- android init --ci
+        run: |
+          npm run tauri -- android init --ci
+          # The generated project has Tauri's default launcher icon.
+          cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
       - name: Build APK
         run: npm run tauri -- android build --apk --target aarch64 --debug --ci
       - uses: actions/upload-artifact@v7
@@ -101,7 +104,10 @@ jobs:
         run: echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
       - run: npm ci
       - name: Generate Android project
-        run: npm run tauri -- android init --ci
+        run: |
+          npm run tauri -- android init --ci
+          # The generated project has Tauri's default launcher icon.
+          cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
       - name: Build x86_64 APK
         run: |
           npm run tauri -- android build --apk --target x86_64 --debug --ci

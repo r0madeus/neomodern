@@ -1,5 +1,6 @@
 pub mod audio;
 mod commands;
+mod diagnostics;
 pub mod library;
 pub mod lyrics;
 #[cfg(not(target_os = "android"))]
@@ -311,6 +312,10 @@ pub fn run() {
             commands::app_settings,
             commands::app_window_insets,
             commands::app_log_dir,
+            commands::app_diagnostics,
+            commands::app_save_diagnostics,
+            commands::app_open_log_dir,
+            commands::app_report_issue,
             commands::app_reveal_file,
             commands::app_check_update,
             commands::app_open_release,

@@ -352,8 +352,6 @@ const TR: Record<string, string> = {
   'You have the latest version.': 'En son sürümü kullanıyorsun.',
   'Could not reach GitHub.': 'GitHub’a ulaşılamadı.',
   'Version {v} is available.': '{v} sürümü çıktı.',
-  'Log files': 'Log dosyaları',
-  'Attach these when reporting a problem.': 'Bir sorun bildirirken bunları ekle.',
   Copy: 'Kopyala',
   Copied: 'Kopyalandı',
 
@@ -636,4 +634,19 @@ const TR: Record<string, string> = {
   'Checking {name}…': '{name} doğrulanıyor…',
   'Unpacking {name}…': '{name} açılıyor…',
   '{name} is ready': '{name} hazır',
+
+  // Problem report
+  'Report a problem': 'Sorun bildir',
+  'The report has the app version, your system, your settings and the latest log lines. Your home folder is hidden.':
+    'Rapor uygulama sürümünü, sistemini, ayarlarını ve son günlük satırlarını içerir. Kullanıcı klasörünün yolu gizlenir.',
+  'Copy report': 'Raporu kopyala',
+  'Report on GitHub': 'GitHub’da bildir',
+  'Save report…': 'Raporu kaydet…',
+  'Open log folder': 'Günlük klasörünü aç',
+  'Save problem report': 'Sorun raporunu kaydet',
+  'Text file': 'Metin dosyası',
+  'Report saved.': 'Rapor kaydedildi.',
+  'Report copied. Paste it wherever you ask for help.': 'Rapor kopyalandı. Yardım istediğin yere yapıştırabilirsin.',
+  'Report copied. Paste it into the issue that just opened in your browser.':
+    'Rapor kopyalandı. Tarayıcıda açılan sayfaya yapıştır.',
 }

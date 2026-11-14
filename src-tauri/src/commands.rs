@@ -217,6 +217,83 @@ pub fn app_log_dir(app: tauri::AppHandle) -> Res<String> {
         .map_err(|e| e.to_string())
 }
 
+fn diagnostics_text(app: &tauri::AppHandle) -> String {
+    use tauri::Manager;
+    let version = app.package_info().version.to_string();
+    let stats = app
+        .try_state::<Arc<Library>>()
+        .and_then(|lib| lib.stats().ok());
+    let settings = match (
+        app.try_state::<Arc<SessionStore>>(),
+        app.try_state::<TrayStatus>(),
+    ) {
+        (Some(store), Some(tray)) => {
+            serde_json::to_string_pretty(&app_settings_now(&store, &tray)).ok()
+        }
+        _ => None,
+    };
+    let info = crate::diagnostics::ReportInfo {
+        version: &version,
+        webview: tauri::webview_version().ok(),
+        tracks: stats.as_ref().map(|s| s.tracks),
+        albums: stats.as_ref().map(|s| s.albums),
+        settings_json: settings,
+    };
+    let log_dir = app.path().app_log_dir().ok();
+    let home = app.path().home_dir().ok();
+    crate::diagnostics::build_report(&info, log_dir.as_deref(), home.as_deref())
+}
+
+/// A problem report (version, system, settings, end of the log) with the
+/// home folder hidden, for copying into a bug report.
+#[tauri::command]
+pub async fn app_diagnostics(app: tauri::AppHandle) -> Res<String> {
+    tokio::task::spawn_blocking(move || diagnostics_text(&app))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Writes the problem report to `path` (chosen in a save dialog).
+#[tauri::command]
+pub async fn app_save_diagnostics(app: tauri::AppHandle, path: String) -> Res<()> {
+    tokio::task::spawn_blocking(move || {
+        std::fs::write(&path, diagnostics_text(&app)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Shows the newest log file in the OS file manager (desktop only).
+#[tauri::command]
+pub fn app_open_log_dir(app: tauri::AppHandle) -> Res<()> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = app;
+        Err("not supported on Android".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use tauri::Manager;
+        use tauri_plugin_opener::OpenerExt;
+        let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+        let opener = app.opener();
+        match crate::diagnostics::log_files(&dir).pop() {
+            Some(file) => opener.reveal_item_in_dir(file),
+            None => opener.open_path(dir.display().to_string(), None::<&str>),
+        }
+        .map_err(|e| e.to_string())
+    }
+}
+
+/// Opens the "new issue" page of the project; the user pastes the report.
+#[tauri::command]
+pub fn app_report_issue(app: tauri::AppHandle) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(crate::diagnostics::ISSUE_URL, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 /// Highlights `path` in the OS file manager (desktop only).
 #[tauri::command]
 pub fn app_reveal_file(app: tauri::AppHandle, path: String) -> Res<()> {

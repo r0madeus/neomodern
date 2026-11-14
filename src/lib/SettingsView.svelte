@@ -3,7 +3,7 @@
   import { i18n, t, type LangChoice } from './i18n.svelte'
   import { onMount } from 'svelte'
   import { getVersion } from '@tauri-apps/api/app'
-  import { open } from '@tauri-apps/plugin-dialog'
+  import { open, save } from '@tauri-apps/plugin-dialog'
   import { invoke } from '@tauri-apps/api/core'
   import Icon, { type Name as IconName } from './Icon.svelte'
   import ToggleSwitch from './ToggleSwitch.svelte'
@@ -137,6 +137,57 @@
       setTimeout(() => (copied = false), 1500)
     } catch {
       // clipboard unavailable: the path is still selectable
+    }
+  }
+
+  // Problem report: version, system, settings and the end of the log,
+  // with the home folder hidden (built in Rust, see diagnostics.rs).
+  let reportNote = $state<string | null>(null)
+  let reportBusy = $state(false)
+
+  async function withReport(action: (text: string) => Promise<string | null>) {
+    if (reportBusy) return
+    reportBusy = true
+    reportNote = null
+    try {
+      reportNote = await action(await invoke<string>('app_diagnostics'))
+    } catch (e) {
+      reportNote = String(e)
+    } finally {
+      reportBusy = false
+    }
+  }
+
+  const copyReport = () =>
+    withReport(async (text) => {
+      await navigator.clipboard.writeText(text)
+      return t('Report copied. Paste it wherever you ask for help.')
+    })
+
+  const reportOnGitHub = () =>
+    withReport(async (text) => {
+      await navigator.clipboard.writeText(text)
+      await invoke('app_report_issue')
+      return t('Report copied. Paste it into the issue that just opened in your browser.')
+    })
+
+  async function saveReport() {
+    const day = new Date().toISOString().slice(0, 10)
+    const path = await save({
+      title: t('Save problem report'),
+      defaultPath: `NeoModern-report-${day}.txt`,
+      filters: [{ name: t('Text file'), extensions: ['txt'] }],
+    })
+    if (!path) return
+    reportBusy = true
+    reportNote = null
+    try {
+      await invoke('app_save_diagnostics', { path })
+      reportNote = t('Report saved.')
+    } catch (e) {
+      reportNote = String(e)
+    } finally {
+      reportBusy = false
     }
   }
 
@@ -840,13 +891,41 @@
             </button>
           </div>
 
-          {#if logDir}
-            <div class="p-4 text-sm">
-              <p class="font-medium">{t('Log files')}</p>
-              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                {t('Attach these when reporting a problem.')}
-              </p>
-              <div class="mt-2 flex items-center gap-2">
+          <div class="p-4 text-sm">
+            <p class="font-medium">{t('Report a problem')}</p>
+            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              {t('The report has the app version, your system, your settings and the latest log lines. Your home folder is hidden.')}
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="rounded-full bg-accent-500 px-3.5 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-accent-400 disabled:opacity-50"
+                disabled={reportBusy}
+                onclick={() => void copyReport()}
+              >
+                {t('Copy report')}
+              </button>
+              <button type="button" class={actionBtn} disabled={reportBusy} onclick={() => void reportOnGitHub()}>
+                {t('Report on GitHub')}
+              </button>
+              {#if appSettings.platform !== 'android'}
+                <button type="button" class={actionBtn} disabled={reportBusy} onclick={() => void saveReport()}>
+                  {t('Save report…')}
+                </button>
+                <button
+                  type="button"
+                  class={actionBtn}
+                  onclick={() => invoke('app_open_log_dir').catch((e) => (reportNote = String(e)))}
+                >
+                  {t('Open log folder')}
+                </button>
+              {/if}
+            </div>
+            {#if reportNote}
+              <p class="mt-2 text-xs text-zinc-600 dark:text-zinc-300" role="status">{reportNote}</p>
+            {/if}
+            {#if logDir}
+              <div class="mt-3 flex items-center gap-2">
                 <code
                   class="min-w-0 flex-1 truncate rounded-xl bg-zinc-100 px-3 py-2 text-xs select-all dark:bg-zinc-950/70"
                   title={logDir}
@@ -857,8 +936,8 @@
                   {copied ? t('Copied') : t('Copy')}
                 </button>
               </div>
-            </div>
-          {/if}
+            {/if}
+          </div>
         </div>
       </section>
     {/if}

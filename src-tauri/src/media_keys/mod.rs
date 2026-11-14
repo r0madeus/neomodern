@@ -255,7 +255,9 @@ fn session_bus_available() -> bool {
         Ok(addr) if !addr.is_empty() => unix_path(&addr).is_none_or(|p| p.exists()),
         _ => {
             use std::os::unix::fs::MetadataExt;
-            let uid = std::fs::metadata("/proc/self").map(|m| m.uid()).unwrap_or(0);
+            let uid = std::fs::metadata("/proc/self")
+                .map(|m| m.uid())
+                .unwrap_or(0);
             std::path::Path::new(&format!("/run/user/{uid}/bus")).exists()
         }
     }

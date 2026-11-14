@@ -7,11 +7,12 @@
   import ArtistLinks from './ArtistLinks.svelte'
   import FavoriteButton from './FavoriteButton.svelte'
   import Icon from './Icon.svelte'
+  import ShuffleButton from './ShuffleButton.svelte'
   import VirtualList from './VirtualList.svelte'
   import { favorites } from './favorites.svelte'
   import { count, t } from './i18n.svelte'
   import { PagedRows } from './library.svelte'
-  import { formatTime, player } from './player.svelte'
+  import { formatTime, player, randomTrackIndex } from './player.svelte'
   import { trackMenu } from './contextMenu.svelte'
 
   const ROW = 48
@@ -39,19 +40,23 @@
     </div>
     <div class="min-w-0">
       <p class="text-xs font-semibold tracking-widest text-white/70 uppercase">{t('Playlist')}</p>
-      <h2 class="mt-1 truncate text-4xl font-bold tracking-tight">{t('Favorites')}</h2>
+      <h2 class="mt-1 truncate pb-1 text-4xl leading-tight font-bold tracking-tight">{t('Favorites')}</h2>
       <p class="mt-2 text-sm text-white/70">
         {count(totalCount, '{n} track', '{n} tracks')}
       </p>
-      <div class="mt-4">
+      <div class="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={totalCount === 0}
           class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-          onclick={() => void favorites.play(0)}
+          onclick={() => void favorites.play(0, false)}
         >
           <Icon name="play" class="size-5" /> {t('Play')}
         </button>
+        <ShuffleButton
+          disabled={totalCount === 0}
+          onClick={() => void favorites.play(randomTrackIndex(totalCount), true)}
+        />
       </div>
     </div>
   </div>

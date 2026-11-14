@@ -126,10 +126,7 @@ class ArtistStore {
   async play(name: string, startIndex = 0, shuffle?: boolean): Promise<void> {
     try {
       const snap = await invoke<PlayerSnapshot>('library_play_artist', { name, startIndex })
-      player.applySnapshot(snap)
-      if (shuffle !== undefined && snap.shuffle !== shuffle) {
-        await player.setShuffle(shuffle)
-      }
+      await player.playWithShuffle(snap, shuffle)
     } catch (e) {
       player.error = String(e)
     }

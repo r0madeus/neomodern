@@ -1,16 +1,70 @@
 <script lang="ts">
   import ArtistLinks from './ArtistLinks.svelte'
-  import Equalizer from './Equalizer.svelte'
+  import Cover from './Cover.svelte'
+  import { createDragReorder } from './dragReorder.svelte'
+  import DragPill from './DragPill.svelte'
+  import DropIndicator from './DropIndicator.svelte'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
   import { library, type TrackRow } from './library.svelte'
+  import { nowCover } from './nowCover.svelte'
   import { player, type TrackInfo } from './player.svelte'
   import { trackMenu } from './contextMenu.svelte'
 
-  // Plain list for now; the virtualised list arrives with the library view
-  // (roadmap step 4).
+  const ROW = 56
+  const COVER_PREFETCH_LIMIT = 40
+
   const current = $derived(player.snapshot.currentIndex)
-  const status = $derived(player.snapshot.status)
+  const nowTrack = $derived(current !== null ? player.queue[current] ?? null : null)
+  const startOffset = $derived(current === null ? 0 : current + 1)
+  const upNext = $derived(player.queue.slice(startOffset))
+
+  let covers = $state<Record<string, string | null>>({})
+  const pendingPaths = new Set<string>()
+  let lastLibVersion = -1
+
+  $effect(() => {
+    const libVer = library.stats.version
+    if (libVer !== lastLibVersion) {
+      lastLibVersion = libVer
+      covers = {}
+      pendingPaths.clear()
+    }
+    const paths = upNext
+      .slice(0, COVER_PREFETCH_LIMIT)
+      .map((item) => item.path)
+      .filter((p) => !(p in covers) && !pendingPaths.has(p))
+    if (paths.length === 0) return
+
+    let stale = false
+    for (const p of paths) pendingPaths.add(p)
+    void Promise.all(
+      paths.map(async (path) => {
+        const row = await library.trackByPath(path)
+        return [path, row?.cover ?? null] as const
+      }),
+    ).then((entries) => {
+      for (const p of paths) pendingPaths.delete(p)
+      if (stale) return
+      const next = { ...covers }
+      for (const [path, cover] of entries) next[path] = cover
+      covers = next
+    })
+    return () => {
+      stale = true
+    }
+  })
+
+  let listEl = $state<HTMLOListElement | null>(null)
+  const drag = createDragReorder({
+    rowHeight: ROW,
+    getCount: () => upNext.length,
+    getListEl: () => listEl,
+    getScrollEl: () => listEl?.closest<HTMLElement>('.overflow-y-auto') ?? listEl?.parentElement ?? null,
+    onMove: (from, to) => player.moveIndex(startOffset + from, startOffset + to),
+  })
+
+  $effect(() => () => drag.destroy())
 
   function fallbackRow(track: TrackInfo): TrackRow {
     return {
@@ -44,42 +98,93 @@
   }
 </script>
 
-<ol class="divide-y divide-zinc-100 dark:divide-zinc-800/70">
-  {#each player.queue as track, i (track.id)}
-    <li
-      class={[
-        'group flex h-11 items-center gap-3 px-5 text-sm',
-        i === current
-          ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-          : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
-      ]}
-      ondblclick={() => player.playIndex(i)}
-      oncontextmenu={(e) => void openMenu(e, track, i)}
+<div class="space-y-2 px-2 pb-4">
+  {#if nowTrack && current !== null}
+    <h3 class="px-2 pt-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+      {t('Now playing')}
+    </h3>
+    <div
+      class="flex h-14 items-center gap-3 rounded-lg bg-accent-50/70 px-2 dark:bg-accent-950/35"
+      ondblclick={() => player.playIndex(current)}
+      oncontextmenu={(e) => void openMenu(e, nowTrack, current)}
+      role="group"
     >
-      <span class="w-8 shrink-0 text-right text-xs tabular-nums text-zinc-400">
-        {#if i === current && status === 'playing'}
-          <Equalizer class="text-accent-600 dark:text-accent-400" />
-        {:else}
-          {i + 1}
-        {/if}
-      </span>
-      <div class="flex min-w-0 flex-1 items-baseline gap-2 truncate">
-        <button class="truncate text-left font-medium hover:underline" onclick={() => player.playIndex(i)} title={track.path}>
-          {track.title}
-        </button>
-        {#if track.artist}
-          <span class="truncate text-xs text-zinc-400"><ArtistLinks artist={track.artist} /></span>
-        {:else}
-          <span class="truncate text-xs text-zinc-400">{track.path}</span>
-        {/if}
+      <Cover
+        cover={nowCover.cover ?? covers[nowTrack.path] ?? null}
+        title={nowTrack.title}
+        class="size-10 shrink-0 rounded text-xs"
+      />
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-medium text-accent-600 dark:text-accent-400" title={nowTrack.path}>
+          {nowTrack.title}
+        </p>
+        <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+          {#if nowTrack.artist}
+            <ArtistLinks artist={nowTrack.artist} />
+          {:else}
+            {nowTrack.path}
+          {/if}
+        </p>
       </div>
-      <button
-        class="invisible rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 group-hover:visible dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
-        onclick={() => player.removeIndex(i)}
-        aria-label={t("Remove from queue")}
-      >
-        <Icon name="close" class="size-4" />
-      </button>
-    </li>
-  {/each}
-</ol>
+    </div>
+  {/if}
+
+  {#if upNext.length > 0}
+    <h3 class="px-2 pt-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+      {t('Next up')}
+    </h3>
+    <ol bind:this={listEl} class="relative">
+      {#each upNext as track, i (track.id)}
+        {@const origIndex = startOffset + i}
+        <li
+          class={[
+            'group flex h-14 cursor-default items-center gap-3 rounded-lg px-2 text-sm transition-opacity',
+            drag.from === i && 'opacity-40',
+            'text-zinc-800 hover:bg-zinc-200/60 dark:text-zinc-200 dark:hover:bg-zinc-800/60',
+          ]}
+          onpointerdown={(e) => drag.onPointerDown(e, i, track.title)}
+          ondblclick={() => player.playIndex(origIndex)}
+          oncontextmenu={(e) => void openMenu(e, track, origIndex)}
+        >
+          <Cover
+            cover={covers[track.path] ?? null}
+            title={track.title}
+            class="size-10 shrink-0 rounded text-xs"
+          />
+          <div class="min-w-0 flex-1">
+            <button
+              data-drag-allow
+              class="block w-full truncate text-left text-sm font-medium hover:underline"
+              onclick={() => player.playIndex(origIndex)}
+              title={track.path}
+            >
+              {track.title}
+            </button>
+            <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+              {#if track.artist}
+                <ArtistLinks artist={track.artist} />
+              {:else}
+                {track.path}
+              {/if}
+            </p>
+          </div>
+          <button
+            data-no-drag
+            class="invisible rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 group-hover:visible dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+            onclick={() => player.removeIndex(origIndex)}
+            aria-label={t('Remove from queue')}
+          >
+            <Icon name="close" class="size-4" />
+          </button>
+        </li>
+      {/each}
+      <DropIndicator count={upNext.length} rowHeight={ROW} gap={drag.gap} from={drag.from} to={drag.to} />
+    </ol>
+  {:else if nowTrack}
+    <p class="px-2 pt-3 text-xs text-zinc-500 dark:text-zinc-400">
+      {t('Nothing after this song.')}
+    </p>
+  {/if}
+</div>
+
+<DragPill active={drag.active} x={drag.pointer.x} y={drag.pointer.y} label={drag.label} />

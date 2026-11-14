@@ -8,6 +8,7 @@
   import FavoriteButton from './FavoriteButton.svelte'
   import Icon from './Icon.svelte'
   import OnlineAlbumDetail from './OnlineAlbumDetail.svelte'
+  import ShuffleButton from './ShuffleButton.svelte'
   import TintedBackdrop from './TintedBackdrop.svelte'
   import { artists, type ArtistOnlineInfo, type ArtistProfile } from './artists.svelte'
   import { history } from './history.svelte'
@@ -15,7 +16,7 @@
   import { library } from './library.svelte'
   import type { Rgb } from './nowCover.svelte'
   import { online, type OnlineAlbum } from './online.svelte'
-  import { formatTime, player } from './player.svelte'
+  import { formatTime, player, randomTrackIndex } from './player.svelte'
   import { tintFrom } from './tint'
   import { trackMenu } from './contextMenu.svelte'
 
@@ -33,11 +34,13 @@
   let onlineInfo = $state<ArtistOnlineInfo | null>(null)
   let selectedOnlineAlbum = $state<OnlineAlbum | null>(null)
   let color = $state<Rgb | null>(null)
+  let showAllTracks = $state(false)
 
   $effect(() => {
     void name
     selectedOnlineAlbum = null
     onlineInfo = null
+    showAllTracks = false
   })
 
   $effect(() => {
@@ -93,6 +96,19 @@
 
   const tint = $derived(tintFrom(color))
   const currentPath = $derived(player.snapshot.current?.path ?? null)
+
+  const POPULAR_COLLAPSED = 5
+  const allPopularRows = $derived.by(() => {
+    if (!profile) return []
+    const seen = new Set(profile.popularTracks.map((e) => e.track.id))
+    const rest = profile.tracks
+      .filter((tr) => !seen.has(tr.id))
+      .map((track) => ({ track, playCount: 0, listenedMs: 0 }))
+    return [...profile.popularTracks, ...rest]
+  })
+  const visiblePopular = $derived(
+    showAllTracks ? allPopularRows : allPopularRows.slice(0, POPULAR_COLLAPSED),
+  )
 
   const trackIndexById = $derived.by(() => {
     const map = new Map<number, number>()
@@ -155,7 +171,7 @@
         />
         <div class="min-w-0 flex-1">
           <p class="text-xs font-semibold tracking-widest text-white/70 uppercase">{t('Artist')}</p>
-          <h2 class="mt-1 truncate text-4xl font-bold tracking-tight sm:text-5xl">{profile.name}</h2>
+          <h2 class="mt-1 truncate pb-1 text-4xl leading-tight font-bold tracking-tight sm:text-5xl">{profile.name}</h2>
           <p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white/75">
             <span>{count(profile.albumCount, '{n} album', '{n} albums')}</span>
             <span>·</span>
@@ -189,28 +205,23 @@
               <Icon name="play" class="size-5" />
               {t('Play')}
             </button>
-            <button
-              type="button"
+            <ShuffleButton
               disabled={profile.trackCount === 0}
-              class="flex items-center gap-1.5 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
-              onclick={() => void artists.play(profile!.name, 0, true)}
-            >
-              <Icon name="shuffle" class="size-4" />
-              {t('Shuffle')}
-            </button>
+              onClick={() => void artists.play(profile!.name, randomTrackIndex(profile!.trackCount), true)}
+            />
           </div>
         </div>
       </div>
 
       <div class="flex flex-col gap-8">
         <!-- Popular tracks & About -->
-        {#if profile.popularTracks.length > 0 || bio}
+        {#if allPopularRows.length > 0 || bio}
           <div class="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            {#if profile.popularTracks.length > 0}
+            {#if allPopularRows.length > 0}
               <section>
                 <h3 class="mb-3 text-base font-semibold">{t('Popular')}</h3>
                 <div class="flex flex-col gap-0.5">
-                  {#each profile.popularTracks as entry, i (entry.track.id)}
+                  {#each visiblePopular as entry, i (entry.track.id)}
                     {@const tr = entry.track}
                     {@const active = tr.path === currentPath}
                     {@const idx = trackIndexById.get(tr.id) ?? 0}
@@ -273,6 +284,16 @@
                     </div>
                   {/each}
                 </div>
+                {#if allPopularRows.length > POPULAR_COLLAPSED}
+                  <button
+                    type="button"
+                    aria-expanded={showAllTracks}
+                    class="mt-2 rounded-md px-2 py-1 text-xs font-semibold text-zinc-500 transition hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none dark:text-zinc-400 dark:hover:text-zinc-100"
+                    onclick={() => (showAllTracks = !showAllTracks)}
+                  >
+                    {showAllTracks ? t('Show less') : t('All tracks')}
+                  </button>
+                {/if}
               </section>
             {/if}
 
@@ -338,65 +359,6 @@
                     </p>
                   </div>
                 </button>
-              {/each}
-            </div>
-          </section>
-        {/if}
-
-        <!-- All local tracks -->
-        {#if profile.tracks.length > 0}
-          <section>
-            <h3 class="mb-3 text-base font-semibold">{t('All tracks')}</h3>
-            <div class="flex flex-col gap-0.5">
-              {#each profile.tracks as tr, i (tr.id)}
-                {@const active = tr.path === currentPath}
-                <div
-                  role="button"
-                  tabindex="0"
-                  title={tr.path}
-                  class={[
-                    'group grid grid-cols-[2rem_minmax(0,2fr)_minmax(0,1.5fr)_4.25rem_3.5rem] items-center gap-3 rounded-lg px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
-                    active
-                      ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                      : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
-                  ]}
-                  ondblclick={() => void artists.play(profile!.name, i)}
-                  oncontextmenu={(e) =>
-                    trackMenu.fromEvent(e, tr, {
-                      onPlay: () => void artists.play(profile!.name, i),
-                    })}
-                  onkeydown={(e) => e.target === e.currentTarget && e.key === 'Enter' && void artists.play(profile!.name, i)}
-                >
-                  <span class="text-right text-xs tabular-nums text-zinc-400">
-                    {#if active && player.snapshot.status === 'playing'}
-                      <Equalizer class="text-accent-600 dark:text-accent-400" />
-                    {:else}
-                      {i + 1}
-                    {/if}
-                  </span>
-                  <span class="flex min-w-0 items-center truncate font-medium">
-                    <span class="truncate">{tr.title}</span>
-                    <ExtBadge path={tr.path} />
-                  </span>
-                  <span class="truncate text-xs text-zinc-500">
-                    <AlbumLink album={tr.album} albumId={tr.albumId} />
-                  </span>
-                  <span class="flex items-center justify-end gap-0.5">
-                    <FavoriteButton trackId={tr.id} title={tr.title} revealOnHover />
-                    <span class="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-                      <AddToPlaylist
-                        trackIds={[tr.id]}
-                        track={tr}
-                        editTags
-                        onPlay={() => void artists.play(profile!.name, i)}
-                        label={t('More actions for “{title}”', { title: tr.title })}
-                      />
-                    </span>
-                  </span>
-                  <span class="text-right text-xs tabular-nums text-zinc-500">
-                    {formatTime(tr.durationMs === null ? null : tr.durationMs / 1000)}
-                  </span>
-                </div>
               {/each}
             </div>
           </section>

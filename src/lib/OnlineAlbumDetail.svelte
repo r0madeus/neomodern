@@ -4,6 +4,7 @@
   import Cover from './Cover.svelte'
   import Icon from './Icon.svelte'
   import TintedBackdrop from './TintedBackdrop.svelte'
+  import TrackDownloadButton from './TrackDownloadButton.svelte'
   import { count, t } from './i18n.svelte'
   import { library, type AlbumRow, type TrackRow } from './library.svelte'
   import type { Rgb } from './nowCover.svelte'
@@ -78,6 +79,18 @@
   function isAlbumBusy(): boolean {
     return albumJob?.state === 'queued' || albumJob?.state === 'downloading'
   }
+
+  const albumDownloadLabel = $derived.by(() => {
+    if (albumJob?.state === 'done') return t('Downloaded')
+    if (albumJob?.state === 'downloading') {
+      return t('Downloading {done}/{total}', {
+        done: albumJob.doneTracks,
+        total: albumJob.totalTracks,
+      })
+    }
+    if (albumJob?.state === 'queued') return t('Queued')
+    return t('Download album')
+  })
 </script>
 
 <div class="h-full overflow-y-auto px-5 pb-6">
@@ -100,7 +113,7 @@
     />
     <div class="min-w-0">
       <p class="text-xs font-semibold tracking-widest text-white/70 uppercase">{t('Album')}</p>
-      <h2 class="mt-1 truncate text-2xl font-bold tracking-tight sm:text-4xl">{activeAlbum.title}</h2>
+      <h2 class="mt-1 truncate pb-1 text-2xl leading-tight font-bold tracking-tight sm:text-4xl">{activeAlbum.title}</h2>
       <p class="mt-2 truncate font-medium text-white/90">{activeAlbum.artist}</p>
       <p class="mt-1 text-sm text-white/60">
         {activeAlbum.year ? `${activeAlbum.year} · ` : ''}{count(
@@ -128,24 +141,22 @@
           <button
             type="button"
             disabled={!ytdlpAvailable || tracks.length === 0 || isAlbumBusy()}
-            class="flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-medium whitespace-nowrap text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+            title={albumDownloadLabel}
+            aria-label={albumDownloadLabel}
+            class={[
+              'flex size-10 shrink-0 items-center justify-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50',
+              albumJob?.state === 'done'
+                ? 'border-accent-400/50 bg-accent-500/20 text-accent-300'
+                : 'border-white/25 bg-white/10 text-white hover:bg-white/20',
+            ]}
             onclick={() => void online.downloadAlbum(activeAlbum, tracks)}
           >
             {#if albumJob?.state === 'done'}
-              <Icon name="check" class="size-4 text-accent-300" />
-              {t('Downloaded')}
+              <Icon name="check" class="size-5" />
             {:else if albumJob?.state === 'downloading'}
-              <Icon name="download" class="size-4 animate-pulse" />
-              {t('Downloading {done}/{total}', {
-                done: albumJob.doneTracks,
-                total: albumJob.totalTracks,
-              })}
-            {:else if albumJob?.state === 'queued'}
-              <Icon name="download" class="size-4" />
-              {t('Queued')}
+              <Icon name="download" class="size-5 animate-pulse" />
             {:else}
-              <Icon name="download" class="size-4" />
-              {t('Download album')}
+              <Icon name="download" class="size-5" />
             {/if}
           </button>
         {/if}
@@ -183,7 +194,6 @@
           online.playingId === track.id ||
           (player.snapshot.current?.title === track.title &&
             player.snapshot.current?.path.startsWith('http'))}
-        {@const busy = job?.state === 'queued' || job?.state === 'downloading'}
         <li class="group flex items-center gap-2">
           <button
             type="button"
@@ -218,38 +228,7 @@
           </button>
 
           {#if isDesktop}
-            <button
-              type="button"
-              disabled={!ytdlpAvailable || busy}
-              title={job?.state === 'failed' && job.error ? job.error : t('Download track')}
-              aria-label={t('Download “{title}”', { title: track.title })}
-              class={[
-                'flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50',
-                job?.state === 'done'
-                  ? 'bg-accent-500/15 text-accent-700 dark:text-accent-300'
-                  : job?.state === 'failed'
-                    ? 'bg-red-500/15 text-red-600 hover:bg-red-500/25 dark:text-red-400'
-                    : 'text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
-              ]}
-              onclick={() => void online.downloadTrack(track)}
-            >
-              {#if job?.state === 'done'}
-                <Icon name="check" class="size-4" />
-                <span>{t('Downloaded')}</span>
-              {:else if job?.state === 'downloading'}
-                <Icon name="download" class="size-4 animate-pulse" />
-                <span>{t('Downloading…')}</span>
-              {:else if job?.state === 'queued'}
-                <Icon name="download" class="size-4" />
-                <span>{t('Queued')}</span>
-              {:else if job?.state === 'failed'}
-                <Icon name="download" class="size-4" />
-                <span>{t('Retry')}</span>
-              {:else}
-                <Icon name="download" class="size-4" />
-                <span class="hidden sm:inline">{t('Download')}</span>
-              {/if}
-            </button>
+            <TrackDownloadButton {track} {job} disabled={!ytdlpAvailable} />
           {/if}
         </li>
       {/each}

@@ -64,9 +64,10 @@ class FavoritesStore {
   page = (offset: number, limit: number): Promise<Page<TrackRow>> =>
     invoke<Page<TrackRow>>('favorites_tracks_page', { offset, limit })
 
-  async play(startIndex: number): Promise<void> {
+  async play(startIndex: number, shuffle?: boolean): Promise<void> {
     try {
-      player.applySnapshot(await invoke<PlayerSnapshot>('favorites_play', { startIndex }))
+      const snap = await invoke<PlayerSnapshot>('favorites_play', { startIndex })
+      await player.playWithShuffle(snap, shuffle)
     } catch (e) {
       player.error = String(e)
     }

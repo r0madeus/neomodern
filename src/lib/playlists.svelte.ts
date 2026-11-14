@@ -121,9 +121,9 @@ class PlaylistStore {
     return (await this.#try(() => invoke('playlist_move', { id, from, to }))) !== null
   }
 
-  async play(id: number, startIndex: number): Promise<void> {
+  async play(id: number, startIndex: number, shuffle?: boolean): Promise<void> {
     const res = await this.#try(() => invoke<PlayerSnapshot>('playlist_play', { id, startIndex }))
-    if (res) player.applySnapshot(res.value)
+    if (res) await player.playWithShuffle(res.value, shuffle)
   }
 
   async saveQueue(name: string): Promise<PlaylistInfo | null> {

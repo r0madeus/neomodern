@@ -5,6 +5,7 @@
   import Cover from './Cover.svelte'
   import Equalizer from './Equalizer.svelte'
   import Icon from './Icon.svelte'
+  import ShuffleButton from './ShuffleButton.svelte'
   import TintedBackdrop from './TintedBackdrop.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
@@ -14,7 +15,7 @@
   import { tagEditor } from './tags.svelte'
   import { library, type AlbumRow, type TrackRow } from './library.svelte'
   import { pinned } from './pinned.svelte'
-  import { player, formatTime } from './player.svelte'
+  import { player, formatTime, randomTrackIndex } from './player.svelte'
   import { tintFrom } from './tint'
   import { trackMenu } from './contextMenu.svelte'
   import type { Rgb } from './nowCover.svelte'
@@ -65,7 +66,7 @@
       <Cover cover={data.album.cover} title={data.album.title} class="size-48 shrink-0 rounded-lg text-6xl shadow-2xl shadow-black/40" />
       <div class="min-w-0">
         <p class="text-xs font-semibold tracking-widest text-white/70 uppercase">{t("Album")}</p>
-        <h2 class="mt-1 truncate text-4xl font-bold tracking-tight">{data.album.title}</h2>
+        <h2 class="mt-1 truncate pb-1 text-4xl leading-tight font-bold tracking-tight">{data.album.title}</h2>
         <p class="mt-2 truncate font-medium text-white/90">
           <ArtistLinks artist={data.album.albumArtist} onNavigate={onBack} />
         </p>
@@ -75,10 +76,14 @@
         <div class="mt-4 flex flex-wrap items-center gap-2">
           <button
             class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 hover:scale-[1.03] hover:bg-accent-400"
-            onclick={() => library.playAlbum(albumId, 0)}
+            onclick={() => void library.playAlbum(albumId, 0, false)}
           >
             <Icon name="play" class="size-5" /> {t("Play")}
           </button>
+          <ShuffleButton
+            disabled={data.tracks.length === 0}
+            onClick={() => void library.playAlbum(albumId, randomTrackIndex(data!.tracks.length), true)}
+          />
           <button
             type="button"
             aria-pressed={pinned.isPinned('album', albumId)}

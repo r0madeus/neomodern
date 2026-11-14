@@ -3,6 +3,9 @@
   import { count, t } from './i18n.svelte'
   import { tick } from 'svelte'
   import VirtualList from './VirtualList.svelte'
+  import { createDragReorder } from './dragReorder.svelte'
+  import DragPill from './DragPill.svelte'
+  import DropIndicator from './DropIndicator.svelte'
   import ExtBadge from './ExtBadge.svelte'
   import Cover from './Cover.svelte'
   import Equalizer from './Equalizer.svelte'
@@ -14,11 +17,12 @@
   import AddToPlaylist from './AddToPlaylist.svelte'
   import FavoriteButton from './FavoriteButton.svelte'
   import Icon from './Icon.svelte'
+  import ShuffleButton from './ShuffleButton.svelte'
   import type { TrackRow } from './library.svelte'
   import type { Rgb } from './nowCover.svelte'
   import { pinned } from './pinned.svelte'
   import { playlists } from './playlists.svelte'
-  import { player, formatTime } from './player.svelte'
+  import { player, formatTime, randomTrackIndex } from './player.svelte'
   import { trackMenu } from './contextMenu.svelte'
   import {
     fallbackPalette,
@@ -30,7 +34,7 @@
   let { id, onDeleted }: { id: number; onDeleted: () => void } = $props()
 
   const ROW = 48
-  const COLS = 'grid grid-cols-[3rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_4rem_11rem] items-center gap-3 px-5'
+  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_4rem_11rem] items-center gap-3 px-5'
 
   const info = $derived(playlists.byId(id))
   let tracks = $state<TrackRow[]>([])
@@ -102,6 +106,41 @@
   let editingCover = $state(false)
   let nameInput = $state<HTMLInputElement | null>(null)
   let heroColor = $state<Rgb | null>(null)
+  let scroller = $state<HTMLDivElement | null>(null)
+  let selected = $state<Set<number>>(new Set())
+  let selectionAnchor = $state<number | null>(null)
+
+  const selectedCount = $derived(selected.size)
+  const allSelected = $derived(visible.length > 0 && visible.every((e) => selected.has(e.origIndex)))
+  const someSelected = $derived(selectedCount > 0 && !allSelected)
+  const selectedEntries = $derived(selectedCount === 0 ? [] : visible.filter((e) => selected.has(e.origIndex)))
+  const selectedTrackIds = $derived([
+    ...new Set(selectedEntries.map((e) => e.track.id).filter((tid) => tid > 0)),
+  ])
+
+  const drag = createDragReorder({
+    rowHeight: ROW,
+    getCount: () => visible.length,
+    getEnabled: () => isNaturalOrder,
+    getListEl: () => (scroller?.firstElementChild as HTMLElement | null) ?? null,
+    getScrollEl: () => scroller,
+    onMove: (from, to) => moveRow(from, to),
+  })
+
+  $effect(() => () => drag.destroy())
+
+  $effect(() => {
+    const len = rawTracks.length
+    if (selected.size === 0) return
+    let stale = false
+    for (const idx of selected) {
+      if (idx >= len) {
+        stale = true
+        break
+      }
+    }
+    if (stale) selected = new Set([...selected].filter((idx) => idx < len))
+  })
 
   const heroImage = $derived(info ? heroImageForPlaylist(info.cover, info.albumCovers) : null)
 
@@ -134,11 +173,84 @@
     return `linear-gradient(135deg, ${preset.heroTop} 0%, ${preset.heroSurface} 100%)`
   })
 
+  const ACTIONS_WIDTH = 192
+  let actionsOpen = $state(false)
+  let actionsTrigger = $state<HTMLButtonElement | null>(null)
+  let actionsMenu = $state<HTMLDivElement | null>(null)
+  let actionsPlace = $state({ left: 0, top: 0, flip: false })
+
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node)
+    return { destroy: () => node.remove() }
+  }
+
+  function actionItems(): HTMLElement[] {
+    return actionsMenu ? [...actionsMenu.querySelectorAll<HTMLElement>('[role="menuitem"]')] : []
+  }
+
+  async function openActions() {
+    if (!actionsTrigger) return
+    const r = actionsTrigger.getBoundingClientRect()
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - ACTIONS_WIDTH - 8))
+    const estHeight = 168
+    const flip = r.bottom + estHeight + 8 > window.innerHeight && r.top > estHeight
+    actionsPlace = { left, top: flip ? window.innerHeight - r.top + 6 : r.bottom + 6, flip }
+    actionsOpen = true
+    await tick()
+    actionItems()[0]?.focus()
+  }
+
+  function closeActions(refocus = false) {
+    actionsOpen = false
+    if (refocus) actionsTrigger?.focus()
+  }
+
+  function onActionsKey(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      closeActions(true)
+    } else if (e.key === 'Tab') {
+      closeActions()
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const list = actionItems()
+      if (list.length === 0) return
+      const at = list.indexOf(document.activeElement as HTMLElement)
+      const next =
+        e.key === 'ArrowDown' ? (at + 1) % list.length : (at - 1 + list.length) % list.length
+      list[next]?.focus()
+    }
+  }
+
+  $effect(() => {
+    if (!actionsOpen) return
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target as Node
+      if (!actionsMenu?.contains(target) && !actionsTrigger?.contains(target)) closeActions()
+    }
+    const onScroll = (e: Event) => {
+      if (!actionsMenu?.contains(e.target as Node)) closeActions()
+    }
+    const onResize = () => closeActions()
+    window.addEventListener('pointerdown', onPointer, true)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('pointerdown', onPointer, true)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
+    }
+  })
+
   $effect(() => {
     void id
     renaming = false
     confirmingDelete = false
     editingCover = false
+    actionsOpen = false
+    selected = new Set()
+    selectionAnchor = null
     sortCol = 'added'
     sortDir = 'asc'
   })
@@ -162,26 +274,129 @@
     if (await playlists.delete(id)) onDeleted()
   }
 
-  async function moveRow(from: number, to: number, action: 'up' | 'down') {
-    if (to < 0 || to >= visible.length) return
-    if (!(await playlists.move(id, from, to))) return
-    // Keep keyboard focus on the same entry, which now sits at `to`.
-    await tick()
-    document
-      .querySelector<HTMLElement>(`[data-pl-row="${to}"] [data-action="${action}"]`)
-      ?.focus()
+  function remapAfterMove(set: Set<number>, from: number, to: number): Set<number> {
+    if (set.size === 0 || from === to) return set
+    const next = new Set<number>()
+    for (const idx of set) {
+      if (idx === from) next.add(to)
+      else if (from < to && idx > from && idx <= to) next.add(idx - 1)
+      else if (from > to && idx >= to && idx < from) next.add(idx + 1)
+      else next.add(idx)
+    }
+    return next
+  }
+
+  async function removePositions(positions: number[]) {
+    if (positions.length === 0) return
+    const drop = new Set(positions)
+    const sorted = [...drop].sort((a, b) => a - b)
+    if (selected.size > 0) {
+      const next = new Set<number>()
+      for (const idx of selected) {
+        if (drop.has(idx)) continue
+        const shift = sorted.filter((p) => p < idx).length
+        next.add(idx - shift)
+      }
+      selected = next
+    }
+    selectionAnchor = null
+    await playlists.removeAt(id, sorted)
+  }
+
+  function clearSelection() {
+    selected = new Set()
+    selectionAnchor = null
+  }
+
+  function toggleAllSelection() {
+    if (allSelected) clearSelection()
+    else {
+      selected = new Set(visible.map((e) => e.origIndex))
+      selectionAnchor = 0
+    }
+  }
+
+  function toggleRowSelection(visibleIdx: number, origIdx: number, shiftKey: boolean) {
+    if (shiftKey && selectionAnchor !== null && selectionAnchor < visible.length) {
+      const lo = Math.min(selectionAnchor, visibleIdx)
+      const hi = Math.max(selectionAnchor, visibleIdx)
+      const next = new Set(selected)
+      for (let k = lo; k <= hi; k++) next.add(visible[k].origIndex)
+      selected = next
+    } else {
+      const next = new Set(selected)
+      if (next.has(origIdx)) next.delete(origIdx)
+      else next.add(origIdx)
+      selected = next
+      selectionAnchor = visibleIdx
+    }
+  }
+
+  function onRowClick(e: MouseEvent, visibleIdx: number, origIdx: number) {
+    const target = e.target as HTMLElement | null
+    if (target?.closest('button, a, input, [role="checkbox"], [data-no-drag]') && target.closest('button, a, input, [role="checkbox"], [data-no-drag]') !== e.currentTarget) {
+      return
+    }
+    if (e.shiftKey) {
+      e.preventDefault()
+      toggleRowSelection(visibleIdx, origIdx, true)
+    } else if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      toggleRowSelection(visibleIdx, origIdx, false)
+    }
+  }
+
+  function playSelected() {
+    if (selectedEntries.length === 0) return
+    void player.openFiles(selectedEntries.map((e) => e.track.path))
+  }
+
+  async function queueSelected() {
+    if (selectedEntries.length === 0) return
+    await player.appendFiles(selectedEntries.map((e) => e.track.path))
+    if (!player.error) playlists.flash(t('Added to queue'))
+  }
+
+  async function moveRow(from: number, to: number, action?: 'up' | 'down') {
+    if (!isNaturalOrder || to < 0 || to >= visible.length || from === to) return
+    if (loadedId === id && from < tracks.length && to < tracks.length) {
+      const copy = [...tracks]
+      const [moved] = copy.splice(from, 1)
+      copy.splice(to, 0, moved)
+      tracks = copy
+    }
+    selected = remapAfterMove(selected, from, to)
+    if (!(await playlists.move(id, from, to))) {
+      await playlists.refresh()
+      return
+    }
+    if (action) {
+      // Keep keyboard focus on the same entry, which now sits at `to`.
+      await tick()
+      document
+        .querySelector<HTMLElement>(`[data-pl-row="${to}"] [data-action="${action}"]`)
+        ?.focus()
+    }
   }
 
   function onRowKey(e: KeyboardEvent, i: number, origIndex: number) {
     if (e.target !== e.currentTarget) return
-    if (e.key === 'Enter') void playlists.play(id, origIndex)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault()
+      selected = new Set(visible.map((en) => en.origIndex))
+    } else if (e.key === 'Escape' && selected.size > 0) {
+      e.preventDefault()
+      clearSelection()
+    } else if (e.key === 'Enter') void playlists.play(id, origIndex)
     else if (isNaturalOrder && e.altKey && e.key === 'ArrowUp') {
       e.preventDefault()
       void moveRow(i, i - 1, 'up')
     } else if (isNaturalOrder && e.altKey && e.key === 'ArrowDown') {
       e.preventDefault()
       void moveRow(i, i + 1, 'down')
-    } else if (e.key === 'Delete') void playlists.removeAt(id, [origIndex])
+    } else if (e.key === 'Delete') {
+      void removePositions(selected.size > 0 && selected.has(origIndex) ? [...selected] : [origIndex])
+    }
   }
 
   const btn =
@@ -235,7 +450,7 @@
             />
           </form>
         {:else}
-          <h2 class="mt-1 truncate text-4xl font-bold tracking-tight">{info.name}</h2>
+          <h2 class="mt-1 truncate pb-1 text-4xl leading-tight font-bold tracking-tight">{info.name}</h2>
         {/if}
         <p class="mt-2 text-sm text-white/70">
           {count(info.trackCount, '{n} track', '{n} tracks')}
@@ -263,10 +478,14 @@
               type="button"
               disabled={info.trackCount === 0}
               class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 transition hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-              onclick={() => playlists.play(id, 0)}
+              onclick={() => void playlists.play(id, 0, false)}
             >
               <Icon name="play" class="size-5" /> {t('Play')}
             </button>
+            <ShuffleButton
+              disabled={info.trackCount === 0}
+              onClick={() => void playlists.play(id, randomTrackIndex(info!.trackCount), true)}
+            />
             <button
               type="button"
               aria-pressed={pinned.isPinned('playlist', id)}
@@ -282,40 +501,151 @@
               {pinned.isPinned('playlist', id) ? t('Pinned') : t('Pin')}
             </button>
             <button
+              bind:this={actionsTrigger}
               type="button"
-              class="rounded-full bg-white/10 px-3.5 py-1.5 text-sm text-white/90 transition hover:bg-white/20"
-              onclick={() => (editingCover = true)}
+              aria-label={t('More actions for “{title}”', { title: info.name })}
+              title={t('More actions for “{title}”', { title: info.name })}
+              aria-haspopup="menu"
+              aria-expanded={actionsOpen}
+              class="flex items-center justify-center rounded-full bg-white/10 p-1.5 text-white/90 transition outline-none hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-accent-400"
+              onclick={() => (actionsOpen ? closeActions() : void openActions())}
             >
-              {t('Cover')}
-            </button>
-            <button
-              type="button"
-              class="rounded-full bg-white/10 px-3.5 py-1.5 text-sm text-white/90 transition hover:bg-white/20"
-              onclick={startRename}
-            >
-              {t('Rename')}
-            </button>
-            <button
-              type="button"
-              class="rounded-full bg-white/10 px-3.5 py-1.5 text-sm text-white/90 transition hover:bg-white/20"
-              title={t('Save as an M3U file, e.g. to open on another device')}
-              onclick={() => void playlists.exportM3u(info)}
-            >
-              {t('Export…')}
-            </button>
-            <button
-              type="button"
-              class="rounded-full bg-red-500/20 px-3.5 py-1.5 text-sm text-red-200 transition hover:bg-red-500/30"
-              onclick={() => (confirmingDelete = true)}
-            >
-              {t('Delete')}
+              <Icon name="more" class="size-5" />
             </button>
           {/if}
         </div>
       </div>
     </div>
 
+    {#if actionsOpen}
+      <div
+        use:portal
+        bind:this={actionsMenu}
+        role="menu"
+        aria-label={t('More actions for “{title}”', { title: info.name })}
+        tabindex="-1"
+        onkeydown={onActionsKey}
+        class="fixed z-50 flex flex-col rounded-xl border border-zinc-200 bg-white py-1 text-sm text-zinc-800 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+        style:left="{actionsPlace.left}px"
+        style:top={actionsPlace.flip ? undefined : `${actionsPlace.top}px`}
+        style:bottom={actionsPlace.flip ? `${actionsPlace.top}px` : undefined}
+        style:width="{ACTIONS_WIDTH}px"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          class="flex w-full items-center px-3 py-1.5 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+          onclick={() => {
+            closeActions()
+            editingCover = true
+          }}
+        >
+          {t('Cover')}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="flex w-full items-center px-3 py-1.5 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+          onclick={() => {
+            closeActions()
+            void startRename()
+          }}
+        >
+          {t('Rename')}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          title={t('Save as an M3U file, e.g. to open on another device')}
+          class="flex w-full items-center px-3 py-1.5 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+          onclick={() => {
+            closeActions()
+            void playlists.exportM3u(info)
+          }}
+        >
+          {t('Export…')}
+        </button>
+        <div class="my-1 border-t border-zinc-100 dark:border-zinc-800" role="separator"></div>
+        <button
+          type="button"
+          role="menuitem"
+          class="flex w-full items-center px-3 py-1.5 text-left text-red-600 outline-none hover:bg-red-50 focus-visible:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50 dark:focus-visible:bg-red-950/50"
+          onclick={() => {
+            closeActions()
+            confirmingDelete = true
+          }}
+        >
+          {t('Delete')}
+        </button>
+      </div>
+    {/if}
+
+    {#if selectedCount > 0}
+      <div class="mx-5 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm dark:border-accent-400/25 dark:bg-accent-400/10">
+        <div class="flex items-center gap-3">
+          <span class="font-medium text-accent-800 dark:text-accent-200">
+            {t('{n} selected', { n: selectedCount })}
+          </span>
+          <button
+            type="button"
+            class="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline dark:text-zinc-400 dark:hover:text-zinc-200"
+            onclick={clearSelection}
+          >
+            {t('Clear selection')}
+          </button>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500 dark:bg-accent-500 dark:text-zinc-950 dark:hover:bg-accent-400"
+            onclick={playSelected}
+          >
+            <Icon name="play" class="size-4" />
+            {t('Play')}
+          </button>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            onclick={() => void queueSelected()}
+          >
+            <Icon name="queue" class="size-4" />
+            {t('Add to queue')}
+          </button>
+          <AddToPlaylist trackIds={selectedTrackIds} text editTags />
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/15"
+            onclick={() => void removePositions([...selected])}
+          >
+            <Icon name="trash" class="size-4" />
+            {t('Remove from playlist')}
+          </button>
+        </div>
+      </div>
+    {/if}
+
     <div class={[COLS, 'border-b border-zinc-200 py-1.5 text-xs font-medium uppercase tracking-wide text-zinc-400 dark:border-zinc-800']}>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={allSelected ? true : someSelected ? 'mixed' : false}
+        aria-label={t('Select all')}
+        title={t('Select all')}
+        disabled={visible.length === 0}
+        onclick={toggleAllSelection}
+        class={[
+          'flex size-4 items-center justify-center rounded border transition outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-30',
+          allSelected || someSelected
+            ? 'border-accent-500 bg-accent-500 text-zinc-950'
+            : 'border-zinc-400/60 hover:border-zinc-600 dark:border-zinc-600 dark:hover:border-zinc-400',
+        ]}
+      >
+        {#if allSelected}
+          <Icon name="check" class="size-3" />
+        {:else if someSelected}
+          <span class="h-0.5 w-2 rounded-full bg-current"></span>
+        {/if}
+      </button>
       {#each [
         { col: 'added' as PlSortCol, label: '#', align: 'justify-end text-right' },
         { col: 'title' as PlSortCol, label: t('Title'), align: 'justify-start text-left' },
@@ -352,12 +682,16 @@
         {t("This playlist is empty. Use the “…” button on a song or album to add tracks.")}
       </div>
     {:else}
-      <VirtualList class="min-h-0 flex-1" count={visible.length} rowHeight={ROW}>
+      <VirtualList bind:scroller class="min-h-0 flex-1" count={visible.length} rowHeight={ROW}>
+        {#snippet overlay()}
+          <DropIndicator count={visible.length} rowHeight={ROW} gap={drag.gap} from={drag.from} to={drag.to} />
+        {/snippet}
         {#snippet row(i)}
           {@const entry = visible[i]}
           {#if entry}
             {@const track = entry.track}
             {@const orig = entry.origIndex}
+            {@const isSelected = selected.has(orig)}
             <div
               role="button"
               tabindex="0"
@@ -365,19 +699,49 @@
               title={t('{path}\nDouble-click or Enter to play. Alt+Up/Down moves, Delete removes.', { path: track.path })}
               class={[
                 COLS,
-                'group h-full cursor-default text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-inset',
-                track.path === currentPath
-                  ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                  : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+                'group h-full cursor-default text-sm transition-opacity outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-inset',
+                drag.from === i && 'opacity-40',
+                isSelected
+                  ? 'bg-accent-500/15 text-zinc-900 dark:bg-accent-400/15 dark:text-white'
+                  : track.path === currentPath
+                    ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                    : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
               ]}
+              onpointerdown={(e) => isNaturalOrder && drag.onPointerDown(e, i, track.title)}
+              onclick={(e) => onRowClick(e, i, orig)}
               ondblclick={() => playlists.play(id, orig)}
               oncontextmenu={(e) =>
                 trackMenu.fromEvent(e, track, {
                   onPlay: () => void playlists.play(id, orig),
-                  onRemoveFromPlaylist: () => void playlists.removeAt(id, [orig]),
+                  onRemoveFromPlaylist: () => void removePositions([orig]),
                 })}
               onkeydown={(e) => onRowKey(e, i, orig)}
             >
+              <button
+                type="button"
+                role="checkbox"
+                data-no-drag
+                aria-checked={isSelected}
+                aria-label={t('Select “{title}”', { title: track.title })}
+                onclick={(e) => {
+                  e.stopPropagation()
+                  toggleRowSelection(i, orig, e.shiftKey)
+                }}
+                ondblclick={(e) => e.stopPropagation()}
+                onkeydown={(e) => e.stopPropagation()}
+                class={[
+                  'flex size-4 items-center justify-center rounded border transition outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent-500',
+                  isSelected
+                    ? 'border-accent-500 bg-accent-500 text-zinc-950 opacity-100'
+                    : selectedCount > 0
+                      ? 'border-zinc-400/70 opacity-100 hover:border-zinc-600 dark:border-zinc-600 dark:hover:border-zinc-400'
+                      : 'border-zinc-400/70 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:border-zinc-600 dark:border-zinc-600 dark:hover:border-zinc-400',
+                ]}
+              >
+                {#if isSelected}
+                  <Icon name="check" class="size-3" />
+                {/if}
+              </button>
               <span class="text-right text-xs tabular-nums text-zinc-400">
                 {#if track.path === currentPath && player.snapshot.status === 'playing'}
                   <Equalizer class="text-accent-600 dark:text-accent-400" />
@@ -402,7 +766,7 @@
                     {track}
                     editTags
                     onPlay={() => void playlists.play(id, orig)}
-                    onRemoveFromPlaylist={() => void playlists.removeAt(id, [orig])}
+                    onRemoveFromPlaylist={() => void removePositions([orig])}
                     label={t('More actions for “{title}”', { title: track.title })}
                   />
                 <button
@@ -433,7 +797,7 @@
                   type="button"
                   class={btn}
                   aria-label={t('Remove “{title}” from playlist', { title: track.title })}
-                  onclick={() => playlists.removeAt(id, [orig])}
+                  onclick={() => void removePositions([orig])}
                   ondblclick={(e) => e.stopPropagation()}
                   onkeydown={(e) => e.stopPropagation()}
                 >
@@ -447,6 +811,8 @@
       </VirtualList>
     {/if}
   </div>
+
+  <DragPill active={drag.active} x={drag.pointer.x} y={drag.pointer.y} label={drag.label} />
 
   {#if editingCover}
     <PlaylistCoverModal playlist={info} onClose={() => (editingCover = false)} />

@@ -8,14 +8,18 @@
     rowHeight,
     overscan = 6,
     row,
+    overlay,
     onRangeChange,
+    scroller = $bindable<HTMLDivElement | null>(null),
     class: className = '',
   }: {
     count: number
     rowHeight: number
     overscan?: number
     row: Snippet<[index: number]>
+    overlay?: Snippet
     onRangeChange?: (start: number, end: number) => void
+    scroller?: HTMLDivElement | null
     class?: string
   } = $props()
 
@@ -32,6 +36,7 @@
 </script>
 
 <div
+  bind:this={scroller}
   class={['overflow-y-auto', className]}
   bind:clientHeight
   onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
@@ -42,5 +47,6 @@
         <div style:height="{rowHeight}px">{@render row(i)}</div>
       {/each}
     </div>
+    {@render overlay?.()}
   </div>
 </div>

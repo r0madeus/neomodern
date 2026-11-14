@@ -125,7 +125,7 @@
         <p class="text-xs font-semibold tracking-widest text-white/75 uppercase">
           {t('Dynamic mix')}
         </p>
-        <h2 class="mt-1 truncate text-3xl font-bold tracking-tight sm:text-4xl">{title}</h2>
+        <h2 class="mt-1 truncate pb-1 text-3xl leading-tight font-bold tracking-tight sm:text-4xl">{title}</h2>
         <p class="mt-1.5 text-sm text-white/80">{mixSubtitle(detail.mix)}</p>
         <p class="mt-1 text-xs text-white/65">
           {count(detail.tracks.length, '{n} song', '{n} songs')}

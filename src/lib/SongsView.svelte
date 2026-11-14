@@ -15,13 +15,6 @@
   import { trackMenu } from './contextMenu.svelte'
 
   const ROW = 48
-  const SORTS: { value: Sort; label: string }[] = [
-    { value: 'artist', label: 'Artist' }, // labels are t() keys
-    { value: 'title', label: 'Title' },
-    { value: 'album', label: 'Album' },
-    { value: 'added', label: 'Recently added' },
-    { value: 'duration', label: 'Duration' },
-  ]
   const COLS = 'grid grid-cols-[3rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_4rem_4.25rem] items-center gap-3 px-5'
 
   const q = $derived(library.debouncedQuery)
@@ -47,46 +40,27 @@
   <EmptyLibrary />
 {:else}
   <div class="flex h-full flex-col">
-    <div class="flex flex-wrap items-center justify-between gap-3 px-5 pb-3">
-      <div class="flex flex-wrap items-center gap-2">
-        <div
-          class="inline-flex flex-wrap items-center gap-1 rounded-xl border border-zinc-200/80 bg-zinc-100/70 p-1 dark:border-zinc-800 dark:bg-zinc-900/70"
-          role="group"
-          aria-label={t('Sort by')}
-        >
-          {#each SORTS as s (s.value)}
-            <button
-              type="button"
-              aria-pressed={library.sort === s.value}
-              class={[
-                'rounded-lg px-3 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
-                library.sort === s.value
-                  ? 'bg-accent-600 text-white shadow-xs dark:bg-accent-500 dark:text-zinc-950'
-                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
-              ]}
-              onclick={() => library.toggleColumnSort(s.value)}
-            >
-              {t(s.label)}{library.sort === s.value ? (library.sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
-            </button>
-          {/each}
-        </div>
+    <div class="flex items-center justify-between gap-3 px-5 pb-2">
+      <div class="text-xs text-zinc-500">
         {#if q !== '' && rows.total !== null}
-          <span class="text-xs text-zinc-500">{t('{n} matching', { n: rows.total })}</span>
+          {t('{n} matching', { n: rows.total })}
         {/if}
       </div>
       <SearchInput placeholder={t("Filter songs, artists, albums…")} />
     </div>
     <div class={[COLS, 'border-b border-zinc-200 py-1.5 text-xs font-medium uppercase tracking-wide text-zinc-400 dark:border-zinc-800']}>
       {#each [
-        { col: 'added' as Sort, label: '#', align: 'justify-end text-right' },
-        { col: 'title' as Sort, label: t('Title'), align: 'justify-start text-left' },
-        { col: 'artist' as Sort, label: t('Artist'), align: 'justify-start text-left' },
-        { col: 'album' as Sort, label: t('Album'), align: 'justify-start text-left' },
-        { col: 'duration' as Sort, label: t('Time'), align: 'justify-end text-right' },
+        { col: 'added' as Sort, label: '#', align: 'justify-end text-right', title: t('Recently added') },
+        { col: 'title' as Sort, label: t('Title'), align: 'justify-start text-left', title: undefined },
+        { col: 'artist' as Sort, label: t('Artist'), align: 'justify-start text-left', title: undefined },
+        { col: 'album' as Sort, label: t('Album'), align: 'justify-start text-left', title: undefined },
+        { col: 'duration' as Sort, label: t('Time'), align: 'justify-end text-right', title: undefined },
       ] as h (h.col)}
         {@const active = library.sort === h.col}
         <button
           type="button"
+          title={h.title}
+          aria-label={h.title}
           class={[
             'flex items-center gap-1 uppercase transition-colors outline-none focus-visible:text-accent-500',
             h.align,

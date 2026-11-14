@@ -91,11 +91,31 @@ class PlayerStore {
     this.#apply(snapshot)
     this.error = null
   }
+  playWithShuffle = async (snapshot: PlayerSnapshot, shuffle?: boolean): Promise<void> => {
+    this.applySnapshot(snapshot)
+    if (shuffle !== undefined && snapshot.shuffle !== shuffle) {
+      await this.setShuffle(shuffle)
+    }
+  }
   openFiles = (paths: string[]) => this.#run('queue_replace', { paths, startIndex: 0 })
   appendFiles = (paths: string[]) => this.#run('queue_append', { paths })
   playNext = (path: string) => this.#run('queue_play_next', { path })
   playIndex = (index: number) => this.#run('player_play_index', { index })
   removeIndex = (index: number) => this.#run('queue_remove', { index })
+  moveIndex = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return Promise.resolve()
+    if (
+      from < this.queue.length &&
+      to < this.queue.length &&
+      this.queue.length === this.snapshot.queueLength
+    ) {
+      const next = [...this.queue]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      this.queue = next
+    }
+    return this.#run('queue_move', { from, to })
+  }
   togglePause = () => this.#run('player_toggle_pause')
   next = () => this.#run('player_next')
   previous = () => this.#run('player_previous')
@@ -180,6 +200,10 @@ class PlayerStore {
 }
 
 export const player = new PlayerStore()
+
+export function randomTrackIndex(count: number): number {
+  return count > 1 ? Math.floor(Math.random() * count) : 0
+}
 
 export function formatTime(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return '–:––'

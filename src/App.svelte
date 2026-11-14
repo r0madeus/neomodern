@@ -14,11 +14,11 @@
   import ArtistsView from './lib/ArtistsView.svelte'
   import FavoritesView from './lib/FavoritesView.svelte'
   import StatsView from './lib/StatsView.svelte'
-  import QueueView from './lib/QueueView.svelte'
   import SearchView from './lib/SearchView.svelte'
   import SettingsView from './lib/SettingsView.svelte'
   import PlaylistView from './lib/PlaylistView.svelte'
-  import LyricsPanel from './lib/LyricsPanel.svelte'
+  import LyricsView from './lib/LyricsView.svelte'
+  import RightPanel, { type RightPanelMode } from './lib/RightPanel.svelte'
   import TagEditor from './lib/TagEditor.svelte'
   import MetadataMatchModal from './lib/MetadataMatchModal.svelte'
   import { player } from './lib/player.svelte'
@@ -39,6 +39,8 @@
   import { updates } from './lib/updates.svelte'
   import { nowCover } from './lib/nowCover.svelte'
   import SidebarDownloads from './lib/SidebarDownloads.svelte'
+  import ResizeHandle from './lib/ResizeHandle.svelte'
+  import { createPanelResize } from './lib/panelResize.svelte'
   import TrackMenu from './lib/TrackMenu.svelte'
   import { trackMenu } from './lib/contextMenu.svelte'
   import { tagEditor } from './lib/tags.svelte'
@@ -56,14 +58,13 @@
     | 'search'
     | 'stats'
     | 'favorites'
-    | 'queue'
     | 'settings'
     | 'playlist'
   // Views shown in the main navigation. Playlists live in their own sidebar
-  // section, Queue is toggled from the bottom bar, and Settings sits at the bottom.
+  // section, Queue & Now Playing live in the right panel, and Settings sits at the bottom.
   type NavView = 'home' | 'songs' | 'albums' | 'artists' | 'search' | 'stats'
   const NAV: NavView[] = ['home', 'songs', 'albums', 'artists', 'search', 'stats']
-  const VIEWS: View[] = [...NAV, 'favorites', 'queue', 'settings']
+  const VIEWS: View[] = [...NAV, 'favorites', 'settings']
   const LABELS: Record<NavView, string> = {
     home: 'Home',
     songs: 'Songs',
@@ -111,6 +112,7 @@
     document.documentElement.lang = i18n.lang
   })
 
+  const SIDEBAR_COLLAPSED_WIDTH = 68
   const SIDEBAR_KEY = 'neomodern.sidebar.collapsed'
   let sidebarCollapsed = $state(false)
   try {
@@ -119,13 +121,58 @@
     // storage unavailable
   }
 
-  function toggleSidebar() {
-    sidebarCollapsed = !sidebarCollapsed
+  function setSidebarCollapsed(collapsed: boolean) {
+    if (sidebarCollapsed === collapsed) return
+    sidebarCollapsed = collapsed
     try {
       localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? '1' : '0')
     } catch {
       // ignore
     }
+  }
+
+  function toggleSidebar() {
+    setSidebarCollapsed(!sidebarCollapsed)
+  }
+
+  let innerWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const sidebarResize = createPanelResize({
+    storageKey: 'neomodern.sidebar.width',
+    defaultWidth: 224,
+    minWidth: 176,
+    maxWidth: 380,
+    side: 'left',
+    collapseBelow: 125,
+    collapsedWidth: SIDEBAR_COLLAPSED_WIDTH,
+    isCollapsed: () => sidebarCollapsed,
+    onCollapsedChange: setSidebarCollapsed,
+    getMaxAllowed: () => Math.max(176, innerWidth - 460),
+  })
+
+  $effect(() => () => sidebarResize.destroy())
+
+  const RIGHT_PANEL_KEY = 'neomodern.rightPanel.mode'
+  function loadRightPanel(): RightPanelMode | null {
+    try {
+      const m = localStorage.getItem(RIGHT_PANEL_KEY)
+      if (m === 'nowPlaying' || m === 'queue') return m
+    } catch {
+      // storage unavailable
+    }
+    return null
+  }
+
+  let rightPanel = $state<RightPanelMode | null>(loadRightPanel())
+  function setRightPanel(next: RightPanelMode | null) {
+    rightPanel = next
+    try {
+      localStorage.setItem(RIGHT_PANEL_KEY, next ?? 'none')
+    } catch {
+      // ignore
+    }
+  }
+  function toggleRightPanel(mode: RightPanelMode) {
+    setRightPanel(rightPanel === mode ? null : mode)
   }
 
   let playlistId = $state<number | null>(null)
@@ -134,36 +181,17 @@
   let selectedMixId = $state<string | null>(null)
   let creatingPlaylist = $state(false)
   let newPlaylistName = $state('')
-  let beforeQueue = $state<{ view: View; playlistId: number | null }>({ view: 'songs', playlistId: null })
 
   function go(next: View) {
     view = next
     nowPlaying = false
+    lyrics.setOpen(false)
     try {
       // A playlist is not remembered across launches (ids can disappear).
       if (next !== 'playlist') localStorage.setItem(KEY, next)
     } catch {
       // ignore
     }
-  }
-
-  function toggleQueue() {
-    if (view === 'queue' && !nowPlaying) {
-      if (
-        beforeQueue.view === 'playlist' &&
-        beforeQueue.playlistId !== null &&
-        playlists.byId(beforeQueue.playlistId)
-      ) {
-        openPlaylist(beforeQueue.playlistId)
-      } else {
-        go(beforeQueue.view === 'queue' ? 'songs' : beforeQueue.view)
-      }
-      return
-    }
-    if (view !== 'queue') {
-      beforeQueue = { view, playlistId }
-    }
-    go('queue')
   }
 
   function openPlaylist(id: number) {
@@ -228,11 +256,11 @@
     })
   })
 
-  // The full-screen player (desktop "now playing", or the phone UI) shows
-  // lyrics inline, so they are loaded there even with the panel closed.
+  // The full-screen player, side Now Playing preview, or phone UI shows
+  // lyrics inline, so they are loaded even when the main Lyrics view is closed.
   let nowPlaying = $state(false)
   $effect(() => {
-    const inline = mobile || nowPlaying
+    const inline = mobile || nowPlaying || rightPanel === 'nowPlaying'
     lyrics.always = inline
     const wanted = lyrics.open || inline
     const path = player.snapshot.current?.path ?? null
@@ -349,7 +377,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onGlobalKey} />
+<svelte:window onkeydown={onGlobalKey} bind:innerWidth />
 
 {#if mobile}
   <MobileApp />
@@ -358,10 +386,23 @@
   <div class="flex min-h-0 flex-1">
     <aside
       class={[
-        'flex shrink-0 flex-col gap-4 border-r border-zinc-200/80 bg-zinc-100/70 py-4 transition-[width] duration-200 dark:border-zinc-800/80 dark:bg-zinc-900/50',
-        sidebarCollapsed ? 'w-[4.25rem] px-2' : 'w-56 px-3',
+        'relative flex shrink-0 flex-col gap-4 border-r border-zinc-200/80 bg-zinc-100/70 py-4 dark:border-zinc-800/80 dark:bg-zinc-900/50',
+        !sidebarResize.dragging && 'transition-[width] duration-200',
+        sidebarCollapsed ? 'px-2' : 'px-3',
       ]}
+      style:width="{sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarResize.width}px"
     >
+      <ResizeHandle
+        edge="right"
+        dragging={sidebarResize.dragging}
+        value={sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarResize.width}
+        min={sidebarResize.min}
+        max={sidebarResize.max}
+        label={t('Resize sidebar')}
+        onPointerDown={sidebarResize.onPointerDown}
+        onKeyDown={sidebarResize.onKeyDown}
+        onReset={sidebarResize.reset}
+      />
       <div class={['flex items-center', sidebarCollapsed ? 'justify-center' : 'justify-between px-1.5']}>
         {#if !sidebarCollapsed}
           <div class="flex min-w-0 items-center gap-2">
@@ -402,10 +443,10 @@
               go(v)
             }}
           >
-            <span class="flex items-center gap-2.5">
-              <Icon name={ICONS[v]} class="size-[18px] opacity-85" />
+            <span class="flex min-w-0 items-center gap-2.5">
+              <Icon name={ICONS[v]} class="size-[18px] shrink-0 opacity-85" />
               {#if !sidebarCollapsed}
-                <span>{t(LABELS[v])}</span>
+                <span class="truncate">{t(LABELS[v])}</span>
               {/if}
             </span>
             {#if !sidebarCollapsed}
@@ -634,55 +675,57 @@
       </div>
     </aside>
 
-    <div class="relative flex min-w-0 flex-1 flex-col pt-4">
+    <div class={['relative flex min-w-0 flex-1 flex-col', !lyrics.open && 'pt-4']}>
       {#if updates.available}
-        <div class="mx-5 mb-2"><UpdateBanner /></div>
+        <div class={['mx-5 mb-2', lyrics.open && 'mt-4']}><UpdateBanner /></div>
       {/if}
       {#if player.error}
-        <p class="mx-5 mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">
+        <p class={['mx-5 mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300', lyrics.open && 'mt-4']}>
           {player.error}
         </p>
       {/if}
       <main class="min-h-0 flex-1">
-        {#key view === 'playlist' ? `${view}:${playlistId}` : view}
-          <div class="animate-view-enter h-full">
-            {#if view === 'home'}
-              <HomeView
-                {selectedMixId}
-                onSelectMix={(id) => (selectedMixId = id)}
-                onOpenAlbum={(id) => openAlbum(id)}
-                onOpenPlaylist={(id) => openPlaylist(id)}
-                onOpenFavorites={() => go('favorites')}
-                onOpenStats={() => go('stats')}
-              />
-            {:else if view === 'songs'}
-              <SongsView />
-            {:else if view === 'albums'}
-              <AlbumsView {selectedAlbumId} onSelectAlbum={(id) => (selectedAlbumId = id)} />
-            {:else if view === 'artists'}
-              <ArtistsView
-                {selectedArtist}
-                onSelectArtist={(name) => (selectedArtist = name)}
-                onOpenAlbum={(id) => openAlbum(id)}
-              />
-            {:else if view === 'search'}
-              <SearchView
-                onOpenSettings={() => go('settings')}
-                onOpenLocalAlbum={(id) => openAlbum(id)}
-              />
-            {:else if view === 'stats'}
-              <StatsView onOpenAlbum={(id) => openAlbum(id)} />
-            {:else if view === 'favorites'}
-              <FavoritesView />
-            {:else if view === 'queue'}
-              <QueueView onOpenFiles={pickFiles} onSaved={openPlaylist} />
-            {:else if view === 'playlist' && playlistId !== null}
-              <PlaylistView id={playlistId} onDeleted={() => go('songs')} />
-            {:else}
-              <SettingsView />
-            {/if}
-          </div>
-        {/key}
+        {#if lyrics.open}
+          <LyricsView />
+        {:else}
+          {#key view === 'playlist' ? `${view}:${playlistId}` : view}
+            <div class="animate-view-enter h-full">
+              {#if view === 'home'}
+                <HomeView
+                  {selectedMixId}
+                  onSelectMix={(id) => (selectedMixId = id)}
+                  onOpenAlbum={(id) => openAlbum(id)}
+                  onOpenPlaylist={(id) => openPlaylist(id)}
+                  onOpenFavorites={() => go('favorites')}
+                  onOpenStats={() => go('stats')}
+                />
+              {:else if view === 'songs'}
+                <SongsView />
+              {:else if view === 'albums'}
+                <AlbumsView {selectedAlbumId} onSelectAlbum={(id) => (selectedAlbumId = id)} />
+              {:else if view === 'artists'}
+                <ArtistsView
+                  {selectedArtist}
+                  onSelectArtist={(name) => (selectedArtist = name)}
+                  onOpenAlbum={(id) => openAlbum(id)}
+                />
+              {:else if view === 'search'}
+                <SearchView
+                  onOpenSettings={() => go('settings')}
+                  onOpenLocalAlbum={(id) => openAlbum(id)}
+                />
+              {:else if view === 'stats'}
+                <StatsView onOpenAlbum={(id) => openAlbum(id)} />
+              {:else if view === 'favorites'}
+                <FavoritesView />
+              {:else if view === 'playlist' && playlistId !== null}
+                <PlaylistView id={playlistId} onDeleted={() => go('songs')} />
+              {:else}
+                <SettingsView />
+              {/if}
+            </div>
+          {/key}
+        {/if}
       </main>
       {#if playlists.notice}
         <p
@@ -698,16 +741,28 @@
       {/if}
     </div>
 
-    {#if lyrics.open && !nowPlaying}
-      <LyricsPanel />
+    {#if rightPanel !== null && !nowPlaying}
+      <RightPanel
+        mode={rightPanel}
+        onClose={() => setRightPanel(null)}
+        onExpand={() => (nowPlaying = true)}
+        onOpenFiles={pickFiles}
+        onSaved={openPlaylist}
+      />
     {/if}
   </div>
 
   <PlayerBar
-    {nowPlaying}
-    onToggleNowPlaying={() => (nowPlaying = !nowPlaying)}
-    queueOpen={view === 'queue' && !nowPlaying}
-    onToggleQueue={toggleQueue}
+    nowPlayingPanel={rightPanel === 'nowPlaying' && !nowPlaying}
+    onToggleNowPlayingPanel={() => {
+      nowPlaying = false
+      toggleRightPanel('nowPlaying')
+    }}
+    queueOpen={rightPanel === 'queue' && !nowPlaying}
+    onToggleQueue={() => {
+      nowPlaying = false
+      toggleRightPanel('queue')
+    }}
   />
 </div>
 {/if}

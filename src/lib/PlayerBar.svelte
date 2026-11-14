@@ -12,13 +12,13 @@
   import { trackMenu } from './contextMenu.svelte'
 
   let {
-    nowPlaying = false,
-    onToggleNowPlaying,
+    nowPlayingPanel = false,
+    onToggleNowPlayingPanel,
     queueOpen = false,
     onToggleQueue,
   }: {
-    nowPlaying?: boolean
-    onToggleNowPlaying?: () => void
+    nowPlayingPanel?: boolean
+    onToggleNowPlayingPanel?: () => void
     queueOpen?: boolean
     onToggleQueue?: () => void
   } = $props()
@@ -82,21 +82,21 @@
       >
         <button
           class="group relative shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
-          onclick={onToggleNowPlaying}
-          aria-pressed={nowPlaying}
-          title={t(nowPlaying ? 'Close now playing' : 'Open now playing')}
+          onclick={onToggleNowPlayingPanel}
+          aria-pressed={nowPlayingPanel}
+          title={t(nowPlayingPanel ? 'Close now playing' : 'Open now playing')}
         >
           <Cover cover={nowCover.cover} title={cur.title} class="size-12 rounded-md text-sm shadow" />
           <span class="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">
-            <Icon name={nowPlaying ? 'down' : 'up'} class="size-6" />
+            <Icon name="nowPlaying" class="size-5" />
           </span>
         </button>
         <div class="min-w-0 flex-1">
           <button
             class="block max-w-full truncate text-left text-sm font-medium text-zinc-900 hover:underline focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-100"
-            onclick={onToggleNowPlaying}
-            aria-pressed={nowPlaying}
-            title={t(nowPlaying ? 'Close now playing' : 'Open now playing')}
+            onclick={onToggleNowPlayingPanel}
+            aria-pressed={nowPlayingPanel}
+            title={t(nowPlayingPanel ? 'Close now playing' : 'Open now playing')}
           >
             {cur.title}
           </button>
@@ -131,7 +131,7 @@
         aria-label={t(snap.shuffle ? 'Shuffle on' : 'Shuffle off')}
         title={`${t(snap.shuffle ? 'Shuffle: On' : 'Shuffle: Off')} (S)`}
       >
-        <Icon name="shuffle" class="size-4" />
+        <Icon name="shuffle" class="size-5" />
       </button>
       <button
         class="rounded-full p-2 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
@@ -140,7 +140,7 @@
         aria-label={t("Previous")}
         title={`${t('Previous')} (Ctrl+←)`}
       >
-        <Icon name="prev" />
+        <Icon name="prev" class="size-6" />
       </button>
       <button
         class="rounded-full bg-accent-600 p-3 text-white shadow-sm transition hover:scale-105 hover:bg-accent-500 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 dark:bg-accent-500 dark:text-zinc-950 dark:hover:bg-accent-400"
@@ -158,7 +158,7 @@
         aria-label={t("Next")}
         title={`${t('Next')} (Ctrl+→)`}
       >
-        <Icon name="next" />
+        <Icon name="next" class="size-6" />
       </button>
       <button
         class={[
@@ -172,7 +172,7 @@
         aria-label={repeatLabel}
         title={`${repeatLabel} (R)`}
       >
-        <Icon name={snap.repeat === 'one' ? 'repeatOne' : 'repeat'} class="size-4" />
+        <Icon name={snap.repeat === 'one' ? 'repeatOne' : 'repeat'} class="size-5" />
       </button>
     </div>
     <div class="flex w-full items-center gap-3 text-xs tabular-nums text-zinc-500">
@@ -224,6 +224,23 @@
         title={t("Queue")}
       >
         <Icon name="queue" />
+      </button>
+    {/if}
+    {#if onToggleNowPlayingPanel}
+      <button
+        type="button"
+        class={[
+          'rounded-full p-2 transition-colors',
+          nowPlayingPanel
+            ? 'bg-accent-50 text-accent-700 hover:bg-accent-100 dark:bg-accent-950/60 dark:text-accent-300 dark:hover:bg-accent-950'
+            : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white',
+        ]}
+        onclick={onToggleNowPlayingPanel}
+        aria-pressed={nowPlayingPanel}
+        aria-label={t("Now playing")}
+        title={t("Now playing")}
+      >
+        <Icon name="nowPlaying" />
       </button>
     {/if}
     <button

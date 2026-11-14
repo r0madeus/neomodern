@@ -4,7 +4,9 @@
   import Icon from './Icon.svelte'
   import LyricLines from './LyricLines.svelte'
   import LyricsShare from './LyricsShare.svelte'
+  import ResizeHandle from './ResizeHandle.svelte'
   import TintedBackdrop from './TintedBackdrop.svelte'
+  import { createPanelResize } from './panelResize.svelte'
   import { lyrics, type LyricsSource } from './lyrics.svelte'
   import { motionDuration } from './motion'
   import { player } from './player.svelte'
@@ -38,13 +40,39 @@
 
   const iconButton =
     'rounded-full p-1.5 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40 outline-none focus-visible:ring-2 focus-visible:ring-white/60'
+
+  let innerWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const resize = createPanelResize({
+    storageKey: 'neomodern.lyrics.width',
+    defaultWidth: 360,
+    minWidth: 260,
+    maxWidth: 560,
+    side: 'right',
+    getMaxAllowed: () => Math.max(260, innerWidth - 460),
+  })
+
+  $effect(() => () => resize.destroy())
 </script>
+
+<svelte:window bind:innerWidth />
 
 <aside
   aria-label={t("Lyrics")}
   transition:fly={{ x: 24, duration: motionDuration(180) }}
-  class="relative isolate flex w-80 shrink-0 flex-col overflow-hidden text-white lg:w-96"
+  class="relative isolate flex shrink-0 flex-col overflow-hidden text-white"
+  style:width="{resize.width}px"
 >
+  <ResizeHandle
+    edge="left"
+    dragging={resize.dragging}
+    value={resize.width}
+    min={resize.min}
+    max={resize.max}
+    label={t('Resize lyrics panel')}
+    onPointerDown={resize.onPointerDown}
+    onKeyDown={resize.onKeyDown}
+    onReset={resize.reset}
+  />
   <TintedBackdrop background={tint.surface} />
   <header class="flex items-start justify-between gap-2 px-5 pt-4 pb-2">
     <div class="min-w-0">
@@ -98,7 +126,7 @@
     <LyricLines
       dim={tint.dim}
       class="flex-1 px-5"
-      scrollClass="[mask-image:linear-gradient(to_bottom,transparent,black_4%,black_90%,transparent)]"
+      scrollClass="[mask-image:linear-gradient(to_bottom,transparent,black_16px,black_90%,transparent)]"
     />
     <LyricsShare class="px-5 pb-3" />
   {/if}

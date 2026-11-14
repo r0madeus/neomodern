@@ -88,7 +88,7 @@
     {:else if res.kind === 'instrumental'}
       <p class="py-6 text-base font-semibold" style:color={dim}>{t("♪ Instrumental")}</p>
     {:else if res.kind === 'plain'}
-      <div class={['pb-8 font-bold', big ? 'space-y-4 text-[26px] leading-snug' : 'space-y-3 text-[22px] leading-snug']}>
+      <div class={['pt-6 pb-8 font-bold', big ? 'space-y-4 text-[26px] leading-snug' : 'space-y-3 text-[22px] leading-snug']}>
         {#each res.lines as line, i (i)}
           {#if line.trim() === ''}
             <div class="h-3" aria-hidden="true"></div>
@@ -98,7 +98,7 @@
         {/each}
       </div>
     {:else}
-      <div class={['pb-[40vh] font-bold', big ? 'space-y-5 text-[28px] leading-tight' : 'space-y-4 text-[22px] leading-snug']}>
+      <div class={['pt-6 pb-[40vh] font-bold', big ? 'space-y-5 text-[28px] leading-tight' : 'space-y-4 text-[22px] leading-snug']}>
         {#each res.lines as line, i (i)}
           {@const blank = line.text.trim() === ''}
           <button

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NeoModern",
-  "version": "0.2.0",
+  "version": "0.9.0",
   "identifier": "io.github.r0madeus.neomodern",
   "build": {
     "frontendDist": "../dist",
@@ -77,7 +77,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "PENDING_UPDATER_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3NTAwREZFMDg3MEMzRDYKUldUV3czQUkvZzFRUjdHNHRUZzFySzN4Ukh6ZGhFUVBEMVBKU2lFNXBPSWJ6UmYwWG40Y1Mzc1YK",
       "endpoints": [
         "https://github.com/r0madeus/neomodern/releases/latest/download/latest.json"
       ],

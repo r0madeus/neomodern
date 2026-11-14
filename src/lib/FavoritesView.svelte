@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selection } from './trackSelection.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import AlbumLink from './AlbumLink.svelte'
   import Cover from './Cover.svelte'
@@ -98,14 +99,22 @@
             class={[
               COLS,
               'group h-full cursor-default text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-inset',
-              track.path === currentPath
-                ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+              selection.has('favorites', track.path)
+                ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
+                : track.path === currentPath
+                  ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                  : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
             ]}
+            aria-pressed={selection.has('favorites', track.path)}
+            onclick={(e) => selection.click(e, 'favorites', i, track, (j) => rows.get(j))}
             ondblclick={() => void favorites.play(i)}
             oncontextmenu={(e) =>
               trackMenu.fromEvent(e, track, { onPlay: () => void favorites.play(i) })}
-            onkeydown={(e) => e.target === e.currentTarget && e.key === 'Enter' && void favorites.play(i)}
+            onkeydown={(e) => {
+              if (e.target !== e.currentTarget) return
+              if (selection.key(e, 'favorites', totalCount, (j) => rows.get(j))) return
+              if (e.key === 'Enter') void favorites.play(i)
+            }}
           >
             <span class="text-right text-xs tabular-nums text-zinc-400">
               {#if track.path === currentPath && player.snapshot.status === 'playing'}

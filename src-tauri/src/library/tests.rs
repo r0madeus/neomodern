@@ -2151,3 +2151,15 @@ fn playlist_covers_move_from_the_cache_to_the_data_folder() {
     lib.set_playlist_cover_file(lost, &src).unwrap();
     assert!(Path::new(&cover_of(&lib, lost).unwrap()).starts_with(images.join("playlists")));
 }
+
+#[test]
+fn favorites_can_be_set_for_many_tracks() {
+    let e = env();
+    let ids = scanned_tracks(&e, &["Alpha", "Beta", "Gamma"]);
+    assert_eq!(e.lib.set_favorites(&ids, true).unwrap(), 3);
+    // Already there, or not in the library: nothing more changes.
+    assert_eq!(e.lib.set_favorites(&[ids[0], 999_999], true).unwrap(), 0);
+    assert_eq!(e.lib.favorites().unwrap().len(), 3);
+    assert_eq!(e.lib.set_favorites(&ids[..2], false).unwrap(), 2);
+    assert_eq!(e.lib.favorites().unwrap().len(), 1);
+}

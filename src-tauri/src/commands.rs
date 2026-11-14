@@ -48,6 +48,27 @@ pub fn queue_play_next(
     s(player.insert_next(track))
 }
 
+/// Several tracks to play next, keeping their order.
+#[tauri::command]
+pub fn queue_play_next_many(
+    lib: State<'_, Arc<Library>>,
+    player: State<'_, Arc<Player>>,
+    paths: Vec<String>,
+) -> Res<PlayerSnapshot> {
+    let tracks = paths
+        .into_iter()
+        .map(|path| match lib.track_meta(&path).ok().flatten() {
+            Some(meta) => crate::queue::Track {
+                path: PathBuf::from(&path),
+                title: Some(meta.title),
+                artist: Some(meta.artist),
+            },
+            None => crate::queue::Track::from(PathBuf::from(path)),
+        })
+        .collect();
+    s(player.insert_next_many(tracks))
+}
+
 #[tauri::command]
 pub fn queue_remove(player: State<'_, Arc<Player>>, index: usize) -> Res<PlayerSnapshot> {
     s(player.remove(index))
@@ -1710,6 +1731,19 @@ pub fn favorites_toggle(app: AppHandle, lib: State<'_, Arc<Library>>, track_id: 
     let added = le(lib.toggle_favorite(track_id))?;
     favorites_changed(&app);
     Ok(added)
+}
+
+/// Adds (`favorite`) or removes several tracks at once; returns how many changed.
+#[tauri::command]
+pub fn favorites_set_many(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    track_ids: Vec<i64>,
+    favorite: bool,
+) -> Res<usize> {
+    let n = le(lib.set_favorites(&track_ids, favorite))?;
+    favorites_changed(&app);
+    Ok(n)
 }
 
 #[tauri::command]

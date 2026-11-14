@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selection } from './trackSelection.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import AlbumLink from './AlbumLink.svelte'
@@ -106,6 +107,7 @@
       .map((track) => ({ track, playCount: 0, listenedMs: 0 }))
     return [...profile.popularTracks, ...rest]
   })
+  const scope = $derived(`artist:${profile?.name ?? ''}`)
   const visiblePopular = $derived(
     showAllTracks ? allPopularRows : allPopularRows.slice(0, POPULAR_COLLAPSED),
   )
@@ -231,16 +233,24 @@
                       title={tr.path}
                       class={[
                         'group grid grid-cols-[1.75rem_2.25rem_minmax(0,1fr)_auto_4.25rem_3.5rem] items-center gap-3 rounded-lg px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
-                        active
-                          ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                          : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+                        selection.has(scope, tr.path)
+                          ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
+                          : active
+                            ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                            : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
                       ]}
+                      aria-pressed={selection.has(scope, tr.path)}
+                      onclick={(e) => selection.click(e, scope, i, tr, (j) => visiblePopular[j]?.track)}
                       ondblclick={() => void artists.play(profile!.name, idx)}
                       oncontextmenu={(e) =>
                         trackMenu.fromEvent(e, tr, {
                           onPlay: () => void artists.play(profile!.name, idx),
                         })}
-                      onkeydown={(e) => e.target === e.currentTarget && e.key === 'Enter' && void artists.play(profile!.name, idx)}
+                      onkeydown={(e) => {
+                        if (e.target !== e.currentTarget) return
+                        if (selection.key(e, scope, visiblePopular.length, (j) => visiblePopular[j]?.track)) return
+                        if (e.key === 'Enter') void artists.play(profile!.name, idx)
+                      }}
                     >
                       <span class="text-right text-xs tabular-nums text-zinc-400">
                         {#if active && player.snapshot.status === 'playing'}

@@ -695,6 +695,25 @@ impl Player {
     /// Insert `track` right after the queue entry `anchor`. Returns the new
     /// entry's id, or `None` when `anchor` is gone (the queue was replaced or
     /// the entry removed), so background fillers know to stop.
+    /// Puts `tracks` right after the current entry, in this order (or at
+    /// the end when nothing is selected).
+    pub fn insert_next_many(&self, tracks: Vec<Track>) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| {
+            let mut anchor: Option<EntryId> = None;
+            for track in tracks {
+                let id = match anchor {
+                    None => Some(s.queue.insert_next(track)),
+                    Some(a) => s.queue.insert_after(a, track),
+                };
+                match id {
+                    Some(id) => anchor = Some(id),
+                    None => break,
+                }
+            }
+            s.sync_next()
+        })
+    }
+
     pub fn insert_after(
         &self,
         anchor: EntryId,
@@ -2165,5 +2184,59 @@ mod tests {
         assert_eq!(snap.equalizer.gains_db[0], 6.0);
         assert_eq!(snap.crossfade_seconds, MAX_CROSSFADE_SECS);
         let _ = calls;
+    }
+}
+
+#[cfg(test)]
+mod bulk_tests {
+    use super::*;
+
+    struct Silent;
+    impl AudioEngine for Silent {
+        fn load(&self, _: &Path) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_next(&self, _: Option<&Path>) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn play(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn pause(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn seek(&self, _: f64) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_volume(&self, _: f64) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_replaygain(&self, _: ReplayGain) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_gapless(&self, _: bool) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_wasapi_exclusive(&self, _: bool) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn several_tracks_play_next_in_their_order() {
+        let p = Player::new(Box::new(Silent), Box::new(|_| {}));
+        let paths = |v: &[&str]| v.iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+        p.replace_queue(paths(&["a", "b"]), 0).unwrap();
+        let many = paths(&["x", "y", "z"])
+            .into_iter()
+            .map(Track::from)
+            .collect();
+        let snap = p.insert_next_many(many).unwrap();
+        assert_eq!(snap.queue_length, 5);
+        let order: Vec<String> = p.queue_page(0, 10).into_iter().map(|t| t.path).collect();
+        assert_eq!(order, ["a", "x", "y", "z", "b"]);
     }
 }

@@ -758,6 +758,10 @@ impl Library {
         db::favorites(&self.conn())
     }
 
+    pub fn set_favorites(&self, track_ids: &[i64], on: bool) -> Result<usize> {
+        db::set_favorites(&mut self.conn(), track_ids, on, unix_now())
+    }
+
     pub fn toggle_favorite(&self, track_id: i64) -> Result<bool> {
         db::toggle_favorite(&self.conn(), track_id, unix_now())
     }

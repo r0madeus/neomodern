@@ -160,6 +160,19 @@ contributors and agents.
 - Genre pages load tracks in pages; Linux MPRIS updates without delay
   (souvlaki's zbus backend).
 
+### Listening features (K16, 2026-11-14; desktop and Android)
+- **Sleep timer**: 15 min to 2 h or "end of this song" from the moon
+  button; the volume fades over the last 10 s, then playback pauses.
+- **Equalizer**: ten octave bands and a preamp (±12 dB) with presets, in
+  Settings > Playback. mpv uses peaking filters; Android maps the curve
+  onto the system equalizer's bands.
+- **Crossfade**: 0–12 s. The old track's tail plays on a second player
+  (mpv instance / ExoPlayer) while the next one fades in. Not with
+  WASAPI exclusive, streams or repeat-one.
+- **Multi-select**: Ctrl/Cmd-click and Shift-click (Ctrl+A, Esc) in the
+  song, favourite, album, genre and artist lists; long press on phones.
+  Bulk play, play next, add to queue, favourite and add to playlist.
+
 ## Next
 
 1. **Try metadata matching on real albums** (desktop and phone): the

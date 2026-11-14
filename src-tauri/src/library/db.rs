@@ -1210,6 +1210,36 @@ pub fn toggle_favorite(conn: &Connection, track_id: i64, now: i64) -> Result<boo
     Ok(true)
 }
 
+/// Adds (`on`) or removes every track in `track_ids` from the favorites;
+/// returns how many changed. Ids not in the library are ignored.
+pub fn set_favorites(
+    conn: &mut Connection,
+    track_ids: &[i64],
+    on: bool,
+    now: i64,
+) -> Result<usize> {
+    let tx = conn.transaction()?;
+    let mut changed = 0;
+    {
+        let mut add = tx.prepare_cached(
+            "INSERT OR IGNORE INTO favorites(track_id, added_at)
+             SELECT id, ?2 FROM tracks WHERE id = ?1",
+        )?;
+        let mut del = tx.prepare_cached("DELETE FROM favorites WHERE track_id = ?1")?;
+        // Later items get later times, so the list keeps the chosen order
+        // (newest first) like single stars do.
+        for (i, id) in track_ids.iter().enumerate() {
+            changed += if on {
+                add.execute(rusqlite::params![id, now + i as i64])?
+            } else {
+                del.execute([id])?
+            };
+        }
+    }
+    tx.commit()?;
+    Ok(changed)
+}
+
 pub fn favorites_page(conn: &Connection, offset: u64, limit: u64) -> Result<Page<TrackRow>> {
     let total: i64 = conn.query_row("SELECT COUNT(*) FROM favorites", [], |r| r.get(0))?;
     let mut st = conn.prepare(&format!(

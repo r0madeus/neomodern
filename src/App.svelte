@@ -38,6 +38,8 @@
   import NowPlayingView from './lib/NowPlayingView.svelte'
   import UpdateBanner from './lib/UpdateBanner.svelte'
   import Welcome from './lib/Welcome.svelte'
+  import SelectionBar from './lib/SelectionBar.svelte'
+  import { selection } from './lib/trackSelection.svelte'
   import { updates } from './lib/updates.svelte'
   import { nowCover } from './lib/nowCover.svelte'
   import SidebarDownloads from './lib/SidebarDownloads.svelte'
@@ -180,6 +182,14 @@
   let playlistId = $state<number | null>(null)
   let selectedAlbumId = $state<number | null>(null)
   let selectedArtist = $state<string | null>(null)
+  // A selection belongs to the page it was made on.
+  $effect(() => {
+    void view
+    void playlistId
+    void selectedAlbumId
+    void selectedArtist
+    selection.clear()
+  })
   let selectedMixId = $state<string | null>(null)
   let creatingPlaylist = $state(false)
   let newPlaylistName = $state('')
@@ -754,6 +764,9 @@
     {/if}
   </div>
 
+  {#if selection.size > 0}
+    <div class="border-t border-zinc-200 px-4 py-2 dark:border-zinc-800"><SelectionBar /></div>
+  {/if}
   <PlayerBar
     nowPlayingPanel={rightPanel === 'nowPlaying' && !nowPlaying}
     onToggleNowPlayingPanel={() => {

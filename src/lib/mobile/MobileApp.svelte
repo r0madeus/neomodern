@@ -23,6 +23,8 @@
   import PlaylistPage from './PlaylistPage.svelte'
   import StatsPage from './StatsPage.svelte'
   import MiniPlayer from './MiniPlayer.svelte'
+  import SelectionBar from '../SelectionBar.svelte'
+  import { selection } from '../trackSelection.svelte'
   import NowPlaying from './NowPlaying.svelte'
   import QueueSheet from './QueueSheet.svelte'
   import UpdateBanner from '../UpdateBanner.svelte'
@@ -59,6 +61,12 @@
 
   let tab = $state<Tab>('home')
   let sheets = $state<Sheet[]>([])
+  // A selection belongs to the page it was made on.
+  $effect(() => {
+    void tab
+    void sheets.length
+    selection.clear()
+  })
   let playerOpen = $state(false)
   let queueOpen = $state(false)
   let lyricsOpen = $state(false)
@@ -237,6 +245,9 @@
       style:padding-bottom="var(--inset-bottom)"
     >
       <div class="pointer-events-auto">
+        {#if selection.size > 0}
+          <div class="px-2 pb-2"><SelectionBar mobile /></div>
+        {/if}
         <MiniPlayer onOpen={openPlayer} />
         <nav aria-label="Main" class="grid grid-cols-3 pt-0.5">
           {#each TABS as entry (entry.id)}

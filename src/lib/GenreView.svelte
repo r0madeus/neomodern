@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selection } from './trackSelection.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import AlbumLink from './AlbumLink.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
@@ -108,6 +109,7 @@
   )
   const totalMs = $derived(detail?.durationMs ?? 0)
   const currentPath = $derived(player.snapshot.current?.path ?? null)
+  const scope = $derived(`genre:${name}`)
 
   function formatDurationSummary(ms: number): string {
     const mins = Math.floor(ms / 60_000)
@@ -236,19 +238,24 @@
               title={tr.path}
               class={[
                 'group grid grid-cols-[1.75rem_2.25rem_minmax(0,2fr)_minmax(0,1.5fr)_4.25rem_3.5rem] items-center gap-3 rounded-lg px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
-                active
-                  ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                  : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+                selection.has(scope, tr.path)
+                  ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
+                  : active
+                    ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                    : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
               ]}
+              aria-pressed={selection.has(scope, tr.path)}
+              onclick={(e) => selection.click(e, scope, i, tr, (j) => tracks[j])}
               ondblclick={() => void library.playGenre(detail!.name, i)}
               oncontextmenu={(e) =>
                 trackMenu.fromEvent(e, tr, {
                   onPlay: () => void library.playGenre(detail!.name, i),
                 })}
-              onkeydown={(e) =>
-                e.target === e.currentTarget &&
-                e.key === 'Enter' &&
-                void library.playGenre(detail!.name, i)}
+              onkeydown={(e) => {
+                if (e.target !== e.currentTarget) return
+                if (selection.key(e, scope, tracks.length, (j) => tracks[j])) return
+                if (e.key === 'Enter') void library.playGenre(detail!.name, i)
+              }}
             >
               <span class="text-right text-xs tabular-nums text-zinc-400">
                 {#if active && player.snapshot.status === 'playing'}

@@ -723,4 +723,10 @@ const TR: Record<string, string> = {
   'Not available while WASAPI exclusive mode is on (it allows one sound at a time).':
     'WASAPI özel modu açıkken kullanılamaz (aynı anda tek ses çalınabilir).',
   '{s} s': '{s} sn',
+
+  // Multi-select
+  'Selected songs': 'Seçili şarkılar',
+  'Playing {n}': '{n} çalınıyor',
+  'Added to favorites': 'Favorilere eklendi',
+  Favorite: 'Favori',
 }

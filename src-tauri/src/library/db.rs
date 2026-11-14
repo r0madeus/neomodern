@@ -3,9 +3,9 @@
 
 use super::{
     AlbumDetail, AlbumRow, ArtistMeta, ArtistProfile, ArtistRow, ArtistTopTrack, BucketStat,
-    DynamicMix, FavoriteRef, FolderInfo, HomeFeed, HomeMixDetail, ListeningStats, NewListenEvent,
-    Page, PlaylistInfo, RecentListen, RecentTrack, Result, StatsSummary, TopAlbumStat,
-    TopArtistStat, TopGenreStat, TopTrackStat, TrackMeta, TrackRow,
+    DynamicMix, FavoriteRef, FolderInfo, GenreDetail, GenreRow, HomeFeed, HomeMixDetail,
+    ListeningStats, NewListenEvent, Page, PlaylistInfo, RecentListen, RecentTrack, Result,
+    StatsSummary, TopAlbumStat, TopArtistStat, TopGenreStat, TopTrackStat, TrackMeta, TrackRow,
 };
 use crate::queue::Track;
 use rusqlite::types::Value;
@@ -2066,6 +2066,83 @@ pub fn artist_profile(conn: &Connection, name: &str) -> Result<ArtistProfile> {
         albums,
         tracks,
     })
+}
+
+const GENRE_FILTER: &str = "LOWER(TRIM(COALESCE(t.genre, ''))) = LOWER(TRIM(?1))";
+const GENRE_TRACK_ORDER: &str =
+    "t.artist COLLATE NOCASE, COALESCE(a.title, '') COLLATE NOCASE, t.disc_no, t.track_no, t.title COLLATE NOCASE, t.id";
+
+pub fn genres(conn: &Connection) -> Result<Vec<GenreRow>> {
+    let mut st = conn.prepare(
+        "SELECT MIN(TRIM(t.genre)) AS name,
+                COUNT(*) AS track_count,
+                (
+                    SELECT a.cover
+                    FROM tracks t2
+                    JOIN albums a ON a.id = t2.album_id
+                    WHERE LOWER(TRIM(COALESCE(t2.genre, ''))) = LOWER(TRIM(t.genre))
+                      AND a.cover IS NOT NULL AND a.cover != ''
+                    ORDER BY COALESCE(t2.year, 0) DESC, a.title COLLATE NOCASE, t2.id
+                    LIMIT 1
+                ) AS cover
+         FROM tracks t
+         WHERE TRIM(COALESCE(t.genre, '')) != ''
+         GROUP BY LOWER(TRIM(t.genre))
+         ORDER BY track_count DESC, name COLLATE NOCASE",
+    )?;
+    let rows = st.query_map([], |r| {
+        Ok(GenreRow {
+            name: r.get(0)?,
+            track_count: r.get::<_, i64>(1)?.try_into().unwrap_or(u32::MAX),
+            cover: r.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn genre_detail(conn: &Connection, name: &str) -> Result<GenreDetail> {
+    let mut tr_st = conn.prepare(&format!(
+        "{TRACK_SELECT} WHERE {GENRE_FILTER} ORDER BY {GENRE_TRACK_ORDER}"
+    ))?;
+    let tracks = tr_st
+        .query_map([name], track_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut al_st = conn.prepare(&format!(
+        "{ALBUM_SELECT}
+         WHERE EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id AND {GENRE_FILTER})
+         ORDER BY COALESCE(a.year, 0) DESC, a.title COLLATE NOCASE, a.id"
+    ))?;
+    let albums = al_st
+        .query_map([name], album_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let canonical = conn
+        .query_row(
+            &format!("SELECT TRIM(t.genre) FROM tracks t WHERE {GENRE_FILTER} LIMIT 1"),
+            [name],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?
+        .unwrap_or_else(|| name.trim().to_owned());
+
+    Ok(GenreDetail {
+        name: canonical,
+        albums,
+        tracks,
+    })
+}
+
+pub fn genre_queue_tracks(conn: &Connection, name: &str) -> Result<Vec<Track>> {
+    let mut st = conn.prepare(&format!(
+        "SELECT t.path, t.title, t.artist
+         FROM tracks t
+         LEFT JOIN albums a ON a.id = t.album_id
+         WHERE {GENRE_FILTER}
+         ORDER BY {GENRE_TRACK_ORDER}"
+    ))?;
+    let rows = st.query_map([name], queue_track)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
 // ---------------------------------------------------------------------

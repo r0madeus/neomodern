@@ -2012,3 +2012,39 @@ fn all_artist_names_merges_spellings_that_differ_only_in_case() {
         .count();
     assert_eq!(foos, 1, "{names:?}");
 }
+
+#[test]
+fn genres_group_case_insensitively_and_match_queue_order() {
+    let e = env();
+    let conn = e.lib.conn();
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO folders(id, path) VALUES (1, '/m');
+         INSERT INTO albums(id, title, album_artist, year) VALUES
+             (10, 'Zebra Album', 'Beta', 2020),
+             (11, 'Alpha Album', 'Alpha', 2021);
+         INSERT INTO tracks(id, folder_id, path, title, artist, album_id, genre, added_at, mtime, size)
+         VALUES
+             (9101, 1, '/m/rock1.flac', 'Song B', 'Beta', 10, 'Rock', 0, 0, 0),
+             (9102, 1, '/m/rock2.flac', 'Song A', 'Alpha', 11, 'rock', 0, 0, 0),
+             (9103, 1, '/m/jazz1.flac', 'Blue', 'Miles', 11, 'Jazz', 0, 0, 0),
+             (9104, 1, '/m/empty.flac', 'Untagged', 'Nobody', 11, '   ', 0, 0, 0);",
+    )
+    .unwrap();
+    drop(conn);
+
+    let genres = e.lib.genres().unwrap();
+    assert_eq!(genres.len(), 2);
+    assert_eq!(genres[0].track_count, 2);
+    assert!(genres[0].name.eq_ignore_ascii_case("rock"));
+    assert_eq!(genres[1].name, "Jazz");
+    assert_eq!(genres[1].track_count, 1);
+
+    let detail = e.lib.genre_detail("rock").unwrap();
+    let queue = e.lib.genre_tracks("rock").unwrap();
+    assert_eq!(detail.albums.len(), 2);
+    assert_eq!(detail.tracks.len(), 2);
+    assert_eq!(
+        detail.tracks.iter().map(|t| t.path.as_str()).collect::<Vec<_>>(),
+        queue.iter().map(|t| t.path.to_str().unwrap()).collect::<Vec<_>>(),
+    );
+}

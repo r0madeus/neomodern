@@ -1508,6 +1508,30 @@ pub fn library_play_artist(
 }
 
 #[tauri::command]
+pub fn library_genres(lib: State<'_, Arc<Library>>) -> Res<Vec<crate::library::GenreRow>> {
+    le(lib.genres())
+}
+
+#[tauri::command]
+pub fn library_genre_detail(
+    lib: State<'_, Arc<Library>>,
+    name: String,
+) -> Res<crate::library::GenreDetail> {
+    le(lib.genre_detail(&name))
+}
+
+#[tauri::command]
+pub fn library_play_genre(
+    lib: State<'_, Arc<Library>>,
+    player: State<'_, Arc<Player>>,
+    name: String,
+    start_index: usize,
+) -> Res<PlayerSnapshot> {
+    let tracks = le(lib.genre_tracks(&name))?;
+    s(player.replace_queue(tracks, start_index))
+}
+
+#[tauri::command]
 pub async fn artist_enrich(
     lib: State<'_, Arc<Library>>,
     online: State<'_, Arc<OnlineService>>,

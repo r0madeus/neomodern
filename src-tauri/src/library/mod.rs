@@ -342,6 +342,22 @@ pub struct ArtistProfile {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct GenreRow {
+    pub name: String,
+    pub track_count: u32,
+    pub cover: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GenreDetail {
+    pub name: String,
+    pub albums: Vec<AlbumRow>,
+    pub tracks: Vec<TrackRow>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct Page<T> {
     pub total: u64,
     pub items: Vec<T>,
@@ -764,6 +780,18 @@ impl Library {
 
     pub fn artist_tracks(&self, name: &str) -> Result<Vec<Track>> {
         db::artist_queue_tracks(&self.conn(), name)
+    }
+
+    pub fn genres(&self) -> Result<Vec<GenreRow>> {
+        db::genres(&self.conn())
+    }
+
+    pub fn genre_detail(&self, name: &str) -> Result<GenreDetail> {
+        db::genre_detail(&self.conn(), name)
+    }
+
+    pub fn genre_tracks(&self, name: &str) -> Result<Vec<Track>> {
+        db::genre_queue_tracks(&self.conn(), name)
     }
 
     pub fn artist_meta(&self, name: &str) -> Result<Option<ArtistMeta>> {

@@ -5,11 +5,14 @@
   import Cover from './Cover.svelte'
   import ExtBadge from './ExtBadge.svelte'
   import FavoriteButton from './FavoriteButton.svelte'
+  import GenreView from './GenreView.svelte'
   import Icon from './Icon.svelte'
   import OnlineAlbumDetail from './OnlineAlbumDetail.svelte'
+  import TrackDownloadButton from './TrackDownloadButton.svelte'
   import { appSettings } from './appSettings.svelte'
+  import { genreColor } from './genreColor'
   import { count, t } from './i18n.svelte'
-  import { library, type AlbumRow, type TrackRow } from './library.svelte'
+  import { library, type AlbumRow, type GenreRow, type TrackRow } from './library.svelte'
   import {
     downloadProgress,
     isAlbumInLibrary,
@@ -71,6 +74,31 @@
     return () => {
       stale = true
     }
+  })
+
+  let genres = $state<GenreRow[]>([])
+  let genresLoaded = $state(false)
+  let selectedGenre = $state<string | null>(null)
+  $effect(() => {
+    void library.stats.version
+    let stale = false
+    library
+      .genres()
+      .then((rows) => {
+        if (stale) return
+        genres = rows
+        genresLoaded = true
+      })
+      .catch(() => {
+        if (!stale) genresLoaded = true
+      })
+    return () => {
+      stale = true
+    }
+  })
+
+  $effect(() => {
+    if (trimmedQuery !== '') selectedGenre = null
   })
 
   function submitSearch(e: SubmitEvent) {
@@ -173,24 +201,62 @@
 
     <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
       {#if trimmedQuery === ''}
-        <div class="flex h-full min-h-56 flex-col items-center justify-center gap-2 text-center">
-          <div class="rounded-full bg-zinc-200/70 p-4 text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400">
-            <Icon name="search" class="size-7" />
-          </div>
-          <p class="mt-1 font-medium">{t('Search library and online')}</p>
-          <p class="max-w-md text-sm text-zinc-500">
-            {onlineOff
-              ? t('Type to search your local library.')
-              : t(
-                  'Type to search your local library immediately, or press Enter to search, stream, and download online.',
-                )}
-          </p>
-          {#if online.status && !onlineOff}
-            <p class="mt-2 max-w-lg truncate text-xs text-zinc-400">
-              {t('Download folder')}: {online.status.downloadDir}
+        {#if selectedGenre !== null}
+          <GenreView
+            name={selectedGenre}
+            onBack={() => (selectedGenre = null)}
+            onOpenAlbum={onOpenLocalAlbum}
+          />
+        {:else if genres.length > 0}
+          <section class="pt-1">
+            <h3 class="mb-4 text-lg font-bold tracking-tight">{t('Browse all')}</h3>
+            <div class="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {#each genres as g (g.name)}
+                <button
+                  type="button"
+                  style="background-color: {genreColor(g.name)}"
+                  class="group relative flex h-28 flex-col items-start justify-between overflow-hidden rounded-xl p-4 text-left text-white shadow-sm transition hover:scale-[1.02] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none sm:h-32"
+                  onclick={() => (selectedGenre = g.name)}
+                >
+                  <div class="relative z-10 min-w-0 pr-12">
+                    <p class="line-clamp-2 text-base leading-snug font-bold drop-shadow-sm sm:text-lg">
+                      {g.name}
+                    </p>
+                    <p class="mt-0.5 text-xs text-white/80">
+                      {count(g.trackCount, '{n} track', '{n} tracks')}
+                    </p>
+                  </div>
+                  {#if g.cover}
+                    <Cover
+                      cover={g.cover}
+                      title={g.name}
+                      class="pointer-events-none absolute -right-3 -bottom-2 size-20 rotate-[24deg] rounded-lg shadow-xl shadow-black/45 transition group-hover:scale-105"
+                    />
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          </section>
+        {:else if genresLoaded}
+          <div class="flex h-full min-h-56 flex-col items-center justify-center gap-2 text-center">
+            <div class="rounded-full bg-zinc-200/70 p-4 text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400">
+              <Icon name="search" class="size-7" />
+            </div>
+            <p class="mt-1 font-medium">{t('Search library and online')}</p>
+            <p class="max-w-md text-sm text-zinc-500">
+              {onlineOff
+                ? t('Type to search your local library.')
+                : t(
+                    'Type to search your local library immediately, or press Enter to search, stream, and download online.',
+                  )}
             </p>
-          {/if}
-        </div>
+            {#if online.status && !onlineOff}
+              <p class="mt-2 max-w-lg truncate text-xs text-zinc-400">
+                {t('Download folder')}: {online.status.downloadDir}
+              </p>
+            {/if}
+          </div>
+        {/if}
       {:else}
         <div class="flex flex-col gap-8">
           <section aria-labelledby="local-results-heading" class="flex flex-col gap-4">
@@ -359,7 +425,6 @@
                           online.playingId === track.id ||
                           (player.snapshot.current?.title === track.title &&
                             player.snapshot.current?.path.startsWith('http'))}
-                        {@const busy = job?.state === 'queued' || job?.state === 'downloading'}
                         <li class="group flex items-center gap-2 py-0.5">
                           <button
                             type="button"
@@ -397,42 +462,7 @@
                             </span>
                           </button>
 
-                          <button
-                            type="button"
-                            disabled={!ytdlpAvailable || busy}
-                            title={
-                              job?.state === 'failed' && job.error
-                                ? job.error
-                                : t('Download track')
-                            }
-                            aria-label={t('Download “{title}”', { title: track.title })}
-                            class={[
-                              'flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50',
-                              job?.state === 'done'
-                                ? 'bg-accent-500/15 text-accent-700 dark:text-accent-300'
-                                : job?.state === 'failed'
-                                  ? 'bg-red-500/15 text-red-600 hover:bg-red-500/25 dark:text-red-400'
-                                  : 'text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
-                            ]}
-                            onclick={() => void online.downloadTrack(track)}
-                          >
-                            {#if job?.state === 'done'}
-                              <Icon name="check" class="size-4" />
-                              <span>{t('Downloaded')}</span>
-                            {:else if job?.state === 'downloading'}
-                              <Icon name="download" class="size-4 animate-pulse" />
-                              <span>{t('Downloading…')}</span>
-                            {:else if job?.state === 'queued'}
-                              <Icon name="download" class="size-4" />
-                              <span>{t('Queued')}</span>
-                            {:else if job?.state === 'failed'}
-                              <Icon name="download" class="size-4" />
-                              <span>{t('Retry')}</span>
-                            {:else}
-                              <Icon name="download" class="size-4" />
-                              <span class="hidden sm:inline">{t('Download')}</span>
-                            {/if}
-                          </button>
+                          <TrackDownloadButton {track} {job} disabled={!ytdlpAvailable} />
                         </li>
                       {/each}
                     </ol>

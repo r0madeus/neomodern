@@ -66,6 +66,18 @@ export interface AlbumRow {
   cover: string | null
 }
 
+export interface GenreRow {
+  name: string
+  trackCount: number
+  cover: string | null
+}
+
+export interface GenreDetail {
+  name: string
+  albums: AlbumRow[]
+  tracks: TrackRow[]
+}
+
 export interface LibraryStats {
   tracks: number
   albums: number
@@ -277,8 +289,26 @@ class LibraryStore {
     }
   }
 
-  async playAlbum(albumId: number, startIndex: number): Promise<void> {
-    await this.#play('library_play_album', { albumId, startIndex })
+  async playAlbum(albumId: number, startIndex: number, shuffle?: boolean): Promise<void> {
+    const snap = await this.#play('library_play_album', { albumId, startIndex })
+    if (snap && shuffle !== undefined && snap.shuffle !== shuffle) {
+      await player.setShuffle(shuffle)
+    }
+  }
+
+  genres(): Promise<GenreRow[]> {
+    return invoke<GenreRow[]>('library_genres')
+  }
+
+  genreDetail(name: string): Promise<GenreDetail> {
+    return invoke<GenreDetail>('library_genre_detail', { name })
+  }
+
+  async playGenre(name: string, startIndex: number, shuffle?: boolean): Promise<void> {
+    const snap = await this.#play('library_play_genre', { name, startIndex })
+    if (snap && shuffle !== undefined && snap.shuffle !== shuffle) {
+      await player.setShuffle(shuffle)
+    }
   }
 
   async playAll(startIndex: number): Promise<void> {
@@ -318,11 +348,14 @@ class LibraryStore {
       query: query === '' ? null : query,
     })
 
-  async #play(command: string, args: Record<string, unknown>): Promise<void> {
+  async #play(command: string, args: Record<string, unknown>): Promise<PlayerSnapshot | null> {
     try {
-      player.applySnapshot(await invoke<PlayerSnapshot>(command, args))
+      const snap = await invoke<PlayerSnapshot>(command, args)
+      player.applySnapshot(snap)
+      return snap
     } catch (e) {
       player.error = String(e)
+      return null
     }
   }
 }

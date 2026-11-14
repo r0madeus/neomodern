@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -260,6 +260,14 @@ pub fn init(conn: &Connection) -> Result<()> {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V10)?;
         tx.pragma_update(None, "user_version", 10)?;
+        tx.commit()?;
+    }
+    if version < 11 {
+        // Artist splitting changed ("A, B & C" is three artists unless it is
+        // a known band): split every track's artists again.
+        let tx = conn.unchecked_transaction()?;
+        backfill_track_artists(&tx)?;
+        tx.pragma_update(None, "user_version", 11)?;
         tx.commit()?;
     }
     Ok(())
@@ -1785,8 +1793,55 @@ fn starts_with_ignore_ascii_case(s: &str, prefix: &str) -> bool {
         .is_some_and(|b| b.eq_ignore_ascii_case(prefix.as_bytes()))
 }
 
-/// Splits one comma-separated name list, keeping group names whole.
+/// Bands whose name is itself a comma list, compared after
+/// [`normalize_group`]. Any other `"A, B & C"` is three artists.
+const COMMA_GROUPS: &[&str] = &[
+    "earth, wind & fire",
+    "crosby, stills, nash & young",
+    "crosby, stills & nash",
+    "peter, paul & mary",
+    "emerson, lake & palmer",
+    "blood, sweat & tears",
+    "dave dee, dozy, beaky, mick & tich",
+];
+
+/// Words after `&` that make it part of one band name (`"Mumford & Sons"`,
+/// `"Bob Marley & The Wailers"`), not a list.
+const GROUP_TAILS: &[&str] = &[
+    "sons",
+    "daughters",
+    "friends",
+    "co",
+    "co.",
+    "company",
+    "brothers",
+    "sisters",
+];
+const GROUP_TAIL_PREFIXES: &[&str] = &["the ", "his ", "her ", "their "];
+
+/// Lowercase, `and` written as `&`, single spaces.
+fn normalize_group(s: &str) -> String {
+    s.to_lowercase()
+        .split_whitespace()
+        .map(|w| if w == "and" { "&" } else { w })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Whether `"X & tail"` reads as one band (`tail` is the part after `&`).
+fn is_group_tail(tail: &str) -> bool {
+    let t = tail.trim().to_lowercase();
+    GROUP_TAILS.contains(&t.as_str()) || GROUP_TAIL_PREFIXES.iter().any(|p| t.starts_with(p))
+}
+
+/// Splits one comma-separated name list, keeping group names whole. In a
+/// list, the last `&` joins two more names (`"A, B & C"`), unless it is part
+/// of a band name.
 fn split_name_list(list: &str) -> Vec<String> {
+    let whole = strip_unmatched_close(list);
+    if COMMA_GROUPS.contains(&normalize_group(whole).as_str()) {
+        return vec![whole.to_owned()];
+    }
     let mut parts: Vec<String> = Vec::new();
     for part in list
         .split(',')
@@ -1801,28 +1856,18 @@ fn split_name_list(list: &str) -> Vec<String> {
             _ => parts.push(part.to_owned()),
         }
     }
-    if parts.len() > 1 && is_single_word_band(&parts) {
-        return vec![parts.join(", ")];
+    if parts.len() > 1
+        && let Some(last) = parts.pop()
+    {
+        match last.rsplit_once(" & ") {
+            Some((a, b)) if !a.trim().is_empty() && !b.trim().is_empty() && !is_group_tail(b) => {
+                parts.push(a.trim().to_owned());
+                parts.push(b.trim().to_owned());
+            }
+            _ => parts.push(last),
+        }
     }
     parts
-}
-
-/// `"Earth, Wind & Fire"`, `"Crosby, Stills, Nash & Young"`,
-/// `"Peter, Paul and Mary"`: three or more single words, the last two joined
-/// by `&` or `and`.
-fn is_single_word_band(parts: &[String]) -> bool {
-    let Some((last, rest)) = parts.split_last() else {
-        return false;
-    };
-    let lower = last.to_lowercase();
-    let Some((a, b)) = lower
-        .split_once(" & ")
-        .or_else(|| lower.split_once(" and "))
-    else {
-        return false;
-    };
-    let single = |w: &str| !w.trim().is_empty() && !w.trim().contains(char::is_whitespace);
-    rest.len() + 2 >= 3 && rest.iter().all(|w| single(w)) && single(a) && single(b)
 }
 
 pub fn sync_track_artists(conn: &Connection, track_id: i64, raw_artist: &str) -> Result<()> {

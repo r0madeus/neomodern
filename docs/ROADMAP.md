@@ -176,6 +176,7 @@ contributors and agents.
   close to the album track.
 - Metadata matching has only been tested against recorded MusicBrainz
   responses, not the live service.
-- Artist splitting is heuristic: a duet tagged "A, B & C" splits into
-  "A" and "B & C"; three single-word rappers joined by `&` stay one name.
+- Artist splitting is heuristic: a lone "A & B" stays one name (it may be
+  a duo or a band); in a comma list the last `&` splits, except for a short
+  list of known comma bands and tails such as "& Sons" or "& The …".
 - Android: "Open files" is hidden; online search and download are desktop only.

@@ -137,7 +137,7 @@ fn schema_version_is_set() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
 }
 
 #[test]
@@ -692,7 +692,7 @@ fn migrates_a_v1_database_to_latest() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
     let tracks = lib.tracks_page(0, 10, SortOrder::Title).unwrap();
     assert_eq!(tracks.len(), 1, "existing data survives the migration");
     let pl = lib.create_playlist("Mix", &[tracks[0].id]).unwrap();
@@ -733,7 +733,7 @@ fn migrates_a_v2_database_and_keeps_a_folder_album_whole() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 10);
+        assert_eq!(v, 11);
         let fk_issues = conn
             .prepare("PRAGMA foreign_key_check")
             .unwrap()
@@ -1769,7 +1769,7 @@ fn migrating_to_v8_merges_year_split_albums_and_resplits_artists() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
     let albums = lib.albums_page(0, 10).unwrap();
     assert_eq!(albums.len(), 1);
     assert_eq!((albums[0].year, albums[0].track_count), (Some(1994), 4));
@@ -1812,7 +1812,7 @@ fn migrating_a_v8_database_adds_tag_history() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 10);
+    assert_eq!(v, 11);
     assert_eq!(lib.folders().unwrap().len(), 1);
     let cols: Vec<String> = lib
         .conn()

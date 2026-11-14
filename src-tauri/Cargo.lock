@@ -1089,36 +1089,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "neomodern"
-version = "0.2.0"
-dependencies = [
- "hound",
- "image",
- "libmpv2",
- "lofty",
- "log",
- "reqwest",
- "rusqlite",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "souvlaki",
- "tauri",
- "tauri-build",
- "tauri-plugin-android-audio",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "walkdir",
- "webpki-roots",
-]
-
-[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2459,6 +2429,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
+]
+
+[[package]]
+name = "neomodern"
+version = "0.2.0"
+dependencies = [
+ "hound",
+ "image",
+ "libmpv2",
+ "lofty",
+ "log",
+ "reqwest",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "souvlaki",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-android-audio",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "walkdir",
+ "webpki-roots",
 ]
 
 [[package]]

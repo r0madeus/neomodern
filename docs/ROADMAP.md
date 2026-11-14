@@ -151,7 +151,6 @@ contributors and agents.
    matching a whole library in the background.
 
 ## Known limitations
-- Linux MPRIS state lags ~1–2 s (souvlaki's D-Bus loop).
 - Online search/download is desktop only and depends on `yt-dlp`
   (and YouTube); a wrong recording is still possible when no hit is
   close to the album track.

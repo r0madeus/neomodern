@@ -15,8 +15,23 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- In-app update: hand a downloaded release APK to the system
+         installer (the user confirms every install). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application>
+        <!-- Shares the downloaded update APK (cache/updates) with the
+             installer. Own class, so it cannot clash with another
+             FileProvider in the app manifest. -->
+        <provider
+            android:name="io.github.r0madeus.neomodern.audio.UpdateFileProvider"
+            android:authorities="${applicationId}.neomodern.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/neomodern_update_paths" />
+        </provider>
         <service
             android:name="io.github.r0madeus.neomodern.audio.PlaybackService"
             android:exported="true"

@@ -320,6 +320,7 @@ pub fn run() {
             commands::app_report_issue,
             commands::app_reveal_file,
             commands::app_check_update,
+            commands::app_install_update,
             commands::app_open_release,
             commands::app_set_close_to_tray,
             commands::app_set_lyrics_save,

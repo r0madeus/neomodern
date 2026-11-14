@@ -14,6 +14,7 @@ import androidx.activity.result.ActivityResult
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
@@ -53,6 +54,11 @@ class SaveTextArgs {
     lateinit var name: String
     lateinit var text: String
     var mimeType: String = "audio/x-mpegurl"
+}
+
+@InvokeArg
+class InstallArgs {
+    var path: String? = null
 }
 
 @InvokeArg
@@ -456,6 +462,70 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }
+
+    private var pendingApk: String? = null
+
+    /**
+     * Opens the system installer for a downloaded update APK (a file in the
+     * app's cache/updates). Asks once for "install unknown apps" first.
+     * Resolves `{ started }`; false when that permission was not given.
+     */
+    @Command
+    fun installApk(invoke: Invoke) {
+        val path = invoke.parseArgs(InstallArgs::class.java).path
+        if (path == null) {
+            invoke.reject("No update file")
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            pendingApk = path
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:" + activity.packageName),
+            )
+            startActivityForResult(invoke, intent, "installPermissionResult")
+            return
+        }
+        launchInstaller(invoke, path)
+    }
+
+    @ActivityCallback
+    fun installPermissionResult(invoke: Invoke, result: ActivityResult) {
+        val path = pendingApk
+        pendingApk = null
+        if (path == null) {
+            invoke.reject("No update file")
+            return
+        }
+        // The settings screen gives no result code; ask the system instead.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            invoke.resolve(JSObject().put("started", false))
+            return
+        }
+        launchInstaller(invoke, path)
+    }
+
+    private fun launchInstaller(invoke: Invoke, path: String) {
+        try {
+            val uri = FileProvider.getUriForFile(
+                activity,
+                activity.packageName + ".neomodern.updates",
+                File(path),
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(intent)
+            invoke.resolve(JSObject().put("started", true))
+        } catch (e: Exception) {
+            invoke.reject("Could not open the installer: ${e.message}")
+        }
+    }
 
     /** Asks for read access to the music library; resolves `{ granted }`. */
     @Command

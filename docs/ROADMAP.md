@@ -151,6 +151,11 @@ contributors and agents.
 - **Problem report** (Settings → About): version, system, settings and
   the last 400 log lines with the home folder hidden; copy, save, or
   open a GitHub issue.
+- **In-app update on Android** (arm64): the update banner's Update
+  downloads the release APK, checks it against `SHA256SUMS-android.txt`
+  and opens the system installer (one-time "install unknown apps"
+  permission). Desktop still opens the release page; the Windows updater
+  needs an updater signing key first.
 - **Content Security Policy** instead of `csp: null`.
 - Genre pages load tracks in pages; Linux MPRIS updates without delay
   (souvlaki's zbus backend).

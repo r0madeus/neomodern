@@ -187,6 +187,51 @@ pub async fn app_check_update(
     crate::update::check(&current, &store.net_policy()).await
 }
 
+/// Android: downloads the newer release's APK, checks it and opens the
+/// system installer (asking once for "install unknown apps"). Progress is
+/// sent as `update://progress` events.
+#[tauri::command]
+pub async fn app_install_update(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<SessionStore>>,
+) -> Res<()> {
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, store);
+        Err("in-app install is only available on Android".into())
+    }
+    #[cfg(target_os = "android")]
+    {
+        use tauri::{Emitter, Manager};
+        #[derive(serde::Deserialize)]
+        struct Started {
+            started: bool,
+        }
+        let current = app.package_info().version.to_string();
+        let dir = app
+            .path()
+            .app_cache_dir()
+            .map_err(|e| e.to_string())?
+            .join("updates");
+        let emit = |p: crate::update::DownloadProgress| {
+            let _ = app.emit("update://progress", &p);
+        };
+        let apk = crate::update::download_apk(&current, &store.net_policy(), &dir, &emit).await?;
+        log::info!("update downloaded: {}", apk.display());
+        let started: Started = android(
+            &app,
+            "installApk",
+            serde_json::json!({ "path": apk.display().to_string() }),
+        )
+        .await?;
+        if started.started {
+            Ok(())
+        } else {
+            Err("Allow NeoModern to install apps, then tap Update again.".into())
+        }
+    }
+}
+
 /// Opens a release page of this project in the browser.
 #[tauri::command]
 pub fn app_open_release(

@@ -677,4 +677,11 @@ const TR: Record<string, string> = {
     'Müziklerinin olduğu klasörü seç. NeoModern okumak için izin ister ve yalnızca okur.',
   'Usually this is the Music or Download folder on your phone.':
     'Genellikle telefonundaki Music ya da Download klasörüdür.',
+
+  // In-app update (Android)
+  Update: 'Güncelle',
+  'Downloading the update…': 'Güncelleme indiriliyor…',
+  'Downloading the update… {p}%': 'Güncelleme indiriliyor… %{p}',
+  'Allow NeoModern to install apps, then tap Update again.':
+    'NeoModern’in uygulama yüklemesine izin ver, sonra yeniden Güncelle’ye dokun.',
 }

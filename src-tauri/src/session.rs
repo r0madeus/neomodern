@@ -112,6 +112,11 @@ pub struct SessionState {
     /// [`SessionStore`].
     #[serde(default)]
     pub welcome_done: bool,
+    #[serde(default)]
+    pub equalizer: crate::audio::Equalizer,
+    /// Crossfade length in seconds; 0 = off.
+    #[serde(default)]
+    pub crossfade_seconds: f64,
 }
 
 impl Default for SessionState {
@@ -138,6 +143,8 @@ impl Default for SessionState {
             net_artist_info: true,
             net_metadata: true,
             welcome_done: false,
+            equalizer: crate::audio::Equalizer::default(),
+            crossfade_seconds: 0.0,
             net_updates: true,
         }
     }
@@ -212,6 +219,8 @@ struct StructuralKey {
     replaygain: ReplayGain,
     gapless: bool,
     wasapi_exclusive: bool,
+    /// Equalizer (enabled, preamp, ten gains) and crossfade as raw bits.
+    sound: [u64; 13],
 }
 
 impl From<&PlayerSnapshot> for StructuralKey {
@@ -224,6 +233,17 @@ impl From<&PlayerSnapshot> for StructuralKey {
             replaygain: s.replaygain,
             gapless: s.gapless,
             wasapi_exclusive: s.wasapi_exclusive,
+            sound: {
+                let eq = &s.equalizer;
+                let mut bits = [0u64; 13];
+                bits[0] = u64::from(eq.enabled);
+                bits[1] = eq.preamp_db.to_bits();
+                for (slot, g) in bits[2..12].iter_mut().zip(eq.gains_db) {
+                    *slot = g.to_bits();
+                }
+                bits[12] = s.crossfade_seconds.to_bits();
+                bits
+            },
         }
     }
 }
@@ -505,6 +525,12 @@ mod tests {
             net_metadata: true,
             net_updates: false,
             welcome_done: true,
+            equalizer: crate::audio::Equalizer {
+                enabled: true,
+                preamp_db: -2.0,
+                gains_db: [3.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+            },
+            crossfade_seconds: 6.0,
         };
         save(&file, &state).unwrap();
         assert_eq!(load(&file), state);

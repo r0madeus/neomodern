@@ -17,17 +17,21 @@
 //! `Idle` is only emitted after something has started playing, so the
 //! initial idle state at startup produces no event.
 
-use super::{AudioEngine, EndReason, EngineError, EngineEvent, EngineResult, ReplayGain};
+use super::{
+    AudioEngine, EQ_BANDS, EndReason, EngineError, EngineEvent, EngineResult, Equalizer, ReplayGain,
+};
 use libmpv2::events::{Event, PropertyData};
 use libmpv2::{Format, Mpv};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 const POSITION_INTERVAL: Duration = Duration::from_millis(250);
+/// Volume steps of a fade.
+const FADE_STEP: Duration = Duration::from_millis(40);
 const OBS_PAUSE: u64 = 1;
 const OBS_DURATION: u64 = 2;
 const OBS_TIME_POS: u64 = 3;
@@ -62,6 +66,31 @@ struct Slots {
     next: Option<Slot>,
 }
 
+/// Settings a crossfade's tail player copies from the main one.
+#[derive(Debug, Clone)]
+struct Shared {
+    /// Target volume (the user's volume; a fade-in ramps towards it).
+    volume: f64,
+    replaygain: ReplayGain,
+    /// Current `af` value (equalizer), empty when off.
+    af: String,
+    exclusive: bool,
+    /// Fade-in length for the next `load` (armed by `begin_crossfade`).
+    fade_in: Option<f64>,
+}
+
+impl Default for Shared {
+    fn default() -> Self {
+        Self {
+            volume: 100.0,
+            replaygain: ReplayGain::default(),
+            af: String::new(),
+            exclusive: false,
+            fade_in: None,
+        }
+    }
+}
+
 pub struct MpvEngine {
     mpv: Arc<Mpv>,
     slots: Arc<Mutex<Slots>>,
@@ -69,6 +98,76 @@ pub struct MpvEngine {
     thread: Option<JoinHandle<()>>,
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     custom_ao: bool,
+    options: MpvOptions,
+    shared: Arc<Mutex<Shared>>,
+    /// Second instance that plays the end of the previous track during a
+    /// crossfade. Created on first use; holds one file at most.
+    tail: Mutex<Option<Arc<Mpv>>>,
+    /// Bumped to cancel a running fade (main and tail separately).
+    main_fade: Arc<AtomicU64>,
+    tail_fade: Arc<AtomicU64>,
+}
+
+/// mpv `af` value for `eq`: one peaking filter per octave band plus the
+/// preamp, in a labelled lavfi graph. Empty when it changes nothing.
+pub fn equalizer_af(eq: &Equalizer) -> String {
+    let eq = eq.clamped();
+    if eq.is_flat() {
+        return String::new();
+    }
+    let mut chain: Vec<String> = EQ_BANDS
+        .iter()
+        .zip(eq.gains_db)
+        .filter(|(_, g)| *g != 0.0)
+        .map(|(f, g)| format!("equalizer=f={f}:t=o:w=1:g={g:.1}"))
+        .collect();
+    if eq.preamp_db != 0.0 {
+        chain.push(format!("volume={:.1}dB", eq.preamp_db));
+    }
+    format!("@neoeq:lavfi=[{}]", chain.join(","))
+}
+
+fn shared_lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
+    shared.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Moves `mpv`'s volume from `from` to the value `to()` returns, over
+/// `seconds`, unless `token` changes (a newer fade or a stop). Calls
+/// `done` when it finished without being cancelled.
+fn spawn_fade(
+    mpv: Arc<Mpv>,
+    token: Arc<AtomicU64>,
+    from: f64,
+    to: impl Fn() -> f64 + Send + 'static,
+    seconds: f64,
+    done: impl FnOnce(&Mpv) + Send + 'static,
+) {
+    let mine = token.fetch_add(1, Ordering::SeqCst) + 1;
+    let spawned = std::thread::Builder::new()
+        .name("mpv-fade".into())
+        .spawn(move || {
+            let total = Duration::from_secs_f64(seconds.max(0.1));
+            let started = Instant::now();
+            loop {
+                if token.load(Ordering::SeqCst) != mine {
+                    return;
+                }
+                let k = (started.elapsed().as_secs_f64() / total.as_secs_f64()).min(1.0);
+                let target = to();
+                let v = from + (target - from) * k;
+                let _ = mpv.set_property("volume", v.clamp(0.0, 100.0));
+                if k >= 1.0 {
+                    break;
+                }
+                std::thread::sleep(FADE_STEP);
+            }
+            if token.load(Ordering::SeqCst) == mine {
+                done(&mpv);
+            }
+        });
+    if let Err(e) = spawned {
+        log::warn!("could not start a fade: {e}");
+    }
 }
 
 fn cmd_err(name: &str, e: impl std::fmt::Debug) -> EngineError {
@@ -127,32 +226,7 @@ fn path_str(path: &Path) -> EngineResult<&str> {
 impl MpvEngine {
     pub fn new(options: MpvOptions, events: Sender<EngineEvent>) -> EngineResult<MpvEngine> {
         let custom_ao = options.audio_output.is_some();
-        let mpv = Mpv::with_initializer(|i| {
-            i.set_property("vid", "no")?;
-            i.set_property("audio-display", "no")?;
-            i.set_property("idle", "yes")?;
-            i.set_property("keep-open", "no")?;
-            i.set_property("prefetch-playlist", "yes")?;
-            i.set_property("gapless-audio", "weak")?;
-            #[cfg(target_os = "windows")]
-            if !custom_ao {
-                i.set_property("audio-exclusive", "no")?;
-            }
-            i.set_property("replaygain", "album")?;
-            i.set_property("config", "no")?;
-            i.set_property("load-scripts", "no")?;
-            i.set_property("input-default-bindings", "no")?;
-            i.set_property("terminal", "no")?;
-            i.set_property("ytdl", "no")?;
-            if let Some(ao) = &options.audio_output {
-                i.set_property("ao", ao.as_str())?;
-            }
-            if options.untimed {
-                i.set_property("ao-null-untimed", "yes")?;
-            }
-            Ok(())
-        })
-        .map_err(|e| EngineError::Init(e.to_string()))?;
+        let mpv = Self::create(&options, true)?;
 
         for (name, format, id) in [
             ("pause", Format::Flag, OBS_PAUSE),
@@ -187,7 +261,67 @@ impl MpvEngine {
             stop,
             thread: Some(thread),
             custom_ao,
+            options,
+            shared: Arc::new(Mutex::new(Shared::default())),
+            tail: Mutex::new(None),
+            main_fade: Arc::new(AtomicU64::new(0)),
+            tail_fade: Arc::new(AtomicU64::new(0)),
         })
+    }
+
+    /// A configured mpv instance. `main` is the queue player; the other one
+    /// only plays a crossfade's tail and needs no prefetching.
+    fn create(options: &MpvOptions, main: bool) -> EngineResult<Mpv> {
+        #[cfg(target_os = "windows")]
+        let custom_ao = options.audio_output.is_some();
+        Mpv::with_initializer(|i| {
+            i.set_property("vid", "no")?;
+            i.set_property("audio-display", "no")?;
+            i.set_property("idle", "yes")?;
+            i.set_property("keep-open", "no")?;
+            if main {
+                i.set_property("prefetch-playlist", "yes")?;
+            }
+            i.set_property("gapless-audio", "weak")?;
+            #[cfg(target_os = "windows")]
+            if !custom_ao {
+                i.set_property("audio-exclusive", "no")?;
+            }
+            i.set_property("replaygain", "album")?;
+            i.set_property("config", "no")?;
+            i.set_property("load-scripts", "no")?;
+            i.set_property("input-default-bindings", "no")?;
+            i.set_property("terminal", "no")?;
+            i.set_property("ytdl", "no")?;
+            if let Some(ao) = &options.audio_output {
+                i.set_property("ao", ao.as_str())?;
+            }
+            if options.untimed {
+                i.set_property("ao-null-untimed", "yes")?;
+            }
+            Ok(())
+        })
+        .map_err(|e| EngineError::Init(e.to_string()))
+    }
+
+    /// The tail player, created on first use with the current settings.
+    fn tail(&self) -> EngineResult<Arc<Mpv>> {
+        let mut tail = self.tail.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(t) = tail.as_ref() {
+            return Ok(Arc::clone(t));
+        }
+        let created = Arc::new(Self::create(&self.options, false)?);
+        *tail = Some(Arc::clone(&created));
+        Ok(created)
+    }
+
+    /// Stops a crossfade tail, if one is playing.
+    fn stop_tail(&self) {
+        self.tail_fade.fetch_add(1, Ordering::SeqCst);
+        let tail = self.tail.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(t) = tail {
+            let _ = t.command("stop", &[]);
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, Slots> {
@@ -211,7 +345,23 @@ impl Drop for MpvEngine {
 impl AudioEngine for MpvEngine {
     fn load(&self, path: &Path) -> EngineResult<()> {
         let mut slots = self.lock();
+        let fade_in = shared_lock(&self.shared).fade_in.take();
+        if fade_in.is_some() {
+            self.main_fade.fetch_add(1, Ordering::SeqCst);
+            let _ = self.mpv.set_property("volume", 0.0);
+        }
         self.command("loadfile", &[path_str(path)?, "replace"])?;
+        if let Some(seconds) = fade_in {
+            let shared = Arc::clone(&self.shared);
+            spawn_fade(
+                Arc::clone(&self.mpv),
+                Arc::clone(&self.main_fade),
+                0.0,
+                move || shared_lock(&shared).volume,
+                seconds,
+                |_| {},
+            );
+        }
         slots.next = None;
         slots.current = last_entry_id(&self.mpv)?.map(|id| Slot {
             id,
@@ -252,12 +402,15 @@ impl AudioEngine for MpvEngine {
     }
 
     fn pause(&self) -> EngineResult<()> {
+        // A paused player should be silent: drop a crossfade tail too.
+        self.stop_tail();
         self.mpv
             .set_property("pause", true)
             .map_err(|e| cmd_err("pause", e))
     }
 
     fn stop(&self) -> EngineResult<()> {
+        self.stop_tail();
         let mut slots = self.lock();
         *slots = Slots::default();
         self.command("stop", &[])
@@ -268,12 +421,17 @@ impl AudioEngine for MpvEngine {
     }
 
     fn set_volume(&self, percent: f64) -> EngineResult<()> {
+        let percent = percent.clamp(0.0, 100.0);
+        shared_lock(&self.shared).volume = percent;
+        // A running fade-in ends at the new volume; otherwise set it now.
+        self.main_fade.fetch_add(1, Ordering::SeqCst);
         self.mpv
-            .set_property("volume", percent.clamp(0.0, 100.0))
+            .set_property("volume", percent)
             .map_err(|e| cmd_err("volume", e))
     }
 
     fn set_replaygain(&self, mode: ReplayGain) -> EngineResult<()> {
+        shared_lock(&self.shared).replaygain = mode;
         self.mpv
             .set_property("replaygain", mode.mpv_value())
             .map_err(|e| cmd_err("replaygain", e))
@@ -287,6 +445,7 @@ impl AudioEngine for MpvEngine {
     }
 
     fn set_wasapi_exclusive(&self, enabled: bool) -> EngineResult<()> {
+        shared_lock(&self.shared).exclusive = enabled;
         #[cfg(target_os = "windows")]
         if !self.custom_ao {
             let value = if enabled { "yes" } else { "no" };
@@ -308,6 +467,57 @@ impl AudioEngine for MpvEngine {
         #[cfg(not(target_os = "windows"))]
         let _ = enabled;
         Ok(())
+    }
+
+    fn set_equalizer(&self, eq: &Equalizer) -> EngineResult<()> {
+        let af = equalizer_af(eq);
+        shared_lock(&self.shared).af = af.clone();
+        self.mpv
+            .set_property("af", af.as_str())
+            .map_err(|e| cmd_err("af", e))
+    }
+
+    fn begin_crossfade(&self, seconds: f64) -> EngineResult<bool> {
+        let settings = shared_lock(&self.shared).clone();
+        // Exclusive output allows one stream only.
+        if settings.exclusive || seconds.is_nan() || seconds <= 0.0 {
+            return Ok(false);
+        }
+        let Some(path) = self.lock().current.as_ref().map(|s| s.path.clone()) else {
+            return Ok(false);
+        };
+        let Ok(position) = self.mpv.get_property::<f64>("time-pos") else {
+            return Ok(false);
+        };
+        let tail = self.tail()?;
+        self.tail_fade.fetch_add(1, Ordering::SeqCst);
+        let volume = self
+            .mpv
+            .get_property::<f64>("volume")
+            .unwrap_or(settings.volume);
+        let set =
+            |name: &str, value: &str| tail.set_property(name, value).map_err(|e| cmd_err(name, e));
+        tail.set_property("volume", volume)
+            .map_err(|e| cmd_err("volume", e))?;
+        set("replaygain", settings.replaygain.mpv_value())?;
+        set("af", settings.af.as_str())?;
+        set("start", &format!("{position:.3}"))?;
+        set("pause", "no")?;
+        tail.command("loadfile", &[path_str(&path)?, "replace"])
+            .map_err(|e| cmd_err("loadfile", e))?;
+        let _ = tail.set_property("start", "none");
+        spawn_fade(
+            Arc::clone(&tail),
+            Arc::clone(&self.tail_fade),
+            volume,
+            || 0.0,
+            seconds,
+            |mpv| {
+                let _ = mpv.command("stop", &[]);
+            },
+        );
+        shared_lock(&self.shared).fade_in = Some(seconds);
+        Ok(true)
     }
 }
 

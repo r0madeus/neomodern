@@ -73,6 +73,18 @@ class VolumeArgs {
     var percent: Double = 100.0
 }
 
+@InvokeArg
+class EqualizerArgs {
+    var enabled: Boolean = false
+    var preampDb: Double = 0.0
+    var gainsDb: DoubleArray = DoubleArray(10)
+}
+
+@InvokeArg
+class CrossfadeArgs {
+    var seconds: Double = 0.0
+}
+
 /**
  * Android implementation of NeoModern's `AudioEngine` (see
  * `src-tauri/src/audio/android.rs`). Commands come from Rust only.
@@ -106,6 +118,14 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
     /** ReplayGain factor per file path. */
     private val gains = HashMap<String, Float>()
     private var pendingSaveText: String? = null
+
+    /** Equalizer and crossfade tail. */
+    private val fx by lazy { SoundEffects(activity, handler) }
+    /** Crossfade fade-in factor for the main player (1 = full volume). */
+    private var fadeFactor = 1f
+    private var fadeToken = 0
+    /** Fade-in length for the next `loadTrack`, armed by `beginCrossfade`. */
+    private var pendingFadeIn: Double? = null
 
     private val positionTick = object : Runnable {
         override fun run() {
@@ -153,6 +173,10 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             handler.removeCallbacks(positionTick)
             if (isPlaying) handler.post(positionTick) else emitPosition()
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            fx.apply(audioSessionId)
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -231,6 +255,18 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         args.gain?.let { gains[path] = it.toFloat() }
         applyVolume()
         durationSentFor = null
+        fadeToken++
+        val fadeIn = pendingFadeIn
+        pendingFadeIn = null
+        fadeFactor = if (fadeIn != null) 0f else 1f
+        applyVolume()
+        if (fadeIn != null) {
+            val token = fadeToken
+            fx.ramp(fadeIn, { token == fadeToken }, { k ->
+                fadeFactor = k
+                applyVolume()
+            }) {}
+        }
         // `load` keeps a paused engine paused (same as mpv); Rust calls `play`.
         player.setMediaItem(item(path))
         player.prepare()
@@ -258,12 +294,14 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun pause(invoke: Invoke) {
+        fx.stopTail()
         player.pause()
         invoke.resolve()
     }
 
     @Command
     fun stop(invoke: Invoke) {
+        fx.stopTail()
         val was = currentPath
         currentPath = null
         player.stop()
@@ -308,7 +346,32 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun applyVolume() {
         val gain = currentPath?.let { gains[it] } ?: 1f
-        player.volume = (userVolume * gain).coerceIn(0f, 1f)
+        player.volume = (userVolume * gain * fadeFactor).coerceIn(0f, 1f)
+    }
+
+    /** Ten-band equalizer settings from Rust (see SoundEffects). */
+    @Command
+    fun setEqualizer(invoke: Invoke) {
+        val args = invoke.parseArgs(EqualizerArgs::class.java)
+        fx.setEqualizer(player.audioSessionId, args.enabled, args.preampDb, args.gainsDb)
+        invoke.resolve()
+    }
+
+    /**
+     * Crossfade: the rest of the current track keeps playing on its own and
+     * fades out; the next `loadTrack` fades in. Resolves `{ started }`.
+     */
+    @Command
+    fun beginCrossfade(invoke: Invoke) {
+        val seconds = invoke.parseArgs(CrossfadeArgs::class.java).seconds
+        val path = currentPath
+        if (path == null || seconds <= 0.0) {
+            invoke.resolve(JSObject().put("started", false))
+            return
+        }
+        fx.startTail(item(path), player.currentPosition, player.volume, seconds)
+        pendingFadeIn = seconds
+        invoke.resolve(JSObject().put("started", true))
     }
 
     /**

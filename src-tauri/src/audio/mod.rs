@@ -38,6 +38,60 @@ impl ReplayGain {
     }
 }
 
+/// Center frequencies (Hz) of the equalizer's ten bands (octaves).
+pub const EQ_BANDS: [f64; 10] = [
+    31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+];
+/// Largest boost or cut per band and for the preamp, in dB.
+pub const EQ_MAX_DB: f64 = 12.0;
+
+/// Ten-band graphic equalizer (decision K16). The same settings drive mpv
+/// on desktop and the system equalizer on Android, which maps them onto
+/// the bands the device has.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Equalizer {
+    pub enabled: bool,
+    /// Gain applied before the bands, in dB (negative to avoid clipping).
+    #[serde(default)]
+    pub preamp_db: f64,
+    #[serde(default)]
+    pub gains_db: [f64; 10],
+}
+
+impl Default for Equalizer {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            preamp_db: 0.0,
+            gains_db: [0.0; 10],
+        }
+    }
+}
+
+impl Equalizer {
+    /// Every value in range; NaN becomes 0.
+    pub fn clamped(&self) -> Self {
+        let c = |v: f64| {
+            if v.is_finite() {
+                v.clamp(-EQ_MAX_DB, EQ_MAX_DB)
+            } else {
+                0.0
+            }
+        };
+        Self {
+            enabled: self.enabled,
+            preamp_db: c(self.preamp_db),
+            gains_db: self.gains_db.map(c),
+        }
+    }
+
+    /// True when it changes nothing (off, or every value 0).
+    pub fn is_flat(&self) -> bool {
+        !self.enabled || (self.preamp_db == 0.0 && self.gains_db.iter().all(|g| *g == 0.0))
+    }
+}
+
 /// Why a track stopped playing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndReason {
@@ -116,6 +170,19 @@ pub trait AudioEngine: Send + Sync {
     fn set_gapless(&self, enabled: bool) -> EngineResult<()>;
     /// Enable or disable Windows WASAPI exclusive output mode (no-op elsewhere).
     fn set_wasapi_exclusive(&self, enabled: bool) -> EngineResult<()>;
+    /// Apply the equalizer to the current and later tracks.
+    fn set_equalizer(&self, eq: &Equalizer) -> EngineResult<()> {
+        let _ = eq;
+        Ok(())
+    }
+    /// Crossfade: keep the rest of the current track playing on its own,
+    /// fading out over `seconds`, and fade in the track the next `load`
+    /// starts. Returns false (and changes nothing) when the engine cannot,
+    /// in which case the player just moves on.
+    fn begin_crossfade(&self, seconds: f64) -> EngineResult<bool> {
+        let _ = seconds;
+        Ok(false)
+    }
 }
 
 /// Wraps an engine so that online streams (`http(s)://` paths) are only
@@ -181,5 +248,15 @@ impl AudioEngine for NetGuardedEngine {
 
     fn set_wasapi_exclusive(&self, enabled: bool) -> EngineResult<()> {
         self.inner.set_wasapi_exclusive(enabled)
+    }
+
+    fn set_equalizer(&self, eq: &Equalizer) -> EngineResult<()> {
+        self.inner.set_equalizer(eq)
+    }
+
+    fn begin_crossfade(&self, seconds: f64) -> EngineResult<bool> {
+        // The tail keeps playing the current file: only local files, since
+        // a stream would need a second connection.
+        self.inner.begin_crossfade(seconds)
     }
 }

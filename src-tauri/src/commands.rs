@@ -139,6 +139,31 @@ pub fn player_set_wasapi_exclusive(
 }
 
 #[tauri::command]
+pub fn player_set_equalizer(
+    player: State<'_, Arc<Player>>,
+    equalizer: crate::audio::Equalizer,
+) -> Res<PlayerSnapshot> {
+    s(player.set_equalizer(equalizer))
+}
+
+/// Crossfade length in seconds; 0 turns it off.
+#[tauri::command]
+pub fn player_set_crossfade(player: State<'_, Arc<Player>>, seconds: f64) -> Res<PlayerSnapshot> {
+    s(player.set_crossfade(seconds))
+}
+
+/// Sleep timer: pause after `minutes`, or at the end of the current track
+/// with `endOfTrack`; neither turns it off.
+#[tauri::command]
+pub fn player_set_sleep_timer(
+    player: State<'_, Arc<Player>>,
+    minutes: Option<f64>,
+    end_of_track: bool,
+) -> Res<PlayerSnapshot> {
+    s(player.set_sleep_timer(minutes, end_of_track))
+}
+
+#[tauri::command]
 pub fn player_snapshot(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     Ok(player.snapshot())
 }

@@ -141,8 +141,9 @@ contributors and agents.
   OS integration in Rust.
 
 ### Sharing readiness (2026-11-14)
-- **First-run welcome** (desktop): suggests the OS Music folder with a
-  song count, then offers the online tool setup; shown once.
+- **First-run welcome**: on desktop it suggests the OS Music folder with
+  a song count, then offers the online tool setup; on Android it asks for
+  music access and opens the folder picker. Shown once.
 - **One-click yt-dlp / ffmpeg** (`src-tauri/src/online/tools.rs`):
   official builds for Windows and Linux (x86-64, ARM64), checked against
   the published SHA-256 lists, kept in the local app data `tools`

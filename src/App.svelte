@@ -767,8 +767,9 @@
     }}
   />
 </div>
-<Welcome />
 {/if}
+
+<Welcome />
 
 <TagEditor />
 <MetadataMatchModal />

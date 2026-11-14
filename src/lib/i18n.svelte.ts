@@ -673,4 +673,8 @@ const TR: Record<string, string> = {
     'İki ücretsiz araç gerekir: yt-dlp ve ffmpeg. NeoModern bilgisayarına uygun sürümü indirebilir. Bunu daha sonra Ayarlar’dan da yapabilirsin.',
   Skip: 'Geç',
   'Start listening': 'Dinlemeye başla',
+  'Pick the folder with your music. NeoModern asks for permission to read it, and only reads it.':
+    'Müziklerinin olduğu klasörü seç. NeoModern okumak için izin ister ve yalnızca okur.',
+  'Usually this is the Music or Download folder on your phone.':
+    'Genellikle telefonundaki Music ya da Download klasörüdür.',
 }

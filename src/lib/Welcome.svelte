@@ -1,6 +1,7 @@
 <script lang="ts">
-  // First-run welcome (desktop): suggests the OS Music folder, offers the
-  // optional one-click setup of the online tools, then gets out of the way.
+  // First-run welcome. Desktop: suggests the OS Music folder and offers the
+  // optional one-click setup of the online tools. Android: asks for music
+  // access and opens the system folder picker (no online tools there).
   // Rust decides whether it is shown (no folder added and never finished).
   import Logo from './Logo.svelte'
   import { invoke } from '@tauri-apps/api/core'
@@ -21,6 +22,8 @@
   let info = $state<WelcomeInfo | null>(null)
   let step = $state<'folder' | 'online'>('folder')
   let adding = $state(false)
+  let pickError = $state<string | null>(null)
+  const android = $derived(appSettings.platform === 'android')
 
   onMount(() => {
     invoke<WelcomeInfo>('app_welcome')
@@ -51,8 +54,20 @@
   async function pickFolder() {
     if (adding) return
     adding = true
-    await library.addFolder()
-    adding = false
+    pickError = null
+    try {
+      if (android) {
+        // Asks for permission to read music first, then the system picker.
+        const path = await invoke<string | null>('library_android_pick_folder')
+        if (path) await library.addFolderPath(path)
+      } else {
+        await library.addFolder()
+      }
+    } catch (e) {
+      pickError = String(e)
+    } finally {
+      adding = false
+    }
   }
 
   function next() {
@@ -79,11 +94,18 @@
 
 {#if open && info}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 p-4 backdrop-blur-sm"
+    class={[
+      'fixed inset-0 z-50 flex justify-center bg-zinc-950/60 backdrop-blur-sm',
+      android ? 'items-end' : 'items-center p-4',
+    ]}
+    style:padding-top={android ? 'var(--inset-top)' : undefined}
     role="presentation"
   >
     <div
-      class="animate-view-enter w-full max-w-lg overflow-hidden rounded-3xl border border-zinc-200/80 bg-white text-zinc-900 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+      class={[
+        'animate-view-enter flex max-h-full w-full max-w-lg flex-col overflow-y-auto border border-zinc-200/80 bg-white text-zinc-900 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100',
+        android ? 'rounded-t-3xl' : 'rounded-3xl',
+      ]}
       role="dialog"
       aria-modal="true"
       aria-labelledby="welcome-title"
@@ -96,15 +118,17 @@
           {t('Welcome to NeoModern')}
         </h2>
         <p class="mt-1 text-sm text-white/80">
-          {step === 'folder'
-            ? t('Let’s find your music. It stays where it is; NeoModern only reads it.')
-            : t('Optional: search and download music from the internet.')}
+          {step === 'online'
+            ? t('Optional: search and download music from the internet.')
+            : android
+              ? t('Pick the folder with your music. NeoModern asks for permission to read it, and only reads it.')
+              : t('Let’s find your music. It stays where it is; NeoModern only reads it.')}
         </p>
       </div>
 
       <div class="flex flex-col gap-4 px-7 py-6">
         {#if step === 'folder'}
-          {#if info.musicDir}
+          {#if info.musicDir && !android}
             <div class="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
               <div class="flex items-start gap-3">
                 <Icon name="folder" class="mt-0.5 size-5 shrink-0 text-accent-600 dark:text-accent-400" />
@@ -142,15 +166,31 @@
             </div>
           {/if}
 
-          <button
-            type="button"
-            class="flex items-center gap-2 self-start rounded-full border border-zinc-200 px-4 py-1.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            disabled={adding}
-            onclick={() => void pickFolder()}
-          >
-            <Icon name="plus" class="size-3.5" />
-            {info.musicDir ? t('Add another folder…') : t('Choose your music folder…')}
-          </button>
+          {#if android && !hasFolder}
+            <button
+              type="button"
+              class="flex items-center justify-center gap-2 rounded-2xl bg-accent-500 px-4 py-3 text-sm font-semibold text-zinc-950 active:bg-accent-400 disabled:opacity-50"
+              disabled={adding}
+              onclick={() => void pickFolder()}
+            >
+              <Icon name="folder" class="size-5" />
+              {t('Choose your music folder…')}
+            </button>
+            <p class="text-xs text-zinc-500">{t('Usually this is the Music or Download folder on your phone.')}</p>
+          {:else}
+            <button
+              type="button"
+              class="flex items-center gap-2 self-start rounded-full border border-zinc-200 px-4 py-1.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              disabled={adding}
+              onclick={() => void pickFolder()}
+            >
+              <Icon name="plus" class="size-3.5" />
+              {info.musicDir || hasFolder ? t('Add another folder…') : t('Choose your music folder…')}
+            </button>
+          {/if}
+          {#if pickError}
+            <p class="text-xs text-red-600 dark:text-red-400" role="alert">{pickError}</p>
+          {/if}
 
           {#if hasFolder}
             <ul class="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-300">
@@ -192,7 +232,10 @@
         {/if}
       </div>
 
-      <div class="flex items-center justify-between gap-3 border-t border-zinc-200/80 px-7 py-4 dark:border-zinc-800">
+      <div
+        class="flex items-center justify-between gap-3 border-t border-zinc-200/80 px-7 pt-4 dark:border-zinc-800"
+        style:padding-bottom={android ? 'calc(var(--inset-bottom, 0px) + 1rem)' : '1rem'}
+      >
         <button
           type="button"
           class="rounded-full px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"

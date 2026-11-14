@@ -346,7 +346,13 @@ pub async fn app_welcome(
             music_dir_files: 0,
         });
     }
-    let dir = app.path().audio_dir().ok().filter(|d| d.is_dir());
+    // Android: no suggestion; reading needs a permission and the folder
+    // comes from the system picker.
+    let dir = if cfg!(target_os = "android") {
+        None
+    } else {
+        app.path().audio_dir().ok().filter(|d| d.is_dir())
+    };
     let files = match dir.clone() {
         Some(d) => tokio::task::spawn_blocking(move || {
             count_audio_files(&d, WELCOME_COUNT_CAP, std::time::Duration::from_secs(3))

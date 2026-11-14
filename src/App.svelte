@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Logo from './lib/Logo.svelte'
   import { count, i18n, t } from './lib/i18n.svelte'
   import { onMount, tick, untrack } from 'svelte'
   import { fly } from 'svelte/transition'
@@ -408,7 +409,7 @@
         {#if !sidebarCollapsed}
           <div class="flex min-w-0 items-center gap-2">
             <span class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent-400 to-accent-700 text-white shadow-xs">
-              <Icon name="music" class="size-4" />
+              <Logo class="size-4" />
             </span>
             <h1 class="truncate text-base font-bold tracking-tight">NeoModern</h1>
           </div>

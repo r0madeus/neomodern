@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Logo from './Logo.svelte'
   import ToolSetup from './ToolSetup.svelte'
   import { i18n, t, type LangChoice } from './i18n.svelte'
   import { onMount } from 'svelte'
@@ -855,7 +856,7 @@
           <div class="flex flex-wrap items-center justify-between gap-3 p-4">
             <div class="flex items-center gap-3">
               <span class="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent-400 to-accent-700 text-white shadow-sm">
-                <Icon name="music" class="size-5" />
+                <Logo class="size-5" />
               </span>
               <div>
                 <div class="flex items-center gap-2">

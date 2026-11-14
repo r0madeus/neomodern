@@ -2,6 +2,7 @@
   // First-run welcome (desktop): suggests the OS Music folder, offers the
   // optional one-click setup of the online tools, then gets out of the way.
   // Rust decides whether it is shown (no folder added and never finished).
+  import Logo from './Logo.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
   import Icon from './Icon.svelte'
@@ -89,7 +90,7 @@
     >
       <div class="bg-gradient-to-br from-accent-500 via-accent-700 to-zinc-950 px-7 pt-7 pb-6 text-white">
         <div class="flex size-12 items-center justify-center rounded-2xl bg-white/15 shadow-lg">
-          <Icon name="music" class="size-6" />
+          <Logo class="size-6" />
         </div>
         <h2 id="welcome-title" class="mt-4 text-2xl font-bold tracking-tight">
           {t('Welcome to NeoModern')}

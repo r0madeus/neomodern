@@ -205,7 +205,10 @@ jobs:
           fi
 
       - name: Generate Android project
-        run: npm run tauri -- android init --ci
+        run: |
+          npm run tauri -- android init --ci
+          # The generated project has Tauri's default launcher icon.
+          cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
 
       # Always an optimised release build (a debug build is ~10x larger).
       - name: Build APK

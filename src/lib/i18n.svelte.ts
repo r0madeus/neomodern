@@ -649,4 +649,28 @@ const TR: Record<string, string> = {
   'Report copied. Paste it wherever you ask for help.': 'Rapor kopyalandı. Yardım istediğin yere yapıştırabilirsin.',
   'Report copied. Paste it into the issue that just opened in your browser.':
     'Rapor kopyalandı. Tarayıcıda açılan sayfaya yapıştır.',
+
+  // First-run welcome
+  'Welcome to NeoModern': 'NeoModern’e hoş geldin',
+  'Let’s find your music. It stays where it is; NeoModern only reads it.':
+    'Önce müziklerini bulalım. Dosyalar yerinde kalır; NeoModern yalnızca okur.',
+  'Optional: search and download music from the internet.': 'İsteğe bağlı: internetten müzik ara ve indir.',
+  'Your Music folder': 'Müzik klasörün',
+  'No songs found here yet.': 'Burada henüz şarkı yok.',
+  'More than 5,000 songs found.': '5.000’den fazla şarkı bulundu.',
+  '{n} song found': '{n} şarkı bulundu',
+  '{n} songs found': '{n} şarkı bulundu',
+  Added: 'Eklendi',
+  'Use this folder': 'Bu klasörü kullan',
+  'Add another folder…': 'Başka klasör ekle…',
+  'Choose your music folder…': 'Müzik klasörünü seç…',
+  'Scanning in the background, you can start listening right away.':
+    'Arka planda taranıyor, hemen dinlemeye başlayabilirsin.',
+  '{n} track in your library': 'Kütüphanende {n} şarkı var',
+  '{n} tracks in your library': 'Kütüphanende {n} şarkı var',
+  'Online search and download': 'Çevrimiçi arama ve indirme',
+  'Needs two free tools, yt-dlp and ffmpeg. NeoModern can fetch the right version for your computer. You can also do this later in Settings.':
+    'İki ücretsiz araç gerekir: yt-dlp ve ffmpeg. NeoModern bilgisayarına uygun sürümü indirebilir. Bunu daha sonra Ayarlar’dan da yapabilirsin.',
+  Skip: 'Geç',
+  'Start listening': 'Dinlemeye başla',
 }

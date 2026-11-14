@@ -294,6 +294,81 @@ pub fn app_report_issue(app: tauri::AppHandle) -> Res<()> {
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WelcomeInfo {
+    /// First run: the welcome was never finished and no folder is added.
+    show: bool,
+    /// The OS music folder, when it exists.
+    music_dir: Option<String>,
+    /// Audio files found there (counting stops at `WELCOME_COUNT_CAP`).
+    music_dir_files: u32,
+}
+
+const WELCOME_COUNT_CAP: u32 = 5000;
+
+/// Counts audio files under `dir`, giving up after `cap` files or `limit`.
+fn count_audio_files(dir: &std::path::Path, cap: u32, limit: std::time::Duration) -> u32 {
+    let started = std::time::Instant::now();
+    let mut n = 0;
+    for entry in walkdir::WalkDir::new(dir)
+        .max_depth(8)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if entry.file_type().is_file() && crate::library::scan::is_audio_file(entry.path()) {
+            n += 1;
+            if n >= cap {
+                break;
+            }
+        }
+        if started.elapsed() >= limit {
+            break;
+        }
+    }
+    n
+}
+
+/// What the first-run welcome needs: whether to show it and the OS music
+/// folder to suggest.
+#[tauri::command]
+pub async fn app_welcome(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<SessionStore>>,
+    lib: State<'_, Arc<Library>>,
+) -> Res<WelcomeInfo> {
+    use tauri::Manager;
+    let show = !store.welcome_done() && le(lib.folders())?.is_empty();
+    if !show {
+        return Ok(WelcomeInfo {
+            show,
+            music_dir: None,
+            music_dir_files: 0,
+        });
+    }
+    let dir = app.path().audio_dir().ok().filter(|d| d.is_dir());
+    let files = match dir.clone() {
+        Some(d) => tokio::task::spawn_blocking(move || {
+            count_audio_files(&d, WELCOME_COUNT_CAP, std::time::Duration::from_secs(3))
+        })
+        .await
+        .unwrap_or(0),
+        None => 0,
+    };
+    Ok(WelcomeInfo {
+        show,
+        music_dir: dir.map(|d| crate::library::scan::display_path(&d)),
+        music_dir_files: files,
+    })
+}
+
+/// Marks the welcome as finished (or skipped) so it is not shown again.
+#[tauri::command]
+pub fn app_finish_welcome(store: State<'_, Arc<SessionStore>>, player: State<'_, Arc<Player>>) {
+    store.set_welcome_done(true);
+    store.save_now(&player.export_session());
+}
+
 /// Highlights `path` in the OS file manager (desktop only).
 #[tauri::command]
 pub fn app_reveal_file(app: tauri::AppHandle, path: String) -> Res<()> {

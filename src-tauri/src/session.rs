@@ -108,6 +108,10 @@ pub struct SessionState {
     pub net_metadata: bool,
     #[serde(default = "default_true")]
     pub net_updates: bool,
+    /// The first-run welcome was finished or skipped. Owned by
+    /// [`SessionStore`].
+    #[serde(default)]
+    pub welcome_done: bool,
 }
 
 impl Default for SessionState {
@@ -133,6 +137,7 @@ impl Default for SessionState {
             net_online: true,
             net_artist_info: true,
             net_metadata: true,
+            welcome_done: false,
             net_updates: true,
         }
     }
@@ -243,6 +248,7 @@ pub struct SessionStore {
     pinned: Mutex<Vec<PinnedRef>>,
     lyrics_save: Mutex<SaveMode>,
     lyrics_netease: AtomicBool,
+    welcome_done: AtomicBool,
     net: Arc<NetPolicy>,
 }
 
@@ -257,6 +263,7 @@ impl SessionStore {
             pinned: Mutex::new(Vec::new()),
             lyrics_save: Mutex::new(SaveMode::default()),
             lyrics_netease: AtomicBool::new(default_lyrics_netease()),
+            welcome_done: AtomicBool::new(false),
             net: Arc::new(NetPolicy::default()),
         }
     }
@@ -285,6 +292,8 @@ impl SessionStore {
         *self.lyrics_save.lock().unwrap_or_else(|e| e.into_inner()) = state.lyrics_save;
         self.lyrics_netease
             .store(state.lyrics_netease, Ordering::SeqCst);
+        self.welcome_done
+            .store(state.welcome_done, Ordering::SeqCst);
         self.net.set_offline(state.offline_mode);
         self.net.set_feature(Feature::Lyrics, state.net_lyrics);
         self.net.set_feature(Feature::Online, state.net_online);
@@ -326,6 +335,14 @@ impl SessionStore {
 
     pub fn set_net_feature(&self, feature: Feature, enabled: bool) {
         self.net.set_feature(feature, enabled);
+    }
+
+    pub fn welcome_done(&self) -> bool {
+        self.welcome_done.load(Ordering::SeqCst)
+    }
+
+    pub fn set_welcome_done(&self, done: bool) {
+        self.welcome_done.store(done, Ordering::SeqCst);
     }
 
     pub fn close_to_tray(&self) -> bool {
@@ -383,6 +400,7 @@ impl SessionStore {
         state.pinned = self.pinned();
         state.lyrics_save = self.lyrics_save();
         state.lyrics_netease = self.lyrics_netease();
+        state.welcome_done = self.welcome_done();
         state.offline_mode = self.net.offline();
         state.net_lyrics = self.net.feature_enabled(Feature::Lyrics);
         state.net_online = self.net.feature_enabled(Feature::Online);
@@ -486,6 +504,7 @@ mod tests {
             net_artist_info: false,
             net_metadata: true,
             net_updates: false,
+            welcome_done: true,
         };
         save(&file, &state).unwrap();
         assert_eq!(load(&file), state);

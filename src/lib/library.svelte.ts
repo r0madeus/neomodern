@@ -275,6 +275,17 @@ class LibraryStore {
     }
   }
 
+  /** Adds a known folder (no picker), e.g. the suggested Music folder. */
+  async addFolderPath(path: string): Promise<boolean> {
+    try {
+      this.folders = await invoke<FolderInfo[]>('library_add_folder', { path })
+      return true
+    } catch (e) {
+      player.error = String(e)
+      return false
+    }
+  }
+
   async removeFolder(id: number): Promise<void> {
     try {
       this.folders = await invoke<FolderInfo[]>('library_remove_folder', { id })

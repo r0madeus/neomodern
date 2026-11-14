@@ -36,6 +36,7 @@
   import MobileApp from './lib/mobile/MobileApp.svelte'
   import NowPlayingView from './lib/NowPlayingView.svelte'
   import UpdateBanner from './lib/UpdateBanner.svelte'
+  import Welcome from './lib/Welcome.svelte'
   import { updates } from './lib/updates.svelte'
   import { nowCover } from './lib/nowCover.svelte'
   import SidebarDownloads from './lib/SidebarDownloads.svelte'
@@ -765,6 +766,7 @@
     }}
   />
 </div>
+<Welcome />
 {/if}
 
 <TagEditor />

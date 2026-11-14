@@ -312,6 +312,8 @@ pub fn run() {
             commands::app_settings,
             commands::app_window_insets,
             commands::app_log_dir,
+            commands::app_welcome,
+            commands::app_finish_welcome,
             commands::app_diagnostics,
             commands::app_save_diagnostics,
             commands::app_open_log_dir,

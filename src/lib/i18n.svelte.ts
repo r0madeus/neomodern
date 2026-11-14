@@ -729,4 +729,7 @@ const TR: Record<string, string> = {
   'Playing {n}': '{n} çalınıyor',
   'Added to favorites': 'Favorilere eklendi',
   Favorite: 'Favori',
+  Experimental: 'Deneysel',
+  'Fades the end of a song into the start of the next one. Experimental: a short skip can be heard at the change, and gapless playback is not used while it is on.':
+    'Bir şarkının sonunu bir sonrakinin başıyla iç içe geçirir. Deneysel: geçiş anında kısa bir atlama duyulabilir ve açıkken boşluksuz (gapless) çalma kullanılmaz.',
 }

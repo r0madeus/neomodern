@@ -405,11 +405,16 @@
           <div class="flex flex-col gap-3 p-4">
             <div class="flex items-start justify-between gap-6">
               <div class="min-w-0">
-                <p id="xfade-label" class="text-sm font-medium">{t('Crossfade')}</p>
+                <p id="xfade-label" class="flex flex-wrap items-center gap-2 text-sm font-medium">
+                  {t('Crossfade')}
+                  <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                    {t('Experimental')}
+                  </span>
+                </p>
                 <p id="xfade-help" class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                   {player.snapshot.wasapiExclusive
                     ? t('Not available while WASAPI exclusive mode is on (it allows one sound at a time).')
-                    : t('Fades the end of a song into the start of the next one.')}
+                    : t('Fades the end of a song into the start of the next one. Experimental: a short skip can be heard at the change, and gapless playback is not used while it is on.')}
                 </p>
               </div>
               <span class="shrink-0 text-sm tabular-nums text-zinc-600 dark:text-zinc-300">

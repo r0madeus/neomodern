@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.result.ActivityResult
@@ -32,6 +33,7 @@ import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import com.google.common.util.concurrent.ListenableFuture
@@ -362,6 +364,65 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
         } else {
             invoke.resolve(JSObject().put("path", path))
         }
+    }
+
+    /**
+     * Picks one or more audio files to play. Resolves `{ paths, skipped }`:
+     * file-system paths (ExoPlayer and the library work with paths), and
+     * how many picked files had none (e.g. from a cloud drive).
+     */
+    @Command
+    fun pickAudioFiles(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        startActivityForResult(invoke, intent, "audioFilesPicked")
+    }
+
+    @ActivityCallback
+    fun audioFilesPicked(invoke: Invoke, result: ActivityResult) {
+        val data = result.data
+        val uris = mutableListOf<Uri>()
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            val clip = data.clipData
+            if (clip != null) {
+                for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+            } else {
+                data.data?.let { uris.add(it) }
+            }
+        }
+        val paths = JSArray()
+        var skipped = 0
+        for (uri in uris) {
+            val path = filePath(uri)
+            if (path != null && File(path).isFile) paths.put(path) else skipped++
+        }
+        invoke.resolve(JSObject().put("paths", paths).put("skipped", skipped))
+    }
+
+    /** File-system path of a picked document, from storage or the media store. */
+    private fun filePath(uri: Uri): String? {
+        if (!DocumentsContract.isDocumentUri(activity, uri)) return null
+        val docId = DocumentsContract.getDocumentId(uri)
+        storagePath(uri, docId)?.let { return it }
+        // "Audio" and "Recent" in the picker hand out media ids ("audio:123").
+        if (uri.authority == "com.android.providers.media.documents") {
+            val parts = docId.split(":", limit = 2)
+            if (parts.size == 2 && parts[0] == "audio") {
+                @Suppress("DEPRECATION")
+                val column = MediaStore.Audio.Media.DATA
+                activity.contentResolver.query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(column),
+                    "${MediaStore.Audio.Media._ID} = ?",
+                    arrayOf(parts[1]),
+                    null,
+                )?.use { c -> if (c.moveToFirst()) return c.getString(0) }
+            }
+        }
+        return null
     }
 
     /** Picks a text file (any location) and resolves `{ name, text }` or `{ text: null }`. */

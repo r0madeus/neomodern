@@ -542,6 +542,28 @@ pub async fn library_android_pick_folder(app: tauri::AppHandle) -> Res<Option<St
     Ok(picked.path)
 }
 
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct PickedAudio {
+    paths: Vec<String>,
+    /// Picked files without a path on the device (e.g. from a cloud drive).
+    skipped: u32,
+}
+
+/// Android "Open files": asks for read access to music, then lets the user
+/// pick audio files; their paths (empty when cancelled).
+#[tauri::command]
+pub async fn android_pick_audio_files(app: tauri::AppHandle) -> Res<PickedAudio> {
+    #[derive(serde::Deserialize)]
+    struct Access {
+        granted: bool,
+    }
+    let access: Access = android(&app, "requestAudioAccess", serde_json::json!({})).await?;
+    if !access.granted {
+        return Err("Permission to read music was denied.".into());
+    }
+    android(&app, "pickAudioFiles", serde_json::json!({})).await
+}
+
 /// Lets the user pick one file on device storage; its path, or `None`.
 #[tauri::command]
 pub async fn android_pick_file(app: tauri::AppHandle) -> Res<Option<String>> {

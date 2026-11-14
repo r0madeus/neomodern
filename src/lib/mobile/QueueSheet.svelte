@@ -5,8 +5,37 @@
   import Icon from '../Icon.svelte'
   import { motionDuration, viewportHeight } from '../motion'
   import { player } from '../player.svelte'
+  import { invoke } from '@tauri-apps/api/core'
 
   let { onClose }: { onClose: () => void } = $props()
+
+  // "Open files": the system picker, after asking for music access. Files
+  // without a path on the phone (e.g. from a cloud drive) are skipped.
+  let picking = $state(false)
+  let note = $state<string | null>(null)
+  async function pickFiles(append: boolean) {
+    if (picking) return
+    picking = true
+    note = null
+    try {
+      const res = await invoke<{ paths: string[]; skipped: number }>('android_pick_audio_files')
+      if (res.paths.length > 0) {
+        if (append) await player.appendFiles(res.paths)
+        else await player.openFiles(res.paths)
+      }
+      if (res.skipped > 0) {
+        note = (
+          res.skipped === 1
+            ? t('1 file could not be opened: it is not stored on this phone.')
+            : t('{n} files could not be opened: they are not stored on this phone.', { n: res.skipped })
+        )
+      }
+    } catch (e) {
+      player.error = String(e)
+    } finally {
+      picking = false
+    }
+  }
 
   const current = $derived(player.snapshot.currentIndex)
   const upNext = $derived(
@@ -30,7 +59,28 @@
       <Icon name="down" class="size-7" />
     </button>
     <h1 class="flex-1 text-base font-semibold">{t("Queue")}</h1>
+    {#if player.snapshot.queueLength > 0}
+      <button
+        type="button"
+        class="rounded-full px-3 py-2 text-sm text-zinc-300 active:bg-white/10 disabled:opacity-50"
+        disabled={picking}
+        onclick={() => void pickFiles(true)}
+      >
+        {t('Add to queue')}
+      </button>
+    {/if}
+    <button
+      type="button"
+      class="mr-2 rounded-full px-3 py-2 text-sm font-medium text-accent-400 active:bg-white/10 disabled:opacity-50"
+      disabled={picking}
+      onclick={() => void pickFiles(false)}
+    >
+      {t('Open files')}
+    </button>
   </header>
+  {#if note}
+    <p role="status" class="mx-4 mb-2 rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200">{note}</p>
+  {/if}
   <div class="min-h-0 flex-1 overflow-y-auto pb-4">
     {#if current !== null && player.queue[current]}
       <h2 class="px-4 pt-2 pb-1 text-sm font-bold">{t("Now playing")}</h2>

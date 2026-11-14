@@ -283,6 +283,7 @@ pub fn run() {
             commands::library_add_folder,
             commands::library_android_pick_folder,
             commands::android_pick_file,
+            commands::android_pick_audio_files,
             commands::app_file_access,
             commands::app_request_file_access,
             commands::android_open_text,

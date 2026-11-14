@@ -179,4 +179,6 @@ contributors and agents.
 - Artist splitting is heuristic: a lone "A & B" stays one name (it may be
   a duo or a band); in a comma list the last `&` splits, except for a short
   list of known comma bands and tails such as "& Sons" or "& The …".
-- Android: "Open files" is hidden; online search and download are desktop only.
+- Android: online search and download are desktop only. "Open files"
+  (queue screen) plays files stored on the phone; files from a cloud
+  drive have no path and are skipped with a note.

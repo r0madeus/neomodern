@@ -684,4 +684,10 @@ const TR: Record<string, string> = {
   'Downloading the update… {p}%': 'Güncelleme indiriliyor… %{p}',
   'Allow NeoModern to install apps, then tap Update again.':
     'NeoModern’in uygulama yüklemesine izin ver, sonra yeniden Güncelle’ye dokun.',
+
+  // Android open files
+  '1 file could not be opened: it is not stored on this phone.':
+    '1 dosya açılamadı: bu telefonda kayıtlı değil.',
+  '{n} files could not be opened: they are not stored on this phone.':
+    '{n} dosya açılamadı: bu telefonda kayıtlı değiller.',
 }

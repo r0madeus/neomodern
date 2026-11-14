@@ -349,6 +349,7 @@ pub fn run() {
             commands::library_play_artist,
             commands::library_genres,
             commands::library_genre_detail,
+            commands::library_genre_tracks_page,
             commands::library_play_genre,
             commands::artist_enrich,
             commands::artist_enrich_all,

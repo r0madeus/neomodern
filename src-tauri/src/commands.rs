@@ -1521,6 +1521,16 @@ pub fn library_genre_detail(
 }
 
 #[tauri::command]
+pub fn library_genre_tracks_page(
+    lib: State<'_, Arc<Library>>,
+    name: String,
+    offset: u64,
+    limit: u64,
+) -> Res<crate::library::Page<crate::library::TrackRow>> {
+    le(lib.genre_tracks_page(&name, offset, limit))
+}
+
+#[tauri::command]
 pub fn library_play_genre(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,

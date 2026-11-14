@@ -2042,16 +2042,27 @@ fn genres_group_case_insensitively_and_match_queue_order() {
     let detail = e.lib.genre_detail("rock").unwrap();
     let queue = e.lib.genre_tracks("rock").unwrap();
     assert_eq!(detail.albums.len(), 2);
-    assert_eq!(detail.tracks.len(), 2);
-    assert_eq!(
-        detail
-            .tracks
-            .iter()
-            .map(|t| t.path.as_str())
-            .collect::<Vec<_>>(),
-        queue
-            .iter()
-            .map(|t| t.path.to_str().unwrap())
-            .collect::<Vec<_>>(),
+    assert_eq!(detail.track_count, 2);
+
+    // Paged rows follow the queue order, so row i plays queue entry i.
+    let first = e.lib.genre_tracks_page("rock", 0, 1).unwrap();
+    let second = e.lib.genre_tracks_page("rock", 1, 1).unwrap();
+    assert_eq!(first.total, 2);
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(second.items.len(), 1);
+    let paged: Vec<&str> = first
+        .items
+        .iter()
+        .chain(&second.items)
+        .map(|t| t.path.as_str())
+        .collect();
+    let queued: Vec<&str> = queue.iter().map(|t| t.path.to_str().unwrap()).collect();
+    assert_eq!(paged, queued);
+    assert!(
+        e.lib
+            .genre_tracks_page("rock", 2, 10)
+            .unwrap()
+            .items
+            .is_empty()
     );
 }

@@ -2100,12 +2100,13 @@ pub fn genres(conn: &Connection) -> Result<Vec<GenreRow>> {
 }
 
 pub fn genre_detail(conn: &Connection, name: &str) -> Result<GenreDetail> {
-    let mut tr_st = conn.prepare(&format!(
-        "{TRACK_SELECT} WHERE {GENRE_FILTER} ORDER BY {GENRE_TRACK_ORDER}"
-    ))?;
-    let tracks = tr_st
-        .query_map([name], track_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let (track_count, duration_ms): (i64, i64) = conn.query_row(
+        &format!(
+            "SELECT COUNT(*), COALESCE(SUM(t.duration_ms), 0) FROM tracks t WHERE {GENRE_FILTER}"
+        ),
+        [name],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
 
     let mut al_st = conn.prepare(&format!(
         "{ALBUM_SELECT}
@@ -2128,8 +2129,29 @@ pub fn genre_detail(conn: &Connection, name: &str) -> Result<GenreDetail> {
     Ok(GenreDetail {
         name: canonical,
         albums,
-        tracks,
+        track_count: u32::try_from(track_count).unwrap_or(u32::MAX),
+        duration_ms: u64::try_from(duration_ms).unwrap_or(0),
     })
+}
+
+/// One page of a genre's tracks, in queue order (see `genre_queue_tracks`).
+pub fn genre_tracks_page(
+    conn: &Connection,
+    name: &str,
+    offset: u64,
+    limit: u64,
+) -> Result<Page<TrackRow>> {
+    query_page(
+        conn,
+        &format!("SELECT COUNT(*) FROM tracks t WHERE {GENRE_FILTER}"),
+        &format!(
+            "{TRACK_SELECT} WHERE {GENRE_FILTER} ORDER BY {GENRE_TRACK_ORDER} LIMIT ?2 OFFSET ?3"
+        ),
+        vec![name.to_owned()],
+        offset,
+        limit,
+        track_row,
+    )
 }
 
 pub fn genre_queue_tracks(conn: &Connection, name: &str) -> Result<Vec<Track>> {

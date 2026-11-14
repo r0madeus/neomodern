@@ -353,7 +353,9 @@ pub struct GenreRow {
 pub struct GenreDetail {
     pub name: String,
     pub albums: Vec<AlbumRow>,
-    pub tracks: Vec<TrackRow>,
+    /// Tracks are fetched in pages with `genre_tracks_page`.
+    pub track_count: u32,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -788,6 +790,10 @@ impl Library {
 
     pub fn genre_detail(&self, name: &str) -> Result<GenreDetail> {
         db::genre_detail(&self.conn(), name)
+    }
+
+    pub fn genre_tracks_page(&self, name: &str, offset: u64, limit: u64) -> Result<Page<TrackRow>> {
+        db::genre_tracks_page(&self.conn(), name, offset, limit)
     }
 
     pub fn genre_tracks(&self, name: &str) -> Result<Vec<Track>> {

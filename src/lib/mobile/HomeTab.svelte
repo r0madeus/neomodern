@@ -30,6 +30,9 @@
     onOpenStats: () => void
   } = $props()
 
+  type HomeFilter = 'all' | 'mixes' | 'albums'
+  let filter = $state<HomeFilter>('all')
+
   interface QuickTile {
     key: string
     kind: 'album' | 'playlist'
@@ -54,7 +57,7 @@
         cover: p.cover,
         albumCovers: p.albumCovers,
       })
-      if (tiles.length >= 5) return tiles
+      if (tiles.length >= 7) return tiles
     }
     for (const pl of playlists.list) {
       const key = `playlist:${pl.id}`
@@ -68,11 +71,11 @@
         cover: pl.cover,
         albumCovers: pl.albumCovers,
       })
-      if (tiles.length >= 5) return tiles
+      if (tiles.length >= 7) return tiles
     }
     for (const a of feed?.recentlyPlayedAlbums.length
-        ? feed.recentlyPlayedAlbums
-        : (feed?.recentlyAddedAlbums ?? [])) {
+      ? feed.recentlyPlayedAlbums
+      : (feed?.recentlyAddedAlbums ?? [])) {
       const key = `album:${a.id}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -84,7 +87,7 @@
         cover: a.cover,
         albumCovers: [],
       })
-      if (tiles.length >= 5) break
+      if (tiles.length >= 7) break
     }
     return tiles
   })
@@ -105,62 +108,76 @@
   {:else}
     {@const feed = home.feed}
     <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
-      <header class="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
-        <h1 class="min-w-0 truncate text-2xl font-bold tracking-tight">
-          {t(greetingKey())}
-        </h1>
+      <!-- Sticky Spotify-style top bar with badge, filter chips & stats -->
+      <header class="sticky top-0 z-10 flex items-center gap-2 bg-zinc-950/85 px-4 pt-3.5 pb-3 backdrop-blur-md">
+        <span
+          title={t(greetingKey())}
+          class="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-accent-400"
+        >
+          <Icon name="music" class="size-4" />
+        </span>
+
+        <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
+          {#each [
+            { id: 'all', label: 'All' },
+            { id: 'mixes', label: 'Mixes' },
+            { id: 'albums', label: 'Albums' },
+          ] as const as chip (chip.id)}
+            <button
+              type="button"
+              class={[
+                'shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition',
+                filter === chip.id
+                  ? 'bg-accent-500 font-semibold text-zinc-950'
+                  : 'bg-zinc-800/90 text-zinc-100 active:bg-zinc-700',
+              ]}
+              onclick={() => (filter = chip.id)}
+            >
+              {t(chip.label)}
+            </button>
+          {/each}
+
+          <button
+            type="button"
+            class="shrink-0 rounded-full bg-zinc-800/90 px-3.5 py-1.5 text-[13px] font-medium text-zinc-100 active:bg-zinc-700"
+            onclick={onOpenSongs}
+          >
+            {t('Songs')}
+          </button>
+
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-1 rounded-full bg-zinc-800/90 px-3 py-1.5 text-[13px] font-medium text-zinc-100 active:bg-zinc-700"
+            onclick={() => void shuffleAll()}
+          >
+            <Icon name="shuffle" class="size-3.5 text-accent-400" />
+            {t('Shuffle')}
+          </button>
+        </div>
+
         <button
           type="button"
-          class="rounded-full p-2 text-zinc-300 active:bg-white/10"
+          class="-mr-1.5 shrink-0 rounded-full p-2 text-zinc-300 active:bg-white/10"
           aria-label={t('Listening stats')}
           onclick={onOpenStats}
         >
-          <Icon name="chart" class="size-6" />
+          <Icon name="chart" class="size-5" />
         </button>
       </header>
 
-      <!-- Quick navigation pills -->
-      <div class="flex gap-2 overflow-x-auto px-4 pb-4">
+      <!-- 2x4 compact Spotify-style quick access grid -->
+      <section class="grid grid-cols-2 gap-2 px-4 pt-0.5 pb-6" aria-label={t('Quick access')}>
         <button
           type="button"
-          class="flex shrink-0 items-center gap-1.5 rounded-full bg-zinc-800 px-3.5 py-1.5 text-[13px] font-medium text-zinc-100 active:bg-zinc-700"
-          onclick={onOpenAlbums}
-        >
-          <Icon name="album" class="size-4 text-accent-400" />
-          {t('Albums')}
-        </button>
-        <button
-          type="button"
-          class="flex shrink-0 items-center gap-1.5 rounded-full bg-zinc-800 px-3.5 py-1.5 text-[13px] font-medium text-zinc-100 active:bg-zinc-700"
-          onclick={onOpenSongs}
-        >
-          <Icon name="music" class="size-4 text-accent-400" />
-          {t('Songs')}
-        </button>
-        <button
-          type="button"
-          class="flex shrink-0 items-center gap-1.5 rounded-full bg-accent-500/20 px-3.5 py-1.5 text-[13px] font-medium text-accent-300 active:bg-accent-500/30"
-          onclick={() => void shuffleAll()}
-        >
-          <Icon name="shuffle" class="size-4" />
-          {t('Shuffle')}
-        </button>
-      </div>
-
-      <!-- Compact 2-column quick access grid -->
-      <section class="grid grid-cols-2 gap-2 px-4 pb-6" aria-label={t('Quick access')}>
-        <button
-          type="button"
-          class="flex items-center gap-2.5 overflow-hidden rounded-lg bg-zinc-900 text-left active:bg-zinc-800"
+          class="flex h-14 items-center gap-2.5 overflow-hidden rounded-md bg-zinc-900 text-left active:bg-zinc-800"
           onclick={onOpenFavorites}
         >
-          <span class="flex size-13 shrink-0 items-center justify-center bg-gradient-to-br from-accent-400 to-indigo-600 text-white">
+          <span class="flex size-14 shrink-0 items-center justify-center bg-gradient-to-br from-indigo-600 via-accent-500 to-accent-300 text-white">
             <Icon name="star" class="size-6" />
           </span>
           <span class="min-w-0 flex-1 pr-2">
-            <span class="block truncate text-[13px] font-semibold text-zinc-50">{t('Favorites')}</span>
-            <span class="block truncate text-[11px] text-zinc-400">
-              {count(favorites.ids.size, '{n} track', '{n} tracks')}
+            <span class="line-clamp-2 text-[13px] leading-tight font-semibold text-zinc-50">
+              {t('Favorites')}
             </span>
           </span>
         </button>
@@ -168,21 +185,21 @@
         {#each quickTiles as tile (tile.key)}
           <button
             type="button"
-            class="flex items-center gap-2.5 overflow-hidden rounded-lg bg-zinc-900 text-left active:bg-zinc-800"
+            class="flex h-14 items-center gap-2.5 overflow-hidden rounded-md bg-zinc-900 text-left active:bg-zinc-800"
             onclick={() => (tile.kind === 'album' ? onOpenAlbum(tile.id) : onOpenPlaylist(tile.id))}
           >
             {#if tile.kind === 'album'}
-              <Cover cover={tile.cover} title={tile.title} class="size-13 shrink-0 rounded-none text-base" />
+              <Cover cover={tile.cover} title={tile.title} class="size-14 shrink-0 rounded-none text-base" />
             {:else}
               <PlaylistCover
                 cover={tile.cover}
                 albumCovers={tile.albumCovers}
                 name={tile.title}
-                class="size-13 shrink-0 rounded-none"
+                class="size-14 shrink-0 rounded-none"
                 iconClass="size-5"
               />
             {/if}
-            <span class="min-w-0 flex-1 truncate pr-2 text-[13px] font-semibold text-zinc-50">
+            <span class="line-clamp-2 min-w-0 flex-1 pr-2 text-[13px] leading-tight font-semibold text-zinc-50">
               {tile.title}
             </span>
           </button>
@@ -190,47 +207,60 @@
       </section>
 
       <!-- Dynamic Mixes -->
-      {#if feed && feed.mixes.length > 0}
-        <section class="pb-6">
-          <h2 class="px-4 pb-3 text-lg font-bold">{t('Daily Mixes')}</h2>
-          <div class="flex gap-3.5 overflow-x-auto px-4 pb-1">
-            {#each feed.mixes as mix (mix.id)}
-              {@const title = mixTitle(mix)}
-              <button
-                type="button"
-                class="w-36 shrink-0 text-left active:opacity-75"
-                onclick={() => onOpenMix(mix.id)}
-              >
-                <PlaylistCover
-                  cover={null}
-                  albumCovers={mix.albumCovers}
-                  name={title}
-                  class="aspect-square w-full rounded-xl shadow-lg shadow-black/40"
-                  iconClass="size-12"
-                />
-                <span class="mt-2 block truncate text-[13px] font-semibold text-zinc-50">{title}</span>
-                <span class="mt-0.5 line-clamp-2 text-[11px] leading-snug text-zinc-400">
-                  {mixSubtitle(mix)}
-                </span>
-              </button>
-            {/each}
+      {#if filter === 'all' || filter === 'mixes'}
+        {#if feed && feed.mixes.length > 0}
+          <section class="pb-6">
+            <h2 class="px-4 pb-3 text-[19px] font-bold tracking-tight">{t('Daily Mixes')}</h2>
+            <div class="flex gap-3.5 overflow-x-auto px-4 pb-1">
+              {#each feed.mixes as mix (mix.id)}
+                {@const title = mixTitle(mix)}
+                <button
+                  type="button"
+                  class="w-[42vw] max-w-44 shrink-0 text-left active:opacity-75"
+                  onclick={() => onOpenMix(mix.id)}
+                >
+                  <PlaylistCover
+                    cover={null}
+                    albumCovers={mix.albumCovers}
+                    name={title}
+                    class="aspect-square w-full rounded-lg shadow-lg shadow-black/40"
+                    iconClass="size-12"
+                  />
+                  <span class="mt-2 block truncate text-[13px] font-semibold text-zinc-50">{title}</span>
+                  <span class="mt-0.5 line-clamp-2 text-[11px] leading-snug text-zinc-400">
+                    {mixSubtitle(mix)}
+                  </span>
+                </button>
+              {/each}
+            </div>
+          </section>
+        {:else if feed && !feed.hasHistory}
+          <div class="mx-4 mb-6 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-xs leading-relaxed text-zinc-400">
+            {t('Start playing some songs to unlock personalized mixes and recent history.')}
           </div>
-        </section>
-      {:else if feed && !feed.hasHistory}
-        <div class="mx-4 mb-6 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-xs leading-relaxed text-zinc-400">
-          {t('Start playing some songs to unlock personalized mixes and recent history.')}
-        </div>
+        {/if}
       {/if}
 
       <!-- Recently Played Albums -->
-      {#if feed && feed.recentlyPlayedAlbums.length > 0}
+      {#if (filter === 'all' || filter === 'albums') && feed && feed.recentlyPlayedAlbums.length > 0}
         <section class="pb-6">
-          <h2 class="px-4 pb-3 text-lg font-bold">{t('Recently played')}</h2>
-          <div class="flex gap-3 overflow-x-auto px-4 pb-1">
+          <div class="flex items-center justify-between px-4 pb-3">
+            <h2 class="text-[19px] font-bold tracking-tight">{t('Recently played')}</h2>
+            {#if filter === 'albums'}
+              <button
+                type="button"
+                class="py-1 text-xs font-medium text-accent-400 active:opacity-70"
+                onclick={onOpenAlbums}
+              >
+                {t('See all')}
+              </button>
+            {/if}
+          </div>
+          <div class="flex gap-3.5 overflow-x-auto px-4 pb-1">
             {#each feed.recentlyPlayedAlbums as album (album.id)}
               <button
                 type="button"
-                class="w-32 shrink-0 text-left active:opacity-75"
+                class="w-[42vw] max-w-44 shrink-0 text-left active:opacity-75"
                 onclick={() => onOpenAlbum(album.id)}
               >
                 <Cover
@@ -238,8 +268,8 @@
                   title={album.title}
                   class="aspect-square w-full rounded-lg text-2xl shadow-md shadow-black/40"
                 />
-                <span class="mt-2 block truncate text-[13px] font-semibold text-zinc-50">{album.title}</span>
-                <span class="block truncate text-xs text-zinc-400">{album.albumArtist}</span>
+                <span class="mt-2 line-clamp-2 text-[13px] leading-snug font-semibold text-zinc-50">{album.title}</span>
+                <span class="mt-0.5 block truncate text-xs text-zinc-400">{album.albumArtist}</span>
               </button>
             {/each}
           </div>
@@ -247,9 +277,9 @@
       {/if}
 
       <!-- Recently Played Tracks -->
-      {#if feed && feed.recentlyPlayedTracks.length > 0}
+      {#if filter === 'all' && feed && feed.recentlyPlayedTracks.length > 0}
         <section class="pb-5">
-          <h2 class="px-4 pb-1 text-lg font-bold">{t('Recently played tracks')}</h2>
+          <h2 class="px-4 pb-1 text-[19px] font-bold tracking-tight">{t('Recently played tracks')}</h2>
           {#each feed.recentlyPlayedTracks.slice(0, 6) as item (item.track.id)}
             <TrackItem
               title={item.track.title}
@@ -265,10 +295,10 @@
       {/if}
 
       <!-- Favorites Preview -->
-      {#if feed && feed.favoriteTracks.length > 0}
+      {#if (filter === 'all' || filter === 'mixes') && feed && feed.favoriteTracks.length > 0}
         <section class="pb-5">
           <div class="flex items-center justify-between px-4 pb-1">
-            <h2 class="text-lg font-bold">{t('Favorites')}</h2>
+            <h2 class="text-[19px] font-bold tracking-tight">{t('Favorites')}</h2>
             <button
               type="button"
               class="py-1 text-xs font-medium text-accent-400 active:opacity-70"
@@ -292,14 +322,23 @@
       {/if}
 
       <!-- Recently Added Albums -->
-      {#if feed && feed.recentlyAddedAlbums.length > 0}
+      {#if (filter === 'all' || filter === 'albums') && feed && feed.recentlyAddedAlbums.length > 0}
         <section class="pb-4">
-          <h2 class="px-4 pb-3 text-lg font-bold">{t('Recently added')}</h2>
-          <div class="flex gap-3 overflow-x-auto px-4 pb-1">
+          <div class="flex items-center justify-between px-4 pb-3">
+            <h2 class="text-[19px] font-bold tracking-tight">{t('Recently added')}</h2>
+            <button
+              type="button"
+              class="py-1 text-xs font-medium text-accent-400 active:opacity-70"
+              onclick={onOpenAlbums}
+            >
+              {t('See all')}
+            </button>
+          </div>
+          <div class="flex gap-3.5 overflow-x-auto px-4 pb-1">
             {#each feed.recentlyAddedAlbums as album (album.id)}
               <button
                 type="button"
-                class="w-32 shrink-0 text-left active:opacity-75"
+                class="w-[42vw] max-w-44 shrink-0 text-left active:opacity-75"
                 onclick={() => onOpenAlbum(album.id)}
               >
                 <Cover
@@ -307,8 +346,8 @@
                   title={album.title}
                   class="aspect-square w-full rounded-lg text-2xl shadow-md shadow-black/40"
                 />
-                <span class="mt-2 block truncate text-[13px] font-semibold text-zinc-50">{album.title}</span>
-                <span class="block truncate text-xs text-zinc-400">
+                <span class="mt-2 line-clamp-2 text-[13px] leading-snug font-semibold text-zinc-50">{album.title}</span>
+                <span class="mt-0.5 block truncate text-xs text-zinc-400">
                   {album.albumArtist}{album.year ? ` · ${album.year}` : ''}
                 </span>
               </button>

@@ -22,6 +22,12 @@
 
   let dragging = $state<number | null>(null)
   let pull = $state(0)
+  let swipeX = $state(0)
+  let axis = $state<'none' | 'x' | 'y'>('none')
+  let gestureActive = false
+  let canPull = false
+  let canSwipe = false
+  let startX = 0
   let startY = 0
   let scroller = $state<HTMLDivElement | null>(null)
 
@@ -35,25 +41,70 @@
   )
 
   function onTouchStart(e: TouchEvent) {
-    if ((e.target as HTMLElement).closest('input, button, [data-no-pull]')) return
-    if ((scroller?.scrollTop ?? 0) > 0) return
+    if (e.touches.length !== 1) return
+    const target = e.target as HTMLElement
+    if (target.closest('input, button')) return
+    canPull = (scroller?.scrollTop ?? 0) === 0 && !target.closest('[data-no-pull]')
+    canSwipe = !target.closest('[data-no-swipe]')
+    if (!canPull && !canSwipe) return
+    gestureActive = true
+    axis = 'none'
+    startX = e.touches[0].clientX
     startY = e.touches[0].clientY
-    pull = 0.001
+    pull = 0
+    swipeX = 0
   }
   function onTouchMove(e: TouchEvent) {
-    if (pull === 0) return
+    if (!gestureActive || e.touches.length !== 1) return
+    const dx = e.touches[0].clientX - startX
     const dy = e.touches[0].clientY - startY
-    if (dy < 0 && pull <= 0.001) {
-      pull = 0 // scrolling up into the lyrics, not a dismiss
-      return
+
+    if (axis === 'none') {
+      if (canSwipe && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+        axis = 'x'
+        pull = 0
+      } else if (Math.abs(dy) > 10) {
+        if (canPull && dy > 0) {
+          axis = 'y'
+          pull = 0.001
+        } else {
+          gestureActive = false
+          return
+        }
+      } else {
+        return
+      }
     }
-    pull = Math.max(0.001, dy)
+
+    if (axis === 'x') {
+      swipeX = Math.max(-180, Math.min(180, dx))
+    } else if (axis === 'y') {
+      pull = Math.max(0.001, dy)
+    }
   }
   function onTouchEnd() {
-    if (pull > 120) {
+    if (axis === 'x') {
+      if (swipeX <= -64) {
+        void player.next()
+      } else if (swipeX >= 64) {
+        void player.previous()
+      }
+    } else if (axis === 'y' && pull > 120) {
+      gestureActive = false
+      axis = 'none'
+      swipeX = 0
       onClose()
       return
     }
+    gestureActive = false
+    axis = 'none'
+    swipeX = 0
+    pull = 0
+  }
+  function onTouchCancel() {
+    gestureActive = false
+    axis = 'none'
+    swipeX = 0
     pull = 0
   }
   function commitSeek() {
@@ -70,15 +121,16 @@
   ontouchstart={onTouchStart}
   ontouchmove={onTouchMove}
   ontouchend={onTouchEnd}
+  ontouchcancel={onTouchCancel}
   role="dialog"
   tabindex="-1"
   aria-modal="true"
   aria-label={t("Now playing")}
 >
   <TintedBackdrop background="linear-gradient(to bottom, {tint.top} 0%, var(--color-zinc-950) 92%)" duration={600} />
-  <div bind:this={scroller} class="h-full overflow-y-auto overscroll-contain">
+  <div bind:this={scroller} class="h-full overflow-x-hidden overflow-y-auto overscroll-contain">
     <section
-      class="flex flex-col px-6"
+      class="flex touch-pan-y flex-col px-6"
       style:min-height="100dvh"
       style:padding-top="var(--inset-top)"
       style:padding-bottom="calc(var(--inset-bottom) + 12px)"
@@ -97,7 +149,14 @@
       </header>
 
       {#if snap.current}
-        <div class="flex min-h-0 flex-1 items-center justify-center pt-3">
+        <div
+          class={[
+            'flex min-h-0 flex-1 items-center justify-center pt-3',
+            axis === 'x' ? '' : 'transition-[transform,opacity] duration-200 ease-out',
+          ]}
+          style:transform={swipeX ? `translateX(${swipeX}px)` : undefined}
+          style:opacity={swipeX ? Math.max(0.35, 1 - Math.abs(swipeX) / 220) : undefined}
+        >
           <Cover cover={nowCover.cover} title={snap.current.title} class="aspect-square max-h-full w-full rounded-lg text-7xl shadow-2xl shadow-black/50" />
         </div>
 
@@ -194,7 +253,7 @@
     </section>
 
     <!-- Below the fold: the lyrics card. -->
-    <section class="px-4" style:padding-bottom="calc(var(--inset-bottom) + 24px)">
+    <section data-no-swipe class="px-4" style:padding-bottom="calc(var(--inset-bottom) + 24px)">
       <div class="overflow-hidden rounded-xl" style:background={tint.surface}>
         <div class="flex items-center justify-between px-4 pt-4 pb-1">
           <h3 class="text-base font-bold">{t("Lyrics")}</h3>

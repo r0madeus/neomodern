@@ -159,10 +159,10 @@
   }
 </script>
 
-<div class="h-full overflow-y-auto px-5 pb-8">
-  <div class="mx-auto flex max-w-6xl flex-col gap-6">
+<div class="h-full w-full max-w-full min-w-0 overflow-x-hidden overflow-y-auto px-3.5 pb-8 sm:px-5">
+  <div class="mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-5 sm:gap-6">
     <!-- Wrapped-style hero banner -->
-    <section class="rounded-2xl bg-gradient-to-br from-accent-700 via-accent-900 to-zinc-950 p-6 text-white shadow-lg">
+    <section class="min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-accent-700 via-accent-900 to-zinc-950 p-4 text-white shadow-lg sm:p-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p class="flex items-center gap-1.5 text-xs font-semibold tracking-widest text-white/70 uppercase">
@@ -307,8 +307,8 @@
     {:else if stats}
       <!-- Highlight insights row -->
       {@const sum = stats.summary}
-      <div class="grid gap-4 sm:grid-cols-3">
-        <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
           <p class="text-xs font-medium tracking-wide text-zinc-400 uppercase">{t('Peak hour')}</p>
           <p class="mt-1 text-xl font-bold tabular-nums">
             {sum.topHour !== null ? `${pad2(sum.topHour)}:00 – ${pad2((sum.topHour + 1) % 24)}:00` : '—'}
@@ -317,7 +317,7 @@
             <p class="mt-0.5 text-xs text-accent-600 dark:text-accent-400">{hourPersona(sum.topHour)}</p>
           {/if}
         </div>
-        <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <div class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
           <p class="text-xs font-medium tracking-wide text-zinc-400 uppercase">{t('Favorite day')}</p>
           <p class="mt-1 text-xl font-bold">
             {sum.topWeekday !== null ? t(WEEKDAYS_FULL[sum.topWeekday]) : '—'}
@@ -326,7 +326,7 @@
             {t('Current streak')}: {count(sum.currentStreakDays, '{n} day', '{n} days')}
           </p>
         </div>
-        <div class="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <div class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
           <p class="text-xs font-medium tracking-wide text-zinc-400 uppercase">{t('Plays')}</p>
           <p class="mt-1 text-xl font-bold tabular-nums">
             {sum.completedCount.toLocaleString(i18n.locale)}
@@ -341,11 +341,11 @@
       </div>
 
       <!-- Top Tracks & Top Artists -->
-      <div class="grid gap-6 lg:grid-cols-2">
-        <section class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section class="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:p-5">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 class="text-base font-semibold">{t('Top tracks')}</h3>
-            <div class="flex items-center gap-1.5">
+            <div class="flex flex-wrap items-center gap-1.5">
               <div class="inline-flex rounded-lg bg-zinc-100 p-0.5 text-xs dark:bg-zinc-800">
                 <button
                   type="button"
@@ -433,7 +433,7 @@
           </div>
         </section>
 
-        <section class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <section class="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:p-5">
           <h3 class="mb-4 text-base font-semibold">{t('Top artists')}</h3>
           <div class="flex flex-col gap-2">
             {#each stats.topArtistsByTime as artist, i (artist.artist)}
@@ -479,8 +479,8 @@
       </div>
 
       <!-- Top Albums & Top Genres -->
-      <div class="grid gap-6 lg:grid-cols-2">
-        <section class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section class="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:p-5">
           <h3 class="mb-4 text-base font-semibold">{t('Top albums')}</h3>
           <div class="flex flex-col gap-1.5">
             {#each stats.topAlbumsByTime as album, i (`${album.album}:${i}`)}
@@ -519,7 +519,7 @@
           </div>
         </section>
 
-        <section class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <section class="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:p-5">
           <h3 class="mb-4 text-base font-semibold">{t('Top genres')}</h3>
           <div class="flex flex-col gap-3">
             {#each stats.topGenres as genre, i (genre.genre)}
@@ -546,11 +546,11 @@
       </div>
 
       <!-- Temporal distribution charts -->
-      <section class="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <section class="min-w-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:p-5">
         <h3 class="mb-5 text-base font-semibold">{t('Listening rhythm')}</h3>
-        <div class="grid gap-8 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
           <!-- 24h bar chart -->
-          <div>
+          <div class="min-w-0">
             <p class="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">
               {t('Hours of the day')}
             </p>
@@ -559,7 +559,7 @@
                 {#each stats.byHour as bucket, idx (bucket.label)}
                   {@const hPct = bucket.listenedMs > 0 ? Math.max(6, Math.round((bucket.listenedMs / maxHourMs) * 100)) : 3}
                   <div
-                    class="group flex h-full flex-1 flex-col items-center justify-end gap-1"
+                    class="group flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
                     title={`${bucket.label}:00 · ${formatDurationLong(bucket.listenedMs)} (${count(bucket.playCount, '{n} play', '{n} plays')})`}
                   >
                     <div class="animate-bar-y h-full w-full" style:animation-delay="{idx * 14}ms">
@@ -587,7 +587,7 @@
           </div>
 
           <!-- Weekdays bar chart -->
-          <div>
+          <div class="min-w-0">
             <p class="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">
               {t('Days of the week')}
             </p>
@@ -595,11 +595,11 @@
               {#key stats}
                 {#each stats.byWeekday as bucket, idx (bucket.label)}
                   {@const wPct = bucket.listenedMs > 0 ? Math.max(3, Math.round((bucket.listenedMs / maxWdayMs) * 100)) : 0}
-                  <div class="flex items-center gap-3 text-xs">
+                  <div class="flex min-w-0 items-center gap-2.5 text-xs sm:gap-3">
                     <span class="w-8 shrink-0 font-medium text-zinc-500">
                       {t(WEEKDAYS_SHORT[idx])}
                     </span>
-                    <div class="h-2.5 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                    <div class="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
                       <div class="animate-bar-x h-full w-full" style:animation-delay="{idx * 35}ms">
                         <div
                           class="h-full w-full origin-left rounded-r-full bg-accent-500/85 transition-transform duration-500 ease-out"
@@ -607,7 +607,7 @@
                         ></div>
                       </div>
                     </div>
-                    <span class="w-20 shrink-0 text-right tabular-nums text-zinc-500">
+                    <span class="w-16 shrink-0 text-right tabular-nums text-zinc-500 sm:w-20">
                       {bucket.listenedMs > 0 ? formatDurationLong(bucket.listenedMs) : '—'}
                     </span>
                   </div>
@@ -648,10 +648,10 @@
       </section>
 
       <!-- Recent Activity + History Management -->
-      <section class="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <section class="min-w-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-900/60">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h3 class="text-base font-semibold">{t('Recent activity')}</h3>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             {#if confirmingClear}
               <span class="text-xs text-zinc-500" role="alert">
                 {t('Clear all listening history?')}
@@ -690,7 +690,7 @@
               disabled={!local}
               onclick={() => local && playTrack(entry.path)}
               class={[
-                '-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-2.5 text-left transition',
+                'flex w-full min-w-0 items-center gap-2.5 rounded-lg px-1.5 py-2.5 text-left transition sm:gap-3 sm:px-2',
                 local ? 'hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50' : 'cursor-default',
               ]}
             >
@@ -701,7 +701,7 @@
                   {entry.artist || '—'}{entry.album ? ` · ${entry.album}` : ''}
                 </p>
               </div>
-              <div class="flex shrink-0 items-center gap-2 text-xs">
+              <div class="flex shrink-0 items-center gap-1.5 text-xs sm:gap-2">
                 {#if entry.source === 'online'}
                   <span class="rounded bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-medium text-sky-600 dark:text-sky-400">
                     {t('Online')}
@@ -720,7 +720,7 @@
                     {t('Partial')}
                   </span>
                 {/if}
-                <span class="w-12 text-right tabular-nums text-zinc-600 dark:text-zinc-300">
+                <span class="min-w-10 text-right tabular-nums text-zinc-600 dark:text-zinc-300 sm:w-12">
                   {formatShortTime(entry.listenedMs)}
                 </span>
                 <span class="hidden w-28 text-right tabular-nums text-zinc-400 sm:inline">

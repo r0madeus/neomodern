@@ -178,7 +178,9 @@
             onOpenFavorites={openFavorites}
             onOpenSongs={openSongs}
             onOpenAlbums={openAlbums}
+            onOpenAlbum={openAlbum}
             onOpenArtists={openArtists}
+            onOpenArtist={openArtist}
             onOpenStats={openStats}
             onOpenPage={openPage}
           />
@@ -231,18 +233,15 @@
     {/if}
 
     <div
-      class="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-zinc-950 via-zinc-950/90 via-60% to-transparent pt-8"
+      class="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/75 via-45% to-transparent pt-10"
       style:padding-bottom="var(--inset-bottom)"
     >
       <div class="pointer-events-auto">
         <MiniPlayer onOpen={openPlayer} />
-        <nav
-          aria-label="Main"
-          class="grid grid-cols-3 bg-gradient-to-t from-black/85 via-black/55 to-transparent backdrop-blur-md"
-        >
+        <nav aria-label="Main" class="grid grid-cols-3 pt-0.5">
           {#each TABS as entry (entry.id)}
             <button
-              class={['flex flex-col items-center gap-1 pt-2 pb-2.5 text-[11px] transition-colors', tab === entry.id ? 'text-white' : 'text-zinc-400']}
+              class={['flex flex-col items-center gap-1 pt-1.5 pb-2 text-[11px] transition-colors', tab === entry.id ? 'font-medium text-white' : 'text-zinc-400']}
               aria-current={tab === entry.id ? 'page' : undefined}
               onclick={() => selectTab(entry.id)}
             >

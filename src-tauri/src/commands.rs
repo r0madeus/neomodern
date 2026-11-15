@@ -771,7 +771,7 @@ pub fn library_play_album(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let paths = le(lib.album_tracks(album_id))?;
-    s(player.replace_queue(paths, start_index))
+    s(player.replace_queue_from(paths, start_index, Some(format!("album:{album_id}"))))
 }
 
 #[tauri::command]
@@ -956,7 +956,7 @@ pub fn playlist_play(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let tracks = le(lib.playlist_queue_tracks(id))?;
-    s(player.replace_queue(tracks, start_index))
+    s(player.replace_queue_from(tracks, start_index, Some(format!("playlist:{id}"))))
 }
 
 /// Saves the current queue as a playlist. Queue entries that are not in the
@@ -1830,7 +1830,7 @@ pub fn favorites_play(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let tracks = le(lib.favorites_queue_tracks())?;
-    s(player.replace_queue(tracks, start_index))
+    s(player.replace_queue_from(tracks, start_index, Some("favorites".into())))
 }
 
 // ---------------------------------------------------------------------

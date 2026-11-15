@@ -40,6 +40,8 @@ export interface PlayerSnapshot {
   /** What previous / next would play (shuffle and repeat applied). */
   previousTrack: TrackInfo | null
   nextTrack: TrackInfo | null
+  /** What the queue was started from: 'album:3', 'playlist:7', 'favorites'. */
+  context: string | null
 }
 
 /** Ten octave bands, 31 Hz to 16 kHz; values in dB (±12). */
@@ -78,6 +80,7 @@ const EMPTY: PlayerSnapshot = {
   sleepEndOfTrack: false,
   previousTrack: null,
   nextTrack: null,
+  context: null,
 }
 
 /** Queue rows are fetched in pages; never the whole list in one IPC call. */

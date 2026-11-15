@@ -34,7 +34,7 @@
   let { id, onDeleted }: { id: number; onDeleted: () => void } = $props()
 
   const ROW = 48
-  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_5rem_4rem_11rem] items-center gap-3 px-5'
+  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_5rem_2rem_4rem_2rem] items-center gap-3 px-5'
 
   const info = $derived(playlists.byId(id))
   let tracks = $state<TrackRow[]>([])
@@ -359,7 +359,7 @@
     if (!player.error) playlists.flash(t('Added to queue'))
   }
 
-  async function moveRow(from: number, to: number, action?: 'up' | 'down') {
+  async function moveRow(from: number, to: number, keyboard = false) {
     if (!isNaturalOrder || to < 0 || to >= visible.length || from === to) return
     if (loadedId === id && from < tracks.length && to < tracks.length) {
       const copy = [...tracks]
@@ -372,12 +372,10 @@
       await playlists.refresh()
       return
     }
-    if (action) {
+    if (keyboard) {
       // Keep keyboard focus on the same entry, which now sits at `to`.
       await tick()
-      document
-        .querySelector<HTMLElement>(`[data-pl-row="${to}"] [data-action="${action}"]`)
-        ?.focus()
+      document.querySelector<HTMLElement>(`[data-pl-row="${to}"]`)?.focus()
     }
   }
 
@@ -392,17 +390,15 @@
     } else if (e.key === 'Enter') void playlists.play(id, origIndex)
     else if (isNaturalOrder && e.altKey && e.key === 'ArrowUp') {
       e.preventDefault()
-      void moveRow(i, i - 1, 'up')
+      void moveRow(i, i - 1, true)
     } else if (isNaturalOrder && e.altKey && e.key === 'ArrowDown') {
       e.preventDefault()
-      void moveRow(i, i + 1, 'down')
+      void moveRow(i, i + 1, true)
     } else if (e.key === 'Delete') {
       void removePositions(selected.size > 0 && selected.has(origIndex) ? [...selected] : [origIndex])
     }
   }
 
-  const btn =
-    'rounded p-1 text-zinc-400 outline-none hover:bg-zinc-200 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-accent-500 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-zinc-700 dark:hover:text-zinc-100'
 </script>
 
 {#if !info}
@@ -654,9 +650,14 @@
         { col: 'artist' as PlSortCol, label: t('Artist'), align: 'justify-start text-left' },
         { col: 'album' as PlSortCol, label: t('Album'), align: 'justify-start text-left' },
         { col: 'plays' as PlSortCol, label: t('Plays'), align: 'justify-end text-right' },
+        { col: null, label: '', align: '' },
         { col: 'duration' as PlSortCol, label: t('Time'), align: 'justify-end text-right' },
-      ] as h (h.col)}
+      ] as h (h.col ?? 'save')}
         {@const active = sortCol === h.col}
+        {#if h.col === null}
+          <span></span>
+        {:else}
+        {@const col = h.col}
         <button
           type="button"
           class={[
@@ -667,7 +668,7 @@
               : 'hover:text-zinc-700 dark:hover:text-zinc-200',
           ]}
           aria-pressed={active}
-          onclick={() => toggleSort(h.col)}
+          onclick={() => toggleSort(col)}
         >
           <span>{h.label}</span>
           {#if active}
@@ -676,6 +677,7 @@
             </span>
           {/if}
         </button>
+        {/if}
       {/each}
       <span></span>
     </div>
@@ -761,55 +763,21 @@
               <span class="text-right text-xs tabular-nums text-zinc-500">
                 {track.plays.toLocaleString(i18n.locale)}
               </span>
+              <span class="flex justify-center">
+                <FavoriteButton trackId={track.id} title={track.title} revealOnHover />
+              </span>
               <span class="text-right text-xs tabular-nums text-zinc-500">
                 {formatTime(track.durationMs === null ? null : track.durationMs / 1000)}
               </span>
-              <span class="flex items-center justify-end gap-0.5">
-                <FavoriteButton trackId={track.id} title={track.title} revealOnHover />
-                <span class="flex justify-end opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-                  <AddToPlaylist
-                    trackIds={[track.id]}
-                    {track}
-                    editTags
-                    onPlay={() => void playlists.play(id, orig)}
-                    onRemoveFromPlaylist={() => void removePositions([orig])}
-                    label={t('More actions for “{title}”', { title: track.title })}
-                  />
-                <button
-                  type="button"
-                  data-action="up"
-                  class={btn}
-                  disabled={!isNaturalOrder || i === 0}
-                  aria-label={t('Move “{title}” up', { title: track.title })}
-                  onclick={() => moveRow(i, i - 1, 'up')}
-                  ondblclick={(e) => e.stopPropagation()}
-                  onkeydown={(e) => e.stopPropagation()}
-                >
-                  <Icon name="up" class="size-4" />
-                </button>
-                <button
-                  type="button"
-                  data-action="down"
-                  class={btn}
-                  disabled={!isNaturalOrder || i === visible.length - 1}
-                  aria-label={t('Move “{title}” down', { title: track.title })}
-                  onclick={() => moveRow(i, i + 1, 'down')}
-                  ondblclick={(e) => e.stopPropagation()}
-                  onkeydown={(e) => e.stopPropagation()}
-                >
-                  <Icon name="down" class="size-4" />
-                </button>
-                <button
-                  type="button"
-                  class={btn}
-                  aria-label={t('Remove “{title}” from playlist', { title: track.title })}
-                  onclick={() => void removePositions([orig])}
-                  ondblclick={(e) => e.stopPropagation()}
-                  onkeydown={(e) => e.stopPropagation()}
-                >
-                  <Icon name="close" class="size-4" />
-                </button>
-                </span>
+              <span class="flex justify-end opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+                <AddToPlaylist
+                  trackIds={[track.id]}
+                  {track}
+                  editTags
+                  onPlay={() => void playlists.play(id, orig)}
+                  onRemoveFromPlaylist={() => void removePositions([orig])}
+                  label={t('More actions for “{title}”', { title: track.title })}
+                />
               </span>
             </div>
           {/if}

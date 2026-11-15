@@ -191,8 +191,7 @@
     selection.clear()
   })
   let selectedMixId = $state<string | null>(null)
-  let creatingPlaylist = $state(false)
-  let newPlaylistName = $state('')
+  let libraryMenuOpen = $state(false)
 
   function go(next: View) {
     view = next
@@ -217,13 +216,11 @@
   }
 
   async function createPlaylist() {
-    const name = newPlaylistName.trim()
-    if (name === '') return
-    const made = await playlists.create(name)
-    if (!made) return
-    creatingPlaylist = false
-    newPlaylistName = ''
-    openPlaylist(made.id)
+    // Like Spotify: make it right away with a numbered name and open it;
+    // it can be renamed on its page.
+    libraryMenuOpen = false
+    const made = await playlists.create(t('My playlist #{n}', { n: playlists.list.length + 1 }))
+    if (made) openPlaylist(made.id)
   }
 
   // Leave a playlist that no longer exists (deleted, or after a reset).
@@ -480,48 +477,55 @@
         {#if !sidebarCollapsed}
           <div class="flex items-center justify-between px-2">
             <h2 id="library-heading" class="text-xs font-medium uppercase tracking-wide text-zinc-400">{t('Your library')}</h2>
-            <span class="flex items-center gap-0.5">
+            <span class="relative">
               <button
-                class="rounded p-0.5 text-zinc-400 outline-none hover:bg-zinc-200 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-accent-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                aria-label={t("Import playlist (M3U)")}
-                title={t("Import playlist (M3U)")}
-                onclick={async () => {
-                  const made = await playlists.importM3u()
-                  if (made) openPlaylist(made.id)
-                }}
-              >
-                <Icon name="upload" class="size-4" />
-              </button>
-              <button
-                class="rounded p-0.5 text-zinc-400 outline-none hover:bg-zinc-200 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-accent-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                aria-label={t("New playlist")}
-                title={t("New playlist")}
-                onclick={() => (creatingPlaylist = !creatingPlaylist)}
+                class="rounded-full p-1 text-zinc-400 outline-none hover:bg-zinc-200 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-accent-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                aria-label={t('Create')}
+                title={t('Create')}
+                aria-haspopup="menu"
+                aria-expanded={libraryMenuOpen}
+                onclick={() => (libraryMenuOpen = !libraryMenuOpen)}
               >
                 <Icon name="plus" class="size-4" />
               </button>
+              {#if libraryMenuOpen}
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                <div class="fixed inset-0 z-40" onclick={() => (libraryMenuOpen = false)}></div>
+                <div
+                  role="menu"
+                  tabindex="-1"
+                  class="absolute top-full right-0 z-50 mt-1 w-56 rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+                  onkeydown={(e) => e.key === 'Escape' && (libraryMenuOpen = false)}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+                    {@attach (el) => el.focus()}
+                    onclick={() => void createPlaylist()}
+                  >
+                    <Icon name="queue" class="size-4 text-zinc-400" />
+                    {t('New playlist')}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
+                    onclick={async () => {
+                      libraryMenuOpen = false
+                      const made = await playlists.importM3u()
+                      if (made) openPlaylist(made.id)
+                    }}
+                  >
+                    <Icon name="upload" class="size-4 text-zinc-400" />
+                    {t('Import playlist (M3U)')}
+                  </button>
+                </div>
+              {/if}
             </span>
           </div>
         {:else}
           <h2 id="library-heading" class="sr-only">{t('Your library')}</h2>
-        {/if}
-        {#if creatingPlaylist && !sidebarCollapsed}
-          <form
-            class="px-1 pb-1"
-            onsubmit={(e) => {
-              e.preventDefault()
-              void createPlaylist()
-            }}
-          >
-            <input
-              class="w-full rounded-xl border border-zinc-200 bg-white px-2.5 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:border-zinc-700 dark:bg-zinc-900"
-              placeholder={t("Playlist name")}
-              aria-label={t("New playlist name")}
-              bind:value={newPlaylistName}
-              onkeydown={(e) => e.key === 'Escape' && (creatingPlaylist = false)}
-              {@attach (el) => el.focus()}
-            />
-          </form>
         {/if}
 
         {#snippet libraryRow(
@@ -531,18 +535,19 @@
           active: boolean,
           open: () => void,
           art: import('svelte').Snippet,
-          pin: { pinned: boolean; toggle: () => void } | null,
+          isPinned: boolean,
           play: () => void,
+          playing: boolean,
         )}
-          <div class="group relative flex shrink-0 items-center gap-0.5" data-key={key}>
+          <div class="group relative shrink-0" data-key={key}>
             <!-- Spotify-style: hovering the row darkens the cover and shows
                  a play button that plays the album or playlist. A sibling of
                  the row button, laid over the cover (buttons cannot nest). -->
             <button
               type="button"
               class={[
-                'absolute top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
-                sidebarCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-1.5',
+                'absolute top-1/2 z-10 flex size-12 -translate-y-1/2 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
+                sidebarCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-2',
               ]}
               title={t('Play “{title}”', { title })}
               aria-label={t('Play “{title}”', { title })}
@@ -551,16 +556,16 @@
                 play()
               }}
             >
-              <Icon name="play" class="size-5" />
+              <Icon name="play" class="size-6" />
             </button>
             <button
               type="button"
               class={[
-                'flex min-w-0 flex-1 items-center rounded-lg p-1.5 text-left',
-                sidebarCollapsed ? 'justify-center' : 'gap-2.5',
+                'flex w-full min-w-0 items-center rounded-md p-2 text-left',
+                sidebarCollapsed ? 'justify-center' : 'gap-3',
                 active
-                  ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/50 dark:text-accent-100'
-                  : 'text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-200 dark:hover:bg-zinc-800/70',
+                  ? 'bg-zinc-200/80 dark:bg-zinc-800'
+                  : 'hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60',
               ]}
               title={sidebarCollapsed ? title : undefined}
               aria-label={sidebarCollapsed ? title : undefined}
@@ -570,34 +575,33 @@
               {@render art()}
               {#if !sidebarCollapsed}
                 <span class="min-w-0 flex-1">
-                  <span class={['block truncate text-sm leading-snug', active && 'font-medium']}>{title}</span>
-                  <span class="flex min-w-0 items-center gap-1 text-[11px] leading-snug text-zinc-500">
-                    {#if pin?.pinned}
-                      <Icon name="pin" class="size-3 shrink-0 text-accent-600 dark:text-accent-400" />
+                  <span
+                    class={[
+                      'block truncate text-[15px] leading-snug',
+                      playing ? 'text-accent-600 dark:text-accent-400' : 'text-zinc-900 dark:text-zinc-50',
+                    ]}
+                  >
+                    {title}
+                  </span>
+                  <span class="mt-0.5 flex min-w-0 items-center gap-1 text-[13px] leading-snug text-zinc-500 dark:text-zinc-400">
+                    {#if isPinned}
+                      <Icon name="pin" class="size-3.5 shrink-0 text-accent-600 dark:text-accent-400" />
+                      <span class="sr-only">{t('Pinned')}</span>
                     {/if}
                     <span class="truncate">{subtitle}</span>
                   </span>
                 </span>
+                {#if playing}
+                  <Icon name="volume" class="size-4 shrink-0 text-accent-600 dark:text-accent-400" />
+                {/if}
               {/if}
             </button>
-            {#if pin && !sidebarCollapsed}
-              <button
-                type="button"
-                title={t(pin.pinned ? 'Unpin' : 'Pin')}
-                aria-label={t(pin.pinned ? 'Unpin “{title}”' : 'Pin “{title}”', { title })}
-                aria-pressed={pin.pinned}
-                class="shrink-0 rounded p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-zinc-700 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                onclick={pin.toggle}
-              >
-                <Icon name="pin" class="size-3.5" />
-              </button>
-            {/if}
           </div>
         {/snippet}
 
         {#snippet favoritesArt()}
-          <span class="flex size-9 shrink-0 items-center justify-center rounded bg-gradient-to-br from-accent-400 to-indigo-600 text-white">
-            <Icon name="star" class="size-4" />
+          <span class="flex size-12 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-accent-400 to-indigo-600 text-white">
+            <Icon name="star" class="size-5" />
           </span>
         {/snippet}
 
@@ -605,24 +609,25 @@
           {@render libraryRow(
             'favorites',
             t('Favorites'),
-            `${t('Playlist')} · ${count(favorites.ids.size, '{n} track', '{n} tracks')}`,
+            t('Playlist'),
             view === 'favorites',
             () => go('favorites'),
             favoritesArt,
-            null,
+            false,
             () => void favorites.play(0),
+            player.snapshot.context === 'favorites',
           )}
           {#each pinned.entries as entry (`pin:${entry.kind}:${entry.id}`)}
             {#snippet pinnedArt()}
               {#if entry.kind === 'album'}
-                <Cover cover={entry.cover} title={entry.title} class="size-9 shrink-0 rounded text-xs" />
+                <Cover cover={entry.cover} title={entry.title} class="size-12 shrink-0 rounded-md text-sm" />
               {:else}
                 <PlaylistCover
                   cover={entry.cover}
                   albumCovers={entry.albumCovers}
                   name={entry.title}
-                  class="size-9 shrink-0 rounded"
-                  iconClass="size-4"
+                  class="size-12 shrink-0 rounded-md"
+                  iconClass="size-5"
                 />
               {/if}
             {/snippet}
@@ -631,16 +636,17 @@
               entry.title,
               entry.kind === 'album'
                 ? `${t('Album')}${entry.subtitle ? ` · ${entry.subtitle}` : ''}`
-                : `${t('Playlist')} · ${count(entry.trackCount, '{n} track', '{n} tracks')}`,
+                : t('Playlist'),
               (entry.kind === 'album' && view === 'albums' && selectedAlbumId === entry.id) ||
                 (entry.kind === 'playlist' && view === 'playlist' && playlistId === entry.id),
               () => (entry.kind === 'album' ? openAlbum(entry.id) : openPlaylist(entry.id)),
               pinnedArt,
-              { pinned: true, toggle: () => void pinned.toggle(entry.kind, entry.id) },
+              true,
               () =>
                 entry.kind === 'album'
                   ? void library.playAlbum(entry.id, 0)
                   : void playlists.play(entry.id, 0),
+              player.snapshot.context === `${entry.kind}:${entry.id}`,
             )}
           {/each}
           {#each playlists.list.filter((p) => !pinned.isPinned('playlist', p.id)) as p (p.id)}
@@ -649,22 +655,23 @@
                 cover={p.cover}
                 albumCovers={p.albumCovers}
                 name={p.name}
-                class="size-9 shrink-0 rounded"
-                iconClass="size-4"
+                class="size-12 shrink-0 rounded-md"
+                iconClass="size-5"
               />
             {/snippet}
             {@render libraryRow(
               `pl:${p.id}`,
               p.name,
-              `${t('Playlist')} · ${count(p.trackCount, '{n} track', '{n} tracks')}`,
+              t('Playlist'),
               view === 'playlist' && playlistId === p.id,
               () => openPlaylist(p.id),
               playlistArt,
-              { pinned: false, toggle: () => void pinned.toggle('playlist', p.id) },
+              false,
               () => void playlists.play(p.id, 0),
+              player.snapshot.context === `playlist:${p.id}`,
             )}
           {/each}
-          {#if playlists.list.length === 0 && pinned.entries.length === 0 && !creatingPlaylist && !sidebarCollapsed}
+          {#if playlists.list.length === 0 && pinned.entries.length === 0 && !sidebarCollapsed}
             <p class="px-2 pt-1 text-xs text-zinc-400">{t('Create a playlist with +, or pin an album from its page or a song’s menu.')}</p>
           {/if}
         </div>

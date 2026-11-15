@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from '../i18n.svelte'
+  import { count, t } from '../i18n.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
   import { fly } from 'svelte/transition'
@@ -202,12 +202,8 @@
           <LibraryTab
             onOpenPlaylist={openPlaylist}
             onOpenFavorites={openFavorites}
-            onOpenSongs={openSongs}
-            onOpenAlbums={openAlbums}
             onOpenAlbum={openAlbum}
-            onOpenArtists={openArtists}
             onOpenArtist={openArtist}
-            onOpenStats={openStats}
             onOpenPage={openPage}
           />
         {/if}
@@ -220,7 +216,26 @@
           <div class="absolute inset-0 flex flex-col bg-zinc-950">
             <PageHeader title={t(sheet.page === 'folders' ? 'Music folders' : 'Settings')} onBack={popLayer} />
             <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
-              {#if sheet.page === 'folders'}<FoldersView />{:else}<SettingsView />{/if}
+              {#if sheet.page === 'folders'}
+                <FoldersView />
+              {:else}
+                <!-- Music folders used to be a row on the Library tab. -->
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-4 border-b border-zinc-800/80 px-4 py-3.5 text-left active:bg-white/5"
+                  onclick={() => openPage('folders')}
+                >
+                  <Icon name="folder" class="size-5 text-accent-400" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-[15px]">{t('Music folders')}</span>
+                    <span class="block text-xs text-zinc-400">
+                      {count(library.stats.tracks, '{n} song', '{n} songs')} · {count(library.stats.albums, '{n} album', '{n} albums')}
+                    </span>
+                  </span>
+                  <Icon name="chevronRight" class="size-5 text-zinc-500" />
+                </button>
+                <SettingsView />
+              {/if}
             </div>
           </div>
         {:else if sheet.type === 'albums'}

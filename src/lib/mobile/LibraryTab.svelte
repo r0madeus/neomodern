@@ -8,26 +8,21 @@
   import { library, type AlbumRow } from '../library.svelte'
   import { pinned } from '../pinned.svelte'
   import { playlists } from '../playlists.svelte'
+  import { portal } from '../portal'
 
+  // Songs, Albums, Artists and the stats are on Home and in the chips
+  // here; music folders are at the top of Settings; importing is under +.
   let {
     onOpenPlaylist,
     onOpenFavorites,
-    onOpenSongs,
-    onOpenAlbums,
     onOpenAlbum,
-    onOpenArtists,
     onOpenArtist,
-    onOpenStats,
     onOpenPage,
   }: {
     onOpenPlaylist: (id: number) => void
     onOpenFavorites: () => void
-    onOpenSongs: () => void
-    onOpenAlbums: () => void
     onOpenAlbum: (albumId: number) => void
-    onOpenArtists: () => void
     onOpenArtist: (name: string) => void
-    onOpenStats: () => void
     onOpenPage: (page: 'folders' | 'settings') => void
   } = $props()
 
@@ -51,8 +46,7 @@
   let sortMode = $state<SortMode>('recents')
   let searching = $state(false)
   let query = $state('')
-  let creating = $state(false)
-  let newName = $state('')
+  let createOpen = $state(false)
   let albumRows = $state<AlbumRow[]>([])
   let artistRows = $state<ArtistRow[]>([])
 
@@ -84,12 +78,16 @@
     filterKind = filterKind === kind ? 'all' : kind
   }
 
+  // Like Spotify: a numbered playlist is made and opened; rename it there.
   async function create() {
-    const trimmed = newName.trim()
-    if (trimmed === '') return
-    const made = await playlists.create(trimmed)
-    creating = false
-    newName = ''
+    createOpen = false
+    const made = await playlists.create(t('My playlist #{n}', { n: playlists.list.length + 1 }))
+    if (made) onOpenPlaylist(made.id)
+  }
+
+  async function importM3u() {
+    createOpen = false
+    const made = await playlists.importM3u()
     if (made) onOpenPlaylist(made.id)
   }
 
@@ -142,9 +140,7 @@
       q === '' || text.toLowerCase().includes(q) || sub.toLowerCase().includes(q)
 
     if (filterKind === 'all' || filterKind === 'playlists') {
-      const favSub = t('Playlist · {count}', {
-        count: count(favorites.ids.size, '{n} song', '{n} songs'),
-      })
+      const favSub = t('Playlist')
       if (matches(t('Favorites'), favSub)) {
         out.push({
           key: 'favorites',
@@ -157,9 +153,7 @@
         })
       }
       for (const p of playlists.list) {
-        const sub = t('Playlist · {count}', {
-          count: count(p.trackCount, '{n} song', '{n} songs'),
-        })
+        const sub = t('Playlist')
         if (!matches(p.name, sub)) continue
         out.push({
           key: `playlist:${p.id}`,
@@ -249,8 +243,10 @@
       <button
         type="button"
         class="rounded-full p-2 text-zinc-200 active:bg-white/10"
-        aria-label={t('New playlist')}
-        onclick={() => (creating = !creating)}
+        aria-label={t('Create')}
+        aria-haspopup="menu"
+        aria-expanded={createOpen}
+        onclick={() => (createOpen = true)}
       >
         <Icon name="plus" class="size-6" />
       </button>
@@ -324,29 +320,6 @@
       </div>
     {/if}
 
-    {#if creating}
-      <form
-        class="flex gap-2 px-4 pt-1 pb-3"
-        onsubmit={(e) => {
-          e.preventDefault()
-          void create()
-        }}
-      >
-        <input
-          class="min-w-0 flex-1 rounded-lg bg-zinc-800 px-3 py-2.5 text-[15px] outline-none focus:ring-2 focus:ring-accent-500"
-          placeholder={t('Playlist name')}
-          aria-label={t('New playlist name')}
-          bind:value={newName}
-          {@attach (el) => el.focus()}
-        />
-        <button
-          class="rounded-lg bg-accent-500 px-4 text-sm font-semibold text-zinc-950 disabled:opacity-40"
-          disabled={newName.trim() === ''}
-        >
-          {t('Create')}
-        </button>
-      </form>
-    {/if}
 
     {#if library.scanning}
       <p class="flex items-center gap-2 px-4 pb-2 text-sm text-accent-400" role="status">
@@ -489,97 +462,38 @@
       </div>
     {/if}
 
-    <!-- Library quick navigation & settings -->
-    <div class="mt-6 border-t border-zinc-800/80 pt-2">
-      <button
-        type="button"
-        class="flex h-13 w-full items-center gap-4 px-4 text-left active:bg-white/5"
-        onclick={onOpenSongs}
-      >
-        <Icon name="music" class="size-5 text-accent-400" />
-        <span class="min-w-0 flex-1 text-sm">{t('Songs')}</span>
-        {#if library.stats.tracks > 0}
-          <span class="text-xs tabular-nums text-zinc-400">
-            {library.stats.tracks.toLocaleString(i18n.locale)}
-          </span>
-        {/if}
-        <Icon name="chevronRight" class="size-5 text-zinc-500" />
-      </button>
+  </div>
+</div>
 
-      <button
-        type="button"
-        class="flex h-13 w-full items-center gap-4 px-4 text-left active:bg-white/5"
-        onclick={onOpenAlbums}
-      >
-        <Icon name="album" class="size-5 text-accent-400" />
-        <span class="min-w-0 flex-1 text-sm">{t('Albums')}</span>
-        {#if library.stats.albums > 0}
-          <span class="text-xs tabular-nums text-zinc-400">
-            {library.stats.albums.toLocaleString(i18n.locale)}
-          </span>
-        {/if}
-        <Icon name="chevronRight" class="size-5 text-zinc-500" />
-      </button>
-
-      <button
-        type="button"
-        class="flex h-13 w-full items-center gap-4 px-4 text-left active:bg-white/5"
-        onclick={onOpenArtists}
-      >
-        <Icon name="artist" class="size-5 text-accent-400" />
-        <span class="min-w-0 flex-1 text-sm">{t('Artists')}</span>
-        <Icon name="chevronRight" class="size-5 text-zinc-500" />
-      </button>
-
-      <button
-        type="button"
-        class="flex h-13 w-full items-center gap-4 px-4 text-left active:bg-white/5"
-        onclick={onOpenStats}
-      >
-        <Icon name="chart" class="size-5 text-accent-400" />
-        <span class="min-w-0 flex-1 text-sm">{t('Listening stats')}</span>
-        <Icon name="chevronRight" class="size-5 text-zinc-500" />
-      </button>
-
-      <button
-        type="button"
-        class="flex h-13 w-full items-center gap-4 px-4 text-left active:bg-white/5"
-        onclick={async () => {
-          const made = await playlists.importM3u()
-          if (made) onOpenPlaylist(made.id)
-        }}
-      >
-        <Icon name="upload" class="size-5 text-zinc-400" />
+{#if createOpen}
+  <!-- Spotify-style "+" sheet, above the mini player and the tabs. -->
+  <div use:portal class="fixed inset-0 z-[60] flex items-end bg-black/60" role="presentation" onclick={() => (createOpen = false)}>
+    <div
+      role="menu"
+      tabindex="-1"
+      class="w-full rounded-t-2xl bg-zinc-900 px-2 pt-2 pb-[calc(1rem+var(--inset-bottom,0px))] text-zinc-100 shadow-2xl"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && (createOpen = false)}
+    >
+      <div class="mx-auto mb-2 h-1 w-10 rounded-full bg-zinc-600"></div>
+      <button type="button" role="menuitem" class="flex w-full items-center gap-4 rounded-lg px-3 py-3 text-left active:bg-white/5" onclick={() => void create()}>
+        <span class="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-800">
+          <Icon name="queue" class="size-5" />
+        </span>
         <span class="min-w-0 flex-1">
-          <span class="block text-sm">{t('Import playlist')}</span>
+          <span class="block text-[15px] font-medium">{t('Playlist')}</span>
+          <span class="block text-xs text-zinc-400">{t('Build a playlist with songs')}</span>
+        </span>
+      </button>
+      <button type="button" role="menuitem" class="flex w-full items-center gap-4 rounded-lg px-3 py-3 text-left active:bg-white/5" onclick={() => void importM3u()}>
+        <span class="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-800">
+          <Icon name="upload" class="size-5" />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-[15px] font-medium">{t('Import playlist')}</span>
           <span class="block text-xs text-zinc-400">{t('An M3U file exported from NeoModern on another device')}</span>
         </span>
       </button>
-
-      <button
-        type="button"
-        class="flex h-13 w-full items-center gap-4 px-4 text-left active:bg-white/5"
-        onclick={() => onOpenPage('folders')}
-      >
-        <Icon name="folder" class="size-5 text-zinc-400" />
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm">{t('Music folders')}</span>
-          <span class="block text-xs text-zinc-400">
-            {count(library.stats.tracks, '{n} song', '{n} songs')} · {count(library.stats.albums, '{n} album', '{n} albums')}
-          </span>
-        </span>
-        <Icon name="chevronRight" class="size-5 text-zinc-500" />
-      </button>
-
-      <button
-        type="button"
-        class="flex h-13 w-full items-center gap-4 px-4 text-left active:bg-white/5"
-        onclick={() => onOpenPage('settings')}
-      >
-        <Icon name="settings" class="size-5 text-zinc-400" />
-        <span class="flex-1 text-sm">{t('Settings')}</span>
-        <Icon name="chevronRight" class="size-5 text-zinc-500" />
-      </button>
     </div>
   </div>
-</div>
+{/if}

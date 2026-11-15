@@ -104,6 +104,9 @@ pub struct PlayerSnapshot {
     /// so a swipe can show the neighbouring track before it plays.
     pub previous_track: Option<TrackInfo>,
     pub next_track: Option<TrackInfo>,
+    /// What the queue was started from ("album:3", "playlist:7",
+    /// "favorites"), so the library can mark it; `None` for anything else.
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,6 +205,8 @@ struct Inner {
     listen: Option<ListenSession>,
     /// Completed listening sessions queued for delivery outside the lock.
     pending_listens: Vec<ListenRecord>,
+    /// See `PlayerSnapshot::context`; set by `replace_queue_from`.
+    context: Option<String>,
 }
 
 pub struct Player {
@@ -277,6 +282,11 @@ impl Inner {
                 .and(self.queue.next_manual_index())
                 .and_then(|i| self.queue.get(i))
                 .map(track_info),
+            context: if self.queue.is_empty() {
+                None
+            } else {
+                self.context.clone()
+            },
         }
     }
 
@@ -497,6 +507,7 @@ impl Player {
                 resume_position: None,
                 pending_load_seek: None,
                 event_seq: 0,
+                context: None,
                 listen: None,
                 pending_listens: Vec::new(),
             }),
@@ -682,10 +693,22 @@ impl Player {
         paths: Vec<impl Into<Track>>,
         start_index: usize,
     ) -> Result<PlayerSnapshot, PlayerError> {
+        self.replace_queue_from(paths, start_index, None)
+    }
+
+    /// `replace_queue`, remembering what the tracks came from (see
+    /// `PlayerSnapshot::context`).
+    pub fn replace_queue_from(
+        &self,
+        paths: Vec<impl Into<Track>>,
+        start_index: usize,
+        context: Option<String>,
+    ) -> Result<PlayerSnapshot, PlayerError> {
         if !paths.is_empty() && start_index >= paths.len() {
             return Err(PlayerError::InvalidIndex(start_index));
         }
         self.run(|s| {
+            s.context = context;
             let empty = paths.is_empty();
             s.queue.replace(paths, (!empty).then_some(start_index));
             if empty {
@@ -2282,5 +2305,24 @@ mod bulk_tests {
         assert_eq!(snap.current_index, Some(0));
         assert!(snap.previous_track.is_none());
         assert_eq!(snap.next_track.unwrap().path, "b");
+    }
+
+    #[test]
+    fn the_context_follows_the_last_replaced_queue() {
+        let p = Player::new(Box::new(Silent), Box::new(|_| {}));
+        let paths = |v: &[&str]| v.iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+        let snap = p
+            .replace_queue_from(paths(&["a", "b"]), 0, Some("playlist:7".into()))
+            .unwrap();
+        assert_eq!(snap.context.as_deref(), Some("playlist:7"));
+        // Adding to the queue keeps it, like Spotify.
+        let snap = p.append(paths(&["c"])).unwrap();
+        assert_eq!(snap.context.as_deref(), Some("playlist:7"));
+        // Anything else that replaces the queue forgets it.
+        assert!(p.replace_queue(paths(&["d"]), 0).unwrap().context.is_none());
+        p.replace_queue_from(paths(&["a"]), 0, Some("favorites".into()))
+            .unwrap();
+        let empty: Vec<std::path::PathBuf> = Vec::new();
+        assert!(p.replace_queue(empty, 0).unwrap().context.is_none());
     }
 }

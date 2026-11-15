@@ -1642,10 +1642,7 @@ pub async fn online_set_ytdlp_path(
     online: State<'_, Arc<OnlineService>>,
     path: Option<String>,
 ) -> Res<OnlineStatus> {
-    let trimmed = path
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let trimmed = path.as_deref().map(str::trim).filter(|s| !s.is_empty());
     if let Some(ref p) = trimmed
         && !crate::online::is_valid_ytdlp_binary_path(std::path::Path::new(p))
     {

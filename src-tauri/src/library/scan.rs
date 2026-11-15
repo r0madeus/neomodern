@@ -61,7 +61,12 @@ pub fn fnv1a(bytes: &[u8]) -> u64 {
     hash
 }
 
-pub(crate) fn cover_file_name(album_artist: &str, title: &str, year: Option<i64>, ext: &str) -> String {
+pub(crate) fn cover_file_name(
+    album_artist: &str,
+    title: &str,
+    year: Option<i64>,
+    ext: &str,
+) -> String {
     let key = match year {
         Some(y) => format!("{album_artist}\u{1f}{title}\u{1f}{y}"),
         None => format!("{album_artist}\u{1f}{title}"),

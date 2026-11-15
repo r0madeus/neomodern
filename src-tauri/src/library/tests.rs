@@ -2424,10 +2424,7 @@ fn custom_album_cover_survives_rescan_and_resets_cleanly() {
     assert!(Path::new(&custom_cover_1).exists());
 
     // Rescanning the album's track must not clobber the custom cover.
-    let track_files = vec![(
-        super::scan::display_path(&track_path),
-        e.folder_id,
-    )];
+    let track_files = vec![(super::scan::display_path(&track_path), e.folder_id)];
     e.lib.rescan_files(&track_files).unwrap();
     let after_rescan = e.lib.album_info(album_before.id).unwrap().unwrap();
     assert_eq!(after_rescan.cover.as_deref(), Some(custom_cover_1.as_str()));

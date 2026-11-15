@@ -202,19 +202,8 @@ pub fn is_stream_url(path: &Path) -> bool {
     }
     let lower = s.to_ascii_lowercase();
     const SCHEMES: &[&str] = &[
-        "http://",
-        "https://",
-        "rtsp://",
-        "rtmps://",
-        "rtmp://",
-        "mms://",
-        "mmsh://",
-        "ftp://",
-        "sftp://",
-        "smb://",
-        "tcp://",
-        "udp://",
-        "hls://",
+        "http://", "https://", "rtsp://", "rtmps://", "rtmp://", "mms://", "mmsh://", "ftp://",
+        "sftp://", "smb://", "tcp://", "udp://", "hls://",
     ];
     SCHEMES.iter().any(|scheme| lower.starts_with(scheme))
 }
@@ -847,7 +836,9 @@ mod tests {
 
         assert!(!is_stream_url(Path::new(r"C:\Music\song.mp3")));
         assert!(!is_stream_url(Path::new("/music/song.mp3")));
-        assert!(!is_stream_url(Path::new("content://media/external/audio/1")));
+        assert!(!is_stream_url(Path::new(
+            "content://media/external/audio/1"
+        )));
     }
 
     #[test]

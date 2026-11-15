@@ -130,9 +130,8 @@ pub fn run() {
                         PlayerEvent::Position { seconds, duration } => {
                             if let Some(p) = handle.try_state::<Arc<Player>>() {
                                 let (qv, idx, pos) = p.progress_state();
-                                observer_session.maybe_save_progress(qv, idx, pos, || {
-                                    p.export_session()
-                                });
+                                observer_session
+                                    .maybe_save_progress(qv, idx, pos, || p.export_session());
                             }
                             handle.emit("player://position", PositionPayload { seconds, duration })
                         }
@@ -183,7 +182,7 @@ pub fn run() {
                 let hwnd = app
                     .get_webview_window("main")
                     .and_then(|w| w.hwnd().ok())
-                    .map(|h| h.0 as *mut std::ffi::c_void);
+                    .map(|h| h.0);
                 #[cfg(not(target_os = "windows"))]
                 let hwnd = None;
                 if let Some(keys) = media_keys::create(hwnd, &player) {

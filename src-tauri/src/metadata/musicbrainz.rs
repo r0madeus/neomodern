@@ -206,9 +206,7 @@ pub fn recording_query(title: &str, artist: &str) -> String {
 /// Validates a MusicBrainz identifier (UUID or short test fixture ID) so it
 /// cannot inject path segments, query parameters, or fragments into URLs.
 pub fn is_valid_mbid(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 64
-        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 #[derive(Debug)]

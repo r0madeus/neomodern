@@ -515,10 +515,22 @@ impl OnlineService {
                 tracks: Vec::new(),
             });
         }
-        let (albums_res, tracks_res) = tokio::join!(
-            fetch_itunes_albums(&client, q),
-            fetch_innertube_tracks(&client, &self.covers_dir, q),
-        );
+        let client_albums = client.clone();
+        let q_albums = q.to_owned();
+        let albums_handle =
+            tokio::task::spawn(async move { fetch_itunes_albums(&client_albums, &q_albums).await });
+        let client_tracks = client.clone();
+        let covers_dir = self.covers_dir.clone();
+        let q_tracks = q.to_owned();
+        let tracks_handle = tokio::task::spawn(async move {
+            fetch_innertube_tracks(&client_tracks, &covers_dir, &q_tracks).await
+        });
+        let tracks_res = tracks_handle
+            .await
+            .map_err(|e| OnlineError::Message(e.to_string()))?;
+        let albums_res = albums_handle
+            .await
+            .map_err(|e| OnlineError::Message(e.to_string()))?;
         let (albums, tracks) = match (albums_res, tracks_res) {
             (Ok(a), Ok(t)) => (a, t),
             (Ok(a), Err(e)) => {

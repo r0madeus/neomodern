@@ -109,7 +109,11 @@ fn is_release_complete(release: &Release) -> bool {
         return pick_apk(&release.assets).is_some();
     }
     if cfg!(target_os = "windows") {
-        let has_exe = release.assets.iter().filter(ok).any(|a| a.name.ends_with(".exe"));
+        let has_exe = release
+            .assets
+            .iter()
+            .filter(ok)
+            .any(|a| a.name.ends_with(".exe"));
         let has_sig = release
             .assets
             .iter()

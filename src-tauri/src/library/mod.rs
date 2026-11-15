@@ -443,7 +443,73 @@ impl Library {
         if let Err(e) = self.move_playlist_covers_out_of_cache() {
             log::warn!("could not move playlist covers out of the cache: {e}");
         }
+        if let Err(e) = self.move_downloaded_images_out_of_cache() {
+            log::warn!("could not move downloaded covers out of the cache: {e}");
+        }
         self
+    }
+
+    /// Album covers downloaded with "Find info". User data, not cache: they
+    /// were fetched once on purpose and cannot be made again from the files.
+    pub fn downloaded_album_covers_dir(&self) -> PathBuf {
+        self.user_images_dir.join("albums")
+    }
+
+    /// Artist pictures from the artist profiles; kept so they are not
+    /// downloaded again after a cache clean-up.
+    pub fn artist_images_dir(&self) -> PathBuf {
+        self.user_images_dir.join("artists")
+    }
+
+    /// Moves downloaded album covers (known from their undo record) and
+    /// artist pictures that an older version kept in the cache folder.
+    fn move_downloaded_images_out_of_cache(&self) -> Result<()> {
+        if self.user_images_dir == self.covers_dir {
+            return Ok(());
+        }
+        let conn = self.conn();
+        let added: Vec<(i64, String)> = {
+            let mut st = conn.prepare(
+                "SELECT id, path FROM tag_history WHERE track_id IS NULL AND old_json = ?1",
+            )?;
+            st.query_map([ADDED_COVER_MARK], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<std::result::Result<_, _>>()?
+        };
+        let albums_dir = self.downloaded_album_covers_dir();
+        for (row_id, old) in added {
+            if let Some(new) = move_into(&self.covers_dir, &albums_dir, &old)? {
+                conn.execute(
+                    "UPDATE albums SET cover = ?1 WHERE cover = ?2",
+                    [&new, &old],
+                )?;
+                conn.execute(
+                    "UPDATE tag_history SET path = ?1 WHERE id = ?2",
+                    rusqlite::params![new, row_id],
+                )?;
+            }
+        }
+        let artists: Vec<(String, String)> = {
+            let mut st =
+                conn.prepare("SELECT name_key, image FROM artists_meta WHERE image IS NOT NULL")?;
+            st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<std::result::Result<_, _>>()?
+        };
+        let artists_dir = self.artist_images_dir();
+        for (key, old) in artists {
+            if let Some(new) = move_into(&self.covers_dir, &artists_dir, &old)? {
+                conn.execute(
+                    "UPDATE artists_meta SET image = ?1 WHERE name_key = ?2",
+                    [&new, &key],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Root of the images the user keeps (playlist covers, downloaded album
+    /// covers, artist pictures).
+    pub fn user_images_dir(&self) -> &Path {
+        &self.user_images_dir
     }
 
     fn playlist_covers_dir(&self) -> PathBuf {
@@ -1082,3 +1148,27 @@ fn unix_now() -> i64 {
 
 #[cfg(test)]
 mod tests;
+
+/// Marks a tag-history row that records a cover "Find info" added (its undo
+/// removes the file).
+pub const ADDED_COVER_MARK: &str = r#"{"addedCover":true}"#;
+
+/// Moves `old` into `to` when it is a file inside the cache folder `cache`.
+/// Returns the new path, or `None` when there was nothing to move (already
+/// moved, elsewhere, or the cache was cleared).
+fn move_into(cache: &Path, to: &Path, old: &str) -> Result<Option<String>> {
+    let old_path = Path::new(old);
+    if !old_path.starts_with(cache) || old_path.starts_with(to) || !old_path.is_file() {
+        return Ok(None);
+    }
+    let Some(name) = old_path.file_name() else {
+        return Ok(None);
+    };
+    std::fs::create_dir_all(to)?;
+    let new_path = to.join(name);
+    if std::fs::rename(old_path, &new_path).is_err() {
+        std::fs::copy(old_path, &new_path)?;
+        let _ = std::fs::remove_file(old_path);
+    }
+    Ok(Some(scan::display_path(&new_path)))
+}

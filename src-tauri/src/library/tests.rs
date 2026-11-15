@@ -2220,3 +2220,60 @@ fn playlists_know_which_contain_a_track_and_drop_it() {
     assert_eq!(left, [ids[1]]);
     assert!(e.lib.playlists_with_track(ids[0]).unwrap().is_empty());
 }
+
+#[test]
+fn downloaded_covers_and_artist_pictures_move_out_of_the_cache() {
+    let e = env();
+    scanned_tracks(&e, &["Alpha"]);
+    let album = e.lib.albums_page(0, 10).unwrap()[0].id;
+    let covers = e._tmp.path().join("cache/covers");
+    // An older version saved "Find info" covers and artist pictures in the cache.
+    let found = covers.join("found.jpg");
+    let artist_pic = covers.join("online/0123.jpg");
+    std::fs::create_dir_all(artist_pic.parent().unwrap()).unwrap();
+    std::fs::write(&found, b"cover").unwrap();
+    std::fs::write(&artist_pic, b"artist").unwrap();
+    let found_s = found.to_string_lossy().into_owned();
+    e.lib.set_album_cover(album, &found_s).unwrap();
+    e.lib
+        .save_tag_history(7, None, &found_s, super::ADDED_COVER_MARK)
+        .unwrap();
+    e.lib
+        .save_artist_meta("Someone", Some(&artist_pic.to_string_lossy()), Some("bio"))
+        .unwrap();
+
+    let images = e._tmp.path().join("data/images");
+    let lib = Library::open(
+        &e._tmp.path().join("data/library.sqlite3"),
+        &covers,
+        Hooks::none(),
+    )
+    .unwrap()
+    .with_user_images_dir(images.clone());
+
+    let cover = lib.albums_page(0, 10).unwrap()[0].cover.clone().unwrap();
+    assert!(Path::new(&cover).starts_with(images.join("albums")));
+    assert_eq!(std::fs::read(&cover).unwrap(), b"cover");
+    assert!(!found.exists(), "moved, not copied");
+    // Its undo record follows, so undoing still removes the right file.
+    assert_eq!(lib.tag_history_batch(7).unwrap()[0].path, cover);
+
+    let pic = lib.artist_meta("Someone").unwrap().unwrap().image.unwrap();
+    assert!(Path::new(&pic).starts_with(images.join("artists")));
+    assert_eq!(std::fs::read(&pic).unwrap(), b"artist");
+
+    // Covers made from the music files stay in the cache: they can be made
+    // again. And a second start has nothing left to move.
+    drop(lib);
+    let lib = Library::open(
+        &e._tmp.path().join("data/library.sqlite3"),
+        &covers,
+        Hooks::none(),
+    )
+    .unwrap()
+    .with_user_images_dir(images.clone());
+    assert_eq!(
+        lib.albums_page(0, 10).unwrap()[0].cover.as_deref(),
+        Some(cover.as_str())
+    );
+}

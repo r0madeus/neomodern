@@ -553,22 +553,28 @@ pub async fn app_window_insets(app: tauri::AppHandle) -> Res<WindowInsets> {
     }
 }
 
-/// Dominant colour of a cached cover (phone UI tint). Only files in the
-/// cover cache are read.
+/// Dominant colour of a cover (page tints). Only files in the cover cache
+/// or among the user's kept images are read.
 #[tauri::command]
-pub async fn library_cover_color(app: tauri::AppHandle, cover: String) -> Res<Option<[u8; 3]>> {
+pub async fn library_cover_color(
+    app: tauri::AppHandle,
+    lib: State<'_, Arc<Library>>,
+    cover: String,
+) -> Res<Option<[u8; 3]>> {
     use tauri::Manager;
     let covers = app
         .path()
         .app_cache_dir()
         .map_err(|e| e.to_string())?
         .join("covers");
+    let kept = lib.user_images_dir().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         let path = std::path::Path::new(&cover);
-        let inside = match (path.canonicalize(), covers.canonicalize()) {
-            (Ok(p), Ok(dir)) => p.starts_with(dir),
-            _ => false,
-        };
+        let inside = path.canonicalize().is_ok_and(|p| {
+            [&covers, &kept]
+                .iter()
+                .any(|dir| dir.canonicalize().is_ok_and(|d| p.starts_with(d)))
+        });
         if !inside {
             return Ok(None);
         }

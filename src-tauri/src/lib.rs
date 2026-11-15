@@ -211,8 +211,21 @@ pub fn run() {
             }
             app.manage(library);
 
+            // Found lyrics are kept with the user's data, so a cache
+            // clean-up (Android's "Clear cache") does not mean fetching every
+            // song's lyrics again. An older version kept them in the cache.
+            let lyrics_dir = data_dir.join("lyrics");
+            let old_lyrics = cache_dir.join("lyrics");
+            if !lyrics_dir.exists() && old_lyrics.is_dir() {
+                if let Some(parent) = lyrics_dir.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Err(e) = std::fs::rename(&old_lyrics, &lyrics_dir) {
+                    log::info!("lyrics cache not moved ({e}); they will be fetched again");
+                }
+            }
             let lyrics = Arc::new(
-                LyricsService::new(&cache_dir.join("lyrics"))
+                LyricsService::new(&lyrics_dir)
                     .map_err(|e| {
                         log::error!("failed to start lyrics service: {e}");
                         e
@@ -247,6 +260,9 @@ pub fn run() {
                 }),
                 app.state::<Arc<SessionStore>>().net_policy(),
             );
+            // Artist pictures are kept with the user's data (see Library).
+            let online =
+                online.with_artist_images_dir(app.state::<Arc<Library>>().artist_images_dir());
             // Downloaded yt-dlp/ffmpeg: local data, not the cache, so a
             // cache clean-up does not remove working tools.
             #[cfg(not(target_os = "android"))]

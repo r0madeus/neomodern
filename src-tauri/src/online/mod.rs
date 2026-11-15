@@ -204,6 +204,9 @@ struct DownloadWork {
 
 pub struct OnlineService {
     covers_dir: PathBuf,
+    /// Artist pictures: user data, so a cache clean-up does not mean
+    /// downloading them all again. Defaults to `covers_dir`.
+    artist_images_dir: PathBuf,
     default_download_dir: PathBuf,
     jobs: Arc<Mutex<Vec<DownloadJob>>>,
     /// Jobs the user cancelled; the worker skips or aborts them.
@@ -270,6 +273,7 @@ impl OnlineService {
         }
 
         Self {
+            artist_images_dir: covers_dir.clone(),
             covers_dir,
             default_download_dir,
             jobs,
@@ -291,6 +295,11 @@ impl OnlineService {
 
     /// Where downloaded copies of yt-dlp and ffmpeg live.
     #[cfg(not(target_os = "android"))]
+    pub fn with_artist_images_dir(mut self, dir: PathBuf) -> Self {
+        self.artist_images_dir = dir;
+        self
+    }
+
     pub fn with_tools_dir(mut self, dir: PathBuf) -> Self {
         self.tools = Some(tools::ToolsDir::new(dir));
         self
@@ -876,7 +885,7 @@ impl OnlineService {
         let mut complete = bio_complete && img_lookup.is_ok();
         let image = match img_lookup {
             Ok(Some(url)) => {
-                let cached = ensure_cached_cover(client, &self.covers_dir, &url).await;
+                let cached = ensure_cached_cover(client, &self.artist_images_dir, &url).await;
                 complete &= cached.is_some();
                 cached
             }

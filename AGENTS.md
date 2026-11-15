@@ -38,6 +38,10 @@ features need the owner's decision first (recorded in the decisions
 document); ideas without one go to a "later" list, not into the code.
 `yt-dlp` and other external programs are only run from
 `src-tauri/src/online`, always with a time limit.
+PC ↔ phone sync and remote control (K21, `docs/SYNC.md`) live in
+`src-tauri/src/sync`; LAN sockets are only opened in `sync/link/server.rs`
+(the guard test in `net.rs` counts them). Sync never changes tracks, files
+or tags, and every change to its merge rules needs the convergence tests.
 
 ## Conventions
 

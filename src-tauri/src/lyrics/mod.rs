@@ -122,6 +122,17 @@ pub fn attach_local_lrc(audio_path: &Path, lrc_path: &Path) -> Result<LyricsResu
         let err = std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid track path");
         return Err(err.into());
     }
+    let valid_ext = lrc_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("lrc") || e.eq_ignore_ascii_case("txt"));
+    if !valid_ext {
+        return Err(LyricsError::InvalidFile);
+    }
+    const MAX_LRC_BYTES: u64 = 2 * 1024 * 1024;
+    if std::fs::metadata(lrc_path)?.len() > MAX_LRC_BYTES {
+        return Err(LyricsError::InvalidFile);
+    }
     let bytes = std::fs::read(lrc_path)?;
     let result = parse_lrc_bytes(&bytes).ok_or(LyricsError::InvalidFile)?;
     let dest = audio_path.with_extension("lrc");

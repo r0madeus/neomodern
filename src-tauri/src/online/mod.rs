@@ -513,7 +513,8 @@ impl OnlineService {
             let url = q.to_owned();
             let bin = ytdlp_bin.to_owned();
             let mut results = tokio::task::spawn_blocking(move || {
-                let raw = run_ytdlp_json(&bin, &["--flat-playlist", "--dump-single-json", &url])?;
+                let raw =
+                    run_ytdlp_json(&bin, &["--flat-playlist", "--dump-single-json", "--", &url])?;
                 parse_ytdlp_flat_json(&raw, Some(&url))
             })
             .await
@@ -588,9 +589,13 @@ impl OnlineService {
                     .clone()
                     .or_else(|| album.id.strip_prefix("ytpl:").map(str::to_owned))
                     .ok_or_else(|| OnlineError::Message("missing album source".into()))?;
+                if !is_http_url(&url) {
+                    return Err(OnlineError::Message("invalid album source URL".into()));
+                }
+                let url = url.trim().to_owned();
                 let bin = ytdlp_bin.to_owned();
                 let raw = tokio::task::spawn_blocking(move || {
-                    run_ytdlp_json(&bin, &["--flat-playlist", "--dump-single-json", &url])
+                    run_ytdlp_json(&bin, &["--flat-playlist", "--dump-single-json", "--", &url])
                 })
                 .await
                 .map_err(|e| OnlineError::Message(e.to_string()))??;
@@ -650,7 +655,7 @@ impl OnlineService {
         let track = track.clone();
         let stream_url = tokio::task::spawn_blocking(move || {
             let target = pick_source(&bin, &track);
-            let args = ["--no-playlist", "-f", "bestaudio/best", "-g", &target];
+            let args = ["--no-playlist", "-f", "bestaudio/best", "-g", "--", &target];
             let out = run_ytdlp_lines(&bin, &args, YTDLP_RESOLVE_TIMEOUT, &|| false)?;
             out.into_iter()
                 .find(|l| !l.trim().is_empty())
@@ -1512,7 +1517,10 @@ fn resolve_cover_bytes(
     cache: &mut HashMap<String, Option<Vec<u8>>>,
 ) -> Option<Vec<u8>> {
     if let Some(path) = &track.cover
-        && let Ok(bytes) = std::fs::read(path)
+        && let Ok(canon_dir) = std::fs::canonicalize(covers_dir)
+        && let Ok(canon_path) = std::fs::canonicalize(path)
+        && canon_path.starts_with(&canon_dir)
+        && let Ok(bytes) = std::fs::read(&canon_path)
     {
         return Some(bytes);
     }
@@ -1588,7 +1596,7 @@ fn download_one_track(
     } else {
         args.extend(["-f", "bestaudio[ext=m4a]/bestaudio"]);
     }
-    args.extend(["-o", &out_tpl_str, &query]);
+    args.extend(["-o", &out_tpl_str, "--", &query]);
 
     let lines = run_ytdlp_lines(ytdlp_bin, &args, YTDLP_DOWNLOAD_TIMEOUT, cancelled)?;
     let printed = lines
@@ -2012,7 +2020,7 @@ pub fn yt_search_query(track: &OnlineTrack) -> String {
         .source_url
         .as_deref()
         .map(str::trim)
-        .filter(|s| !s.is_empty())
+        .filter(|s| is_http_url(s))
     {
         return url.to_owned();
     }

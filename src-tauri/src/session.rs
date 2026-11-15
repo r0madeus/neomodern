@@ -193,10 +193,30 @@ impl SessionState {
     }
 }
 
-/// Whether a queue path is a resolved online stream rather than a file.
+/// Whether a queue path is a resolved online stream or network URI/UNC path
+/// rather than a local file.
 pub fn is_stream_url(path: &Path) -> bool {
     let s = path.to_string_lossy();
-    s.starts_with("http://") || s.starts_with("https://")
+    if s.starts_with("\\\\") || s.starts_with("//") {
+        return true;
+    }
+    let lower = s.to_ascii_lowercase();
+    const SCHEMES: &[&str] = &[
+        "http://",
+        "https://",
+        "rtsp://",
+        "rtmps://",
+        "rtmp://",
+        "mms://",
+        "mmsh://",
+        "ftp://",
+        "sftp://",
+        "smb://",
+        "tcp://",
+        "udp://",
+        "hls://",
+    ];
+    SCHEMES.iter().any(|scheme| lower.starts_with(scheme))
 }
 
 pub fn load(path: &Path) -> SessionState {
@@ -745,5 +765,30 @@ mod tests {
         assert_eq!(state.pinned, vec![album, playlist]);
         assert!(!reloaded.toggle_pin(album));
         assert_eq!(reloaded.pinned(), vec![playlist]);
+    }
+
+    #[test]
+    fn is_stream_url_detects_streams_and_unc_paths() {
+        assert!(is_stream_url(Path::new("http://example.com/stream.mp3")));
+        assert!(is_stream_url(Path::new("https://example.com/stream.mp3")));
+        assert!(is_stream_url(Path::new("HTTPS://example.com/stream.mp3")));
+        assert!(is_stream_url(Path::new("rtsp://example.com/a")));
+        assert!(is_stream_url(Path::new("RTSP://example.com/a")));
+        assert!(is_stream_url(Path::new("rtmps://example.com/a")));
+        assert!(is_stream_url(Path::new("rtmp://example.com/a")));
+        assert!(is_stream_url(Path::new("mms://example.com/a")));
+        assert!(is_stream_url(Path::new("mmsh://example.com/a")));
+        assert!(is_stream_url(Path::new("ftp://example.com/a")));
+        assert!(is_stream_url(Path::new("sftp://example.com/a")));
+        assert!(is_stream_url(Path::new("smb://server/share/song.mp3")));
+        assert!(is_stream_url(Path::new("tcp://127.0.0.1:9000")));
+        assert!(is_stream_url(Path::new("udp://127.0.0.1:9000")));
+        assert!(is_stream_url(Path::new("hls://example.com/master.m3u8")));
+        assert!(is_stream_url(Path::new(r"\\server\share\song.mp3")));
+        assert!(is_stream_url(Path::new("//server/share/song.mp3")));
+
+        assert!(!is_stream_url(Path::new(r"C:\Music\song.mp3")));
+        assert!(!is_stream_url(Path::new("/music/song.mp3")));
+        assert!(!is_stream_url(Path::new("content://media/external/audio/1")));
     }
 }

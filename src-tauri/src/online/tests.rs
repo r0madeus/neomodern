@@ -691,3 +691,53 @@ fn artist_info_returns_the_cache_only_when_off_and_keeps_it_untouched() {
     let fetched = net_block_on(svc.enrich_artist("Nadia Okafor", false, true, true));
     assert_eq!(fetched, ArtistOnlineInfo::default());
 }
+
+#[test]
+fn yt_search_query_rejects_non_http_source_url() {
+    let mut track = album_track("Aman Aman", "Duman", 200.0);
+    track.source_url = Some("--exec=calc.exe".into());
+    assert_eq!(yt_search_query(&track), "ytsearch1:Duman - Aman Aman");
+
+    track.source_url = Some("file:///etc/passwd".into());
+    assert_eq!(yt_search_query(&track), "ytsearch1:Duman - Aman Aman");
+
+    track.source_url = Some("  https://www.youtube.com/watch?v=abc  ".into());
+    assert_eq!(
+        yt_search_query(&track),
+        "https://www.youtube.com/watch?v=abc"
+    );
+}
+
+#[cfg(not(target_os = "android"))]
+#[test]
+fn resolve_cover_bytes_rejects_paths_outside_covers_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let covers_dir = tmp.path().join("covers");
+    std::fs::create_dir_all(&covers_dir).unwrap();
+
+    let outside = tmp.path().join("secret.txt");
+    std::fs::write(&outside, b"top-secret").unwrap();
+
+    let inside = covers_dir.join("cover.jpg");
+    std::fs::write(&inside, b"jpeg-bytes").unwrap();
+
+    let client = reqwest::Client::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut cache = HashMap::new();
+
+    let mut track = album_track("Aman Aman", "Duman", 200.0);
+    track.cover = Some(outside.to_string_lossy().into_owned());
+    assert_eq!(
+        resolve_cover_bytes(&track, &covers_dir, &client, &rt, &mut cache),
+        None
+    );
+
+    track.cover = Some(inside.to_string_lossy().into_owned());
+    assert_eq!(
+        resolve_cover_bytes(&track, &covers_dir, &client, &rt, &mut cache),
+        Some(b"jpeg-bytes".to_vec())
+    );
+}

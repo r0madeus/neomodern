@@ -494,6 +494,31 @@ fn attach_local_lrc_same_path_keeps_existing_sidecar() {
     );
 }
 
+#[test]
+fn attach_local_lrc_rejects_disallowed_extensions_and_oversized_files() {
+    let dir = TempDir::new().unwrap();
+    let audio = dir.path().join("song.flac");
+    let sidecar = audio.with_extension("lrc");
+
+    for name in ["id_rsa.ssh", "payload.json", "no_extension"] {
+        let bad = dir.path().join(name);
+        std::fs::write(&bad, "[00:01.00]Lyrics line\n").unwrap();
+        let err = attach_local_lrc(&audio, &bad).unwrap_err();
+        assert!(matches!(err, LyricsError::InvalidFile), "{name}: {err:?}");
+    }
+    assert!(!sidecar.exists());
+
+    let txt = dir.path().join("notes.TXT");
+    std::fs::write(&txt, "[00:01.00]Allowed uppercase txt\n").unwrap();
+    assert!(attach_local_lrc(&audio, &txt).is_ok());
+
+    let too_big = dir.path().join("huge.lrc");
+    let oversized = vec![b'a'; 2 * 1024 * 1024 + 1];
+    std::fs::write(&too_big, oversized).unwrap();
+    let err = attach_local_lrc(&audio, &too_big).unwrap_err();
+    assert!(matches!(err, LyricsError::InvalidFile), "{err:?}");
+}
+
 // ---------------------------------------------------------------------
 // Embedded tag, saving, NetEase, sharing, bulk save and coverage
 // ---------------------------------------------------------------------

@@ -202,6 +202,14 @@ pub fn recording_query(title: &str, artist: &str) -> String {
 // Client
 // ---------------------------------------------------------------------
 
+/// Validates a MusicBrainz identifier (UUID or short test fixture ID) so it
+/// cannot inject path segments, query parameters, or fragments into URLs.
+pub fn is_valid_mbid(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 #[derive(Debug)]
 pub struct MbClient {
     http: Client,
@@ -300,6 +308,11 @@ impl MbClient {
     }
 
     pub async fn lookup_release(&self, id: &str) -> Result<MbRelease, MetadataError> {
+        if !is_valid_mbid(id) {
+            return Err(MetadataError::Invalid(
+                "invalid MusicBrainz release ID".into(),
+            ));
+        }
         let body = self
             .mb_get(
                 &format!("/release/{id}"),
@@ -336,6 +349,11 @@ impl MbClient {
         release_group_id: &str,
         size: u32,
     ) -> Result<Option<Vec<u8>>, MetadataError> {
+        if !is_valid_mbid(release_group_id) {
+            return Err(MetadataError::Invalid(
+                "invalid MusicBrainz release group ID".into(),
+            ));
+        }
         let url = format!(
             "{}/release-group/{release_group_id}/front-{size}",
             self.cfg.caa_base_url.trim_end_matches('/')
@@ -346,5 +364,25 @@ impl MbClient {
             StatusCode::NOT_FOUND => Ok(None),
             status => Err(MetadataError::Status(status.as_u16())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_valid_mbid_accepts_uuids_and_fixtures_and_rejects_traversal() {
+        assert!(is_valid_mbid("bbbbbbbb-0000-4000-8000-000000000001"));
+        assert!(is_valid_mbid("rg-1"));
+        assert!(is_valid_mbid("rel-1"));
+
+        assert!(!is_valid_mbid(""));
+        assert!(!is_valid_mbid("../secret"));
+        assert!(!is_valid_mbid("a/b"));
+        assert!(!is_valid_mbid(r"a\b"));
+        assert!(!is_valid_mbid("id?foo=bar"));
+        assert!(!is_valid_mbid("id#frag"));
+        assert!(!is_valid_mbid(&"a".repeat(65)));
     }
 }

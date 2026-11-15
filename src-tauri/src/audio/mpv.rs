@@ -227,6 +227,7 @@ impl MpvEngine {
     pub fn new(options: MpvOptions, events: Sender<EngineEvent>) -> EngineResult<MpvEngine> {
         let custom_ao = options.audio_output.is_some();
         let mpv = Self::create(&options, true)?;
+        let _ = mpv.set_property("access-references", "no");
 
         for (name, format, id) in [
             ("pause", Format::Flag, OBS_PAUSE),
@@ -311,6 +312,7 @@ impl MpvEngine {
             return Ok(Arc::clone(t));
         }
         let created = Arc::new(Self::create(&self.options, false)?);
+        let _ = created.set_property("access-references", "no");
         *tail = Some(Arc::clone(&created));
         Ok(created)
     }

@@ -12,8 +12,8 @@ pub mod online;
 pub mod player;
 pub mod queue;
 pub mod session;
-// Nothing calls the sync service yet (it is built in steps, see
-// docs/SYNC.md); the store is only exercised by its tests for now.
+// PC <-> phone sync (docs/SYNC.md). Not wired into the app yet: the
+// service that uses it lands later, hence the allowances.
 #[allow(dead_code, unused_imports)]
 mod sync;
 pub mod tray;

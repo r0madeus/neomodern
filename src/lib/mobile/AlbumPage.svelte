@@ -8,6 +8,7 @@
   import AddToPlaylist from '../AddToPlaylist.svelte'
   import TintedBackdrop from '../TintedBackdrop.svelte'
   import TrackItem from './TrackItem.svelte'
+  import StickyPlay from './StickyPlay.svelte'
   import { metadataMatch } from '../metadata.svelte'
   import { library, type AlbumRow, type TrackRow } from '../library.svelte'
   import type { Rgb } from '../nowCover.svelte'
@@ -89,7 +90,12 @@
           </p>
         </div>
       </div>
-      <div class="flex items-center gap-2 px-4 pb-2">
+      <StickyPlay
+        top="44px"
+        playing={playingThis}
+        onclick={() => player.playOrToggle(`album:${albumId}`, () => library.playAlbum(albumId, 0))}
+      />
+      <div class="flex h-16 items-center gap-2 px-4 pb-2">
         <AddToPlaylist {albumId} label="Add album to playlist" class="p-2.5 text-zinc-300" />
         <button
           class={['rounded-full p-2.5 active:bg-white/10', pinned.isPinned('album', albumId) ? 'text-accent-400' : 'text-zinc-300']}
@@ -111,13 +117,7 @@
         <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t("Shuffle play")} onclick={shufflePlay}>
           <Icon name="shuffle" class="size-6" />
         </button>
-        <button
-          class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg active:scale-95"
-          aria-label={t(playingThis ? 'Pause' : 'Play')}
-          onclick={() => player.playOrToggle(`album:${albumId}`, () => library.playAlbum(albumId, 0))}
-        >
-          <Icon name={playingThis ? 'pause' : 'play'} class="size-7" />
-        </button>
+        <span class="size-14 shrink-0" aria-hidden="true"></span>
       </div>
       {#each data.tracks as track, i (track.id)}
         <TrackItem

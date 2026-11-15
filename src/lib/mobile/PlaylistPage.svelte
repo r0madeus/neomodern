@@ -5,6 +5,7 @@
   import PlaylistCoverModal from '../PlaylistCoverModal.svelte'
   import PageHeader from './PageHeader.svelte'
   import TrackItem from './TrackItem.svelte'
+  import StickyPlay from './StickyPlay.svelte'
   import { playlists } from '../playlists.svelte'
   import { player } from '../player.svelte'
   import { pinned } from '../pinned.svelte'
@@ -34,6 +35,9 @@
 </script>
 
 <div class="absolute inset-0 flex flex-col bg-zinc-950">
+  <!-- The bar lies over the scrolling list so the play button can stick
+       half over its bottom edge. -->
+  <div class="absolute inset-x-0 top-0 z-10 bg-zinc-950">
   <PageHeader title={info?.name ?? t('Playlist')} {onBack}>
     {#snippet actions()}
       {#if info}
@@ -43,7 +47,8 @@
       {/if}
     {/snippet}
   </PageHeader>
-  <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
+  </div>
+  <div class="min-h-0 flex-1 overflow-y-auto pt-14 pb-[var(--mobile-bar-clear,5rem)]">
     {#if info}
       <div class="flex flex-col items-center px-4 pt-2 pb-4">
         <button
@@ -70,7 +75,14 @@
         </p>
       </div>
       {#if tracks.length > 0}
-        <div class="flex items-center gap-2 px-4 pb-2">
+        <!-- The list's pt-14 (bar height) counts for sticky too: -12px lets
+             the button overlap the bar's lower edge (clear of "Export"). -->
+        <StickyPlay
+          top="-12px"
+          playing={player.isActiveFrom(`playlist:${id}`)}
+          onclick={() => player.playOrToggle(`playlist:${id}`, () => playlists.play(id, 0))}
+        />
+        <div class="flex h-16 items-center gap-2 px-4 pb-2">
           <button
             class={['rounded-full p-2.5 active:bg-white/10', pinned.isPinned('playlist', id) ? 'text-accent-400' : 'text-zinc-300']}
             aria-label={t(pinned.isPinned('playlist', id) ? 'Unpin' : 'Pin')}
@@ -83,13 +95,7 @@
           <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t("Shuffle play")} onclick={shufflePlay}>
             <Icon name="shuffle" class="size-6" />
           </button>
-          <button
-            class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg active:scale-95"
-            aria-label={t(player.isActiveFrom(`playlist:${id}`) ? 'Pause' : 'Play')}
-            onclick={() => player.playOrToggle(`playlist:${id}`, () => playlists.play(id, 0))}
-          >
-            <Icon name={player.isActiveFrom(`playlist:${id}`) ? 'pause' : 'play'} class="size-7" />
-          </button>
+          <span class="size-14 shrink-0" aria-hidden="true"></span>
         </div>
       {:else}
         <p class="px-8 pt-6 text-center text-sm text-zinc-400">

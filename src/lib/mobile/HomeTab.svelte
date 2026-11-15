@@ -12,6 +12,7 @@
   import { pinned } from '../pinned.svelte'
   import { player } from '../player.svelte'
   import { playlists } from '../playlists.svelte'
+  import { sync } from '../sync.svelte'
 
   let {
     onOpenAlbum,
@@ -21,6 +22,7 @@
     onOpenAlbums,
     onOpenSongs,
     onOpenStats,
+    onOpenRemote,
   }: {
     onOpenAlbum: (albumId: number) => void
     onOpenPlaylist: (playlistId: number) => void
@@ -29,6 +31,7 @@
     onOpenAlbums: () => void
     onOpenSongs: () => void
     onOpenStats: () => void
+    onOpenRemote: () => void
   } = $props()
 
   type HomeFilter = 'all' | 'mixes' | 'albums'
@@ -100,10 +103,32 @@
   }
 </script>
 
+<!-- Remote control of the paired computer: only when one is paired; the dot
+     says whether it is connected. -->
+{#snippet remoteButton()}
+  {#if sync.computer}
+    <button
+      type="button"
+      class="relative shrink-0 rounded-full p-2 text-zinc-300 active:bg-white/10"
+      aria-label={t('Remote control')}
+      onclick={onOpenRemote}
+    >
+      <Icon name="computer" class="size-5" />
+      <span
+        class={[
+          'absolute top-1.5 right-1.5 size-2 rounded-full ring-2 ring-zinc-950',
+          sync.computer.connected ? 'bg-emerald-400' : 'bg-zinc-500',
+        ]}
+      ></span>
+    </button>
+  {/if}
+{/snippet}
+
 <div class="flex h-full flex-col">
   {#if library.stats.tracks === 0 && !home.feed?.hasHistory && (home.feed?.favoriteCount ?? 0) === 0}
     <header class="flex shrink-0 items-center justify-between gap-3 px-4 pt-4 pb-3">
       <h1 class="truncate text-2xl font-bold tracking-tight">{t('Home')}</h1>
+      {@render remoteButton()}
     </header>
     <EmptyLibrary />
   {:else}
@@ -156,6 +181,7 @@
           </button>
         </div>
 
+        {@render remoteButton()}
         <button
           type="button"
           class="-mr-1.5 shrink-0 rounded-full p-2 text-zinc-300 active:bg-white/10"

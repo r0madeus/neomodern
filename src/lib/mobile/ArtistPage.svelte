@@ -118,6 +118,8 @@
   }
 
   function openOnlineAlbum(album: OnlineAlbum) {
+    // A second tap while it is open must not stack another layer.
+    if (selectedOnlineAlbum !== null) return
     selectedOnlineAlbum = album
     void online.openAlbum(album)
     pushLayer(() => {

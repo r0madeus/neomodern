@@ -78,11 +78,28 @@
     tab = next
   }
 
-  function open(set: () => void, unset: () => void) {
+  // Repeated taps must not stack the same screen (or a second one while the
+  // first is still sliding in): the layers and the back history got out of
+  // step and could leave a black screen.
+  const OPEN_GUARD_MS = 400
+  let lastOpen = 0
+  function tooSoon(): boolean {
+    const now = performance.now()
+    if (now - lastOpen < OPEN_GUARD_MS) return true
+    lastOpen = now
+    return false
+  }
+  function sameSheet(a: Sheet | undefined, b: Sheet): boolean {
+    return a !== undefined && JSON.stringify(a) === JSON.stringify(b)
+  }
+
+  function open(isOpen: boolean, set: () => void, unset: () => void) {
+    if (isOpen || tooSoon()) return
     set()
     pushLayer(unset)
   }
   function pushSheet(sheet: Sheet) {
+    if (sameSheet(sheets.at(-1), sheet) || tooSoon()) return
     sheets = [...sheets, sheet]
     pushLayer(() => {
       sheets = sheets.slice(0, -1)
@@ -98,9 +115,9 @@
   const openArtists = () => pushSheet({ type: 'artists' })
   const openStats = () => pushSheet({ type: 'stats' })
   const openPage = (p: 'folders' | 'settings') => pushSheet({ type: 'page', page: p })
-  const openPlayer = () => open(() => (playerOpen = true), () => (playerOpen = false))
-  const openQueue = () => open(() => (queueOpen = true), () => (queueOpen = false))
-  const openLyrics = () => open(() => (lyricsOpen = true), () => (lyricsOpen = false))
+  const openPlayer = () => open(playerOpen, () => (playerOpen = true), () => (playerOpen = false))
+  const openQueue = () => open(queueOpen, () => (queueOpen = true), () => (queueOpen = false))
+  const openLyrics = () => open(lyricsOpen, () => (lyricsOpen = true), () => (lyricsOpen = false))
 
   function navigateFromOverlays(sheet: Sheet) {
     const overlayCount = Number(playerOpen) + Number(queueOpen) + Number(lyricsOpen)
@@ -108,6 +125,7 @@
       pushSheet(sheet)
       return
     }
+    if (tooSoon()) return
     lyricsOpen = false
     queueOpen = false
     playerOpen = false

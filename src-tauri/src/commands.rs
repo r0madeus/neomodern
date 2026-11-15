@@ -184,6 +184,12 @@ pub fn player_set_sleep_timer(
     s(player.set_sleep_timer(minutes, end_of_track))
 }
 
+/// Previous queue entry regardless of the position (swipe gesture).
+#[tauri::command]
+pub fn player_previous_track(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
+    s(player.previous_track())
+}
+
 #[tauri::command]
 pub fn player_snapshot(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     Ok(player.snapshot())

@@ -282,6 +282,7 @@ pub fn run() {
             commands::player_set_repeat,
             commands::player_set_replaygain,
             commands::player_set_gapless,
+            commands::player_previous_track,
             commands::player_set_equalizer,
             commands::player_set_crossfade,
             commands::player_set_sleep_timer,

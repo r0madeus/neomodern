@@ -100,6 +100,10 @@ pub struct PlayerSnapshot {
     pub sleep_ends_at: Option<i64>,
     /// Sleep timer set to "end of this track".
     pub sleep_end_of_track: bool,
+    /// What "previous" and "next" would play (shuffle and repeat applied),
+    /// so a swipe can show the neighbouring track before it plays.
+    pub previous_track: Option<TrackInfo>,
+    pub next_track: Option<TrackInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +119,9 @@ pub struct ListenRecord {
     pub skipped: bool,
 }
 
+// One event at a time goes to the observer; a boxed snapshot would only add
+// an allocation per state change.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlayerEvent {
     State(PlayerSnapshot),
@@ -258,6 +265,18 @@ impl Inner {
                 _ => None,
             },
             sleep_end_of_track: matches!(self.sleep, Some(Sleep::EndOfTrack)),
+            previous_track: self
+                .queue
+                .current_index()
+                .and(self.queue.previous_index())
+                .and_then(|i| self.queue.get(i))
+                .map(track_info),
+            next_track: self
+                .queue
+                .current_index()
+                .and(self.queue.next_manual_index())
+                .and_then(|i| self.queue.get(i))
+                .map(track_info),
         }
     }
 
@@ -856,6 +875,15 @@ impl Player {
                     Ok(())
                 }
             }
+        })
+    }
+
+    /// The previous entry whatever the position (a swipe), unlike
+    /// [`Self::previous`], which restarts a track that has played > 3 s.
+    pub fn previous_track(&self) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| match s.queue.previous_index() {
+            Some(prev) if s.queue.current_index().is_some() => s.start_index(prev),
+            _ => Ok(()),
         })
     }
 
@@ -2238,5 +2266,21 @@ mod bulk_tests {
         assert_eq!(snap.queue_length, 5);
         let order: Vec<String> = p.queue_page(0, 10).into_iter().map(|t| t.path).collect();
         assert_eq!(order, ["a", "x", "y", "z", "b"]);
+    }
+
+    #[test]
+    fn snapshot_names_the_neighbours_and_swipe_back_ignores_the_restart_rule() {
+        let p = Player::new(Box::new(Silent), Box::new(|_| {}));
+        let paths = |v: &[&str]| v.iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+        let snap = p.replace_queue(paths(&["a", "b", "c"]), 1).unwrap();
+        assert_eq!(snap.previous_track.unwrap().path, "a");
+        assert_eq!(snap.next_track.unwrap().path, "c");
+        // 10 s in: the button restarts the track, the swipe goes back.
+        p.handle_engine_event(EngineEvent::Position { seconds: 10.0 });
+        assert_eq!(p.previous().unwrap().current_index, Some(1));
+        let snap = p.previous_track().unwrap();
+        assert_eq!(snap.current_index, Some(0));
+        assert!(snap.previous_track.is_none());
+        assert_eq!(snap.next_track.unwrap().path, "b");
     }
 }

@@ -4,8 +4,11 @@
 
 const stack: (() => void)[] = []
 let ignorePops = 0
+/** A `history.back()` from the UI is on its way; a second tap waits for it. */
+let popPending = false
 
 window.addEventListener('popstate', () => {
+  popPending = false
   if (ignorePops > 0) {
     ignorePops--
     return
@@ -19,9 +22,14 @@ export function pushLayer(close: () => void): void {
   history.pushState({ layer: stack.length }, '')
 }
 
-/** Closes the top layer (as if the back button was pressed). */
+/**
+ * Closes the top layer (as if the back button was pressed). A double tap on
+ * a back arrow closes one layer, not two: the history move is asynchronous.
+ */
 export function popLayer(): void {
-  if (stack.length > 0) history.back()
+  if (stack.length === 0 || popPending) return
+  popPending = true
+  history.back()
 }
 
 /** Closes every layer at once (switching tabs). */

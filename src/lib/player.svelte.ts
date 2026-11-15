@@ -37,6 +37,9 @@ export interface PlayerSnapshot {
   sleepEndsAt: number | null
   /** Sleep timer set to the end of the current track. */
   sleepEndOfTrack: boolean
+  /** What previous / next would play (shuffle and repeat applied). */
+  previousTrack: TrackInfo | null
+  nextTrack: TrackInfo | null
 }
 
 /** Ten octave bands, 31 Hz to 16 kHz; values in dB (±12). */
@@ -73,6 +76,8 @@ const EMPTY: PlayerSnapshot = {
   crossfadeSeconds: 0,
   sleepEndsAt: null,
   sleepEndOfTrack: false,
+  previousTrack: null,
+  nextTrack: null,
 }
 
 /** Queue rows are fetched in pages; never the whole list in one IPC call. */
@@ -141,6 +146,8 @@ class PlayerStore {
   togglePause = () => this.#run('player_toggle_pause')
   next = () => this.#run('player_next')
   previous = () => this.#run('player_previous')
+  /** Previous entry even when the current one has played > 3 s (swipes). */
+  previousTrack = () => this.#run('player_previous_track')
   setVolume = (percent: number) => {
     const clamped = Math.max(0, Math.min(100, Math.round(percent)))
     if (clamped > 0) this.#unmutedVolume = clamped

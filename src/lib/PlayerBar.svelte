@@ -197,7 +197,10 @@
   </div>
 
   <div class="relative flex items-center justify-end gap-2">
-    <SleepTimerButton />
+    <!-- Set from a song's right-click menu; shown here only while it runs. -->
+    {#if player.snapshot.sleepEndsAt !== null || player.snapshot.sleepEndOfTrack}
+      <SleepTimerButton />
+    {/if}
     <button
       class={[
         'rounded-full p-2 transition-colors',

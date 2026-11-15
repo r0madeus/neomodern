@@ -1,6 +1,5 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
-  import { appSettings } from './appSettings.svelte'
   import Cover from './Cover.svelte'
   import Icon from './Icon.svelte'
   import TintedBackdrop from './TintedBackdrop.svelte'
@@ -22,7 +21,6 @@
 
   const activeAlbum = $derived(online.albumDetail?.album ?? album)
   const tracks = $derived(online.albumDetail?.tracks ?? [])
-  const isDesktop = $derived(appSettings.platform !== 'android')
   const ytdlpAvailable = $derived(online.status?.ytdlpAvailable ?? false)
   const albumJob = $derived(online.jobFor('album', activeAlbum.title, activeAlbum.artist))
 
@@ -123,43 +121,41 @@
         )}
       </p>
       <div class="mt-4 flex flex-wrap items-center gap-2">
-        {#if isDesktop}
-          <button
-            type="button"
-            disabled={!ytdlpAvailable || tracks.length === 0 || online.playingId !== null}
-            class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-            onclick={() => {
-              void online.playTracks(tracks, 0)
-            }}
-          >
-            <Icon name="play" class="size-5" />
-            {online.playingId && tracks.some((tr) => tr.id === online.playingId)
-              ? t('Loading…')
-              : t('Play')}
-          </button>
+        <button
+          type="button"
+          disabled={!ytdlpAvailable || tracks.length === 0 || online.playingId !== null}
+          class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+          onclick={() => {
+            void online.playTracks(tracks, 0)
+          }}
+        >
+          <Icon name="play" class="size-5" />
+          {online.playingId && tracks.some((tr) => tr.id === online.playingId)
+            ? t('Loading…')
+            : t('Play')}
+        </button>
 
-          <button
-            type="button"
-            disabled={!ytdlpAvailable || tracks.length === 0 || isAlbumBusy()}
-            title={albumDownloadLabel}
-            aria-label={albumDownloadLabel}
-            class={[
-              'flex size-10 shrink-0 items-center justify-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50',
-              albumJob?.state === 'done'
-                ? 'border-accent-400/50 bg-accent-500/20 text-accent-300'
-                : 'border-white/25 bg-white/10 text-white hover:bg-white/20',
-            ]}
-            onclick={() => void online.downloadAlbum(activeAlbum, tracks)}
-          >
-            {#if albumJob?.state === 'done'}
-              <Icon name="check" class="size-5" />
-            {:else if albumJob?.state === 'downloading'}
-              <Icon name="download" class="size-5 animate-pulse" />
-            {:else}
-              <Icon name="download" class="size-5" />
-            {/if}
-          </button>
-        {/if}
+        <button
+          type="button"
+          disabled={!ytdlpAvailable || tracks.length === 0 || isAlbumBusy()}
+          title={albumDownloadLabel}
+          aria-label={albumDownloadLabel}
+          class={[
+            'flex size-10 shrink-0 items-center justify-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50',
+            albumJob?.state === 'done'
+              ? 'border-accent-400/50 bg-accent-500/20 text-accent-300'
+              : 'border-white/25 bg-white/10 text-white hover:bg-white/20',
+          ]}
+          onclick={() => void online.downloadAlbum(activeAlbum, tracks)}
+        >
+          {#if albumJob?.state === 'done'}
+            <Icon name="check" class="size-5" />
+          {:else if albumJob?.state === 'downloading'}
+            <Icon name="download" class="size-5 animate-pulse" />
+          {:else}
+            <Icon name="download" class="size-5" />
+          {/if}
+        </button>
 
         {#if albumInLibrary && albumJob?.state !== 'done'}
           <span class="rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white/90">
@@ -227,9 +223,7 @@
             </span>
           </button>
 
-          {#if isDesktop}
-            <TrackDownloadButton {track} {job} disabled={!ytdlpAvailable} />
-          {/if}
+          <TrackDownloadButton {track} {job} disabled={!ytdlpAvailable} />
         </li>
       {/each}
     </ol>

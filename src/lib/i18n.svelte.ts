@@ -480,12 +480,16 @@ const TR: Record<string, string> = {
   'No favorite tracks yet. Click the star on any song to save it here.':
     'Henüz favori şarkı yok. Buraya eklemek için herhangi bir şarkının yıldızına tıkla.',
 
-  // Playlist covers
+  // Playlist & album covers
   'Change cover': 'Kapağı değiştir',
   Cover: 'Kapak',
   'Playlist cover': 'Çalma listesi kapağı',
   'Choose photo…': 'Fotoğraf seç…',
   'Choose playlist cover': 'Çalma listesi kapağını seç',
+  'Choose album cover': 'Albüm kapağı seç',
+  'Choose cover…': 'Kapak seç…',
+  'Reset cover': 'Varsayılan kapağa dön',
+  Images: 'Görseller',
   'Use automatic cover': 'Otomatik kapak kullan',
   Gradient: 'Gradyan',
   Icon: 'İkon',
@@ -750,6 +754,10 @@ const TR: Record<string, string> = {
   'Removed from favorites': 'Favorilerden çıkarıldı',
   Favorite: 'Favori',
   Experimental: 'Deneysel',
+  'Online search, streaming & downloads (Experimental)':
+    'Çevrimiçi arama, dinleme ve indirme (Deneysel)',
+  'Built-in extractor (experimental) · downloads .m4a with tags & cover art':
+    'Yerleşik çıkarıcı (deneysel) · etiketli ve kapaklı .m4a indirir',
   'Fades the end of a song into the start of the next one. Experimental: a short skip can be heard at the change, and gapless playback is not used while it is on.':
     'Bir şarkının sonunu bir sonrakinin başıyla iç içe geçirir. Deneysel: geçiş anında kısa bir atlama duyulabilir ve açıkken boşluksuz (gapless) çalma kullanılmaz.',
 

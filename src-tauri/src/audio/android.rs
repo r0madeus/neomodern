@@ -53,8 +53,15 @@ impl AndroidEngine {
             .spawn(move || {
                 while let Ok(mut call) = queue.recv() {
                     if let Some(path) = &call.gain_for {
-                        let mode = worker_mode.lock().map(|m| *m).unwrap_or_default();
-                        let gain = replaygain::factor(replaygain::read(path), mode);
+                        let is_stream = path
+                            .to_str()
+                            .is_some_and(|s| s.starts_with("http://") || s.starts_with("https://"));
+                        let gain = if is_stream {
+                            1.0
+                        } else {
+                            let mode = worker_mode.lock().map(|m| *m).unwrap_or_default();
+                            replaygain::factor(replaygain::read(path), mode)
+                        };
                         call.payload["gain"] = json!(gain);
                     }
                     if let Err(e) = handle.run_mobile_plugin::<Value>(call.command, call.payload) {

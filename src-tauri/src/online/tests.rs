@@ -794,3 +794,167 @@ fn ensure_cached_cover_rejects_oversized_content_length() {
     assert_eq!(cached, None);
     let _ = server.join();
 }
+
+#[test]
+fn parses_innertube_search_candidates_and_skips_live_and_duplicates() {
+    let json = r#"{
+        "contents": {
+            "twoColumnSearchResultsRenderer": {
+                "primaryContents": {
+                    "sectionListRenderer": {
+                        "contents": [
+                            {
+                                "itemSectionRenderer": {
+                                    "contents": [
+                                        {
+                                            "videoRenderer": {
+                                                "videoId": "dQw4w9WgXcQ",
+                                                "title": { "runs": [{ "text": "Artist - " }, { "text": "First Song" }] },
+                                                "ownerText": { "runs": [{ "text": "Artist - Topic" }] },
+                                                "lengthText": { "simpleText": "4:28" },
+                                                "thumbnail": {
+                                                    "thumbnails": [
+                                                        { "url": "https://img/small.jpg" },
+                                                        { "url": "https://img/large.jpg" }
+                                                    ]
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "videoRenderer": {
+                                                "videoId": "dQw4w9WgXcQ",
+                                                "title": { "simpleText": "Duplicate" },
+                                                "shortBylineText": { "runs": [{ "text": "Other" }] },
+                                                "lengthText": { "simpleText": "3:00" }
+                                            }
+                                        },
+                                        {
+                                            "videoRenderer": {
+                                                "videoId": "live1234567",
+                                                "title": { "simpleText": "24/7 Live Radio" },
+                                                "ownerText": { "runs": [{ "text": "Radio" }] }
+                                            }
+                                        },
+                                        {
+                                            "videoRenderer": {
+                                                "videoId": "abc_DEF-123",
+                                                "title": { "simpleText": "Long Mix" },
+                                                "longBylineText": { "runs": [{ "text": "DJ Mix" }] },
+                                                "lengthText": { "simpleText": "1:02:03" },
+                                                "thumbnail": { "thumbnails": [{ "url": "https://img/mix.jpg" }] }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }"#;
+
+    let hits = parse_innertube_search_candidates(json, 10);
+    assert_eq!(hits.len(), 2);
+
+    assert_eq!(hits[0].0.url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    assert_eq!(hits[0].0.title, "Artist - First Song");
+    assert_eq!(hits[0].0.channel, "Artist - Topic");
+    assert_eq!(hits[0].0.duration_seconds, Some(268.0));
+    assert_eq!(hits[0].1.as_deref(), Some("https://img/large.jpg"));
+
+    assert_eq!(hits[1].0.url, "https://www.youtube.com/watch?v=abc_DEF-123");
+    assert_eq!(hits[1].0.title, "Long Mix");
+    assert_eq!(hits[1].0.channel, "DJ Mix");
+    assert_eq!(hits[1].0.duration_seconds, Some(3723.0));
+    assert_eq!(hits[1].1.as_deref(), Some("https://img/mix.jpg"));
+
+    let capped = parse_innertube_search_candidates(json, 1);
+    assert_eq!(capped.len(), 1);
+}
+
+#[test]
+fn extracts_youtube_video_id_from_urls_and_bare_ids() {
+    assert_eq!(
+        extract_youtube_video_id("dQw4w9WgXcQ").as_deref(),
+        Some("dQw4w9WgXcQ")
+    );
+    assert_eq!(
+        extract_youtube_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42").as_deref(),
+        Some("dQw4w9WgXcQ")
+    );
+    assert_eq!(
+        extract_youtube_video_id("https://music.youtube.com/watch?feature=share&v=abc_DEF-123")
+            .as_deref(),
+        Some("abc_DEF-123")
+    );
+    assert_eq!(
+        extract_youtube_video_id("https://youtu.be/dQw4w9WgXcQ?si=xyz").as_deref(),
+        Some("dQw4w9WgXcQ")
+    );
+    assert_eq!(
+        extract_youtube_video_id("https://www.youtube.com/shorts/abc_DEF-123").as_deref(),
+        Some("abc_DEF-123")
+    );
+    assert_eq!(
+        extract_youtube_video_id("https://example.com/watch?v=dQw4w9WgXcQ"),
+        None
+    );
+    assert_eq!(extract_youtube_video_id("too-short"), None);
+}
+
+#[test]
+fn parses_innertube_player_m4a_prefers_itag_140_and_reports_errors() {
+    let ok_json = r#"{
+        "playabilityStatus": { "status": "OK" },
+        "streamingData": {
+            "adaptiveFormats": [
+                {
+                    "itag": 251,
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "url": "https://rr1.googlevideo.com/videoplayback?itag=251",
+                    "contentLength": "3000000",
+                    "approxDurationMs": "200000"
+                },
+                {
+                    "itag": 140,
+                    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url": "https://rr1.googlevideo.com/videoplayback?itag=140",
+                    "contentLength": "4194304",
+                    "approxDurationMs": "255500"
+                }
+            ]
+        }
+    }"#;
+    let (url, len, dur) = parse_innertube_player_m4a(ok_json).unwrap();
+    assert_eq!(url, "https://rr1.googlevideo.com/videoplayback?itag=140");
+    assert_eq!(len, Some(4_194_304));
+    assert_eq!(dur, Some(255.5));
+
+    let fallback_json = r#"{
+        "streamingData": {
+            "adaptiveFormats": [
+                {
+                    "itag": 251,
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "url": "https://rr2.googlevideo.com/videoplayback?itag=251",
+                    "contentLength": 123456,
+                    "approxDurationMs": 90000
+                }
+            ]
+        }
+    }"#;
+    let (url2, len2, dur2) = parse_innertube_player_m4a(fallback_json).unwrap();
+    assert_eq!(url2, "https://rr2.googlevideo.com/videoplayback?itag=251");
+    assert_eq!(len2, Some(123_456));
+    assert_eq!(dur2, Some(90.0));
+
+    let err_json = r#"{
+        "playabilityStatus": {
+            "status": "LOGIN_REQUIRED",
+            "reason": "Sign in to confirm your age"
+        }
+    }"#;
+    let err = parse_innertube_player_m4a(err_json).unwrap_err();
+    assert_eq!(err.to_string(), "Sign in to confirm your age");
+}

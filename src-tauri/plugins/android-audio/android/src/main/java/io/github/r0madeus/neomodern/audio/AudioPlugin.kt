@@ -417,11 +417,7 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(JSObject().put("path", null as String?))
             return
         }
-        val path = if (DocumentsContract.isDocumentUri(activity, uri)) {
-            storagePath(uri, DocumentsContract.getDocumentId(uri))
-        } else {
-            null
-        }
+        val path = filePath(uri) ?: copyUriToCache(uri)
         if (path == null) {
             invoke.reject("Open the file from the device storage (\"Browse\" in the picker).")
         } else {
@@ -466,26 +462,74 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     /** File-system path of a picked document, from storage or the media store. */
+    @Suppress("DEPRECATION")
     private fun filePath(uri: Uri): String? {
         if (!DocumentsContract.isDocumentUri(activity, uri)) return null
         val docId = DocumentsContract.getDocumentId(uri)
         storagePath(uri, docId)?.let { return it }
-        // "Audio" and "Recent" in the picker hand out media ids ("audio:123").
+        // "Audio", "Images", and "Recent" in the picker hand out media ids ("audio:123").
         if (uri.authority == "com.android.providers.media.documents") {
             val parts = docId.split(":", limit = 2)
-            if (parts.size == 2 && parts[0] == "audio") {
-                @Suppress("DEPRECATION")
-                val column = MediaStore.Audio.Media.DATA
+            if (parts.size == 2) {
+                val (contentUri, dataCol, idCol) = when (parts[0]) {
+                    "audio" -> Triple(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        MediaStore.Audio.Media.DATA,
+                        MediaStore.Audio.Media._ID,
+                    )
+                    "image" -> Triple(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        MediaStore.Images.Media.DATA,
+                        MediaStore.Images.Media._ID,
+                    )
+                    "video" -> Triple(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        MediaStore.Video.Media.DATA,
+                        MediaStore.Video.Media._ID,
+                    )
+                    else -> return null
+                }
                 activity.contentResolver.query(
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    arrayOf(column),
-                    "${MediaStore.Audio.Media._ID} = ?",
+                    contentUri,
+                    arrayOf(dataCol),
+                    "$idCol = ?",
                     arrayOf(parts[1]),
                     null,
                 )?.use { c -> if (c.moveToFirst()) return c.getString(0) }
             }
         }
         return null
+    }
+
+    /** Copies a picked content URI into app cache (capped at 15 MB) when no direct file path exists. */
+    private fun copyUriToCache(uri: Uri): String? {
+        val maxBytes = 15L * 1024L * 1024L
+        val dest = File(activity.cacheDir, "picked_file_cache")
+        return try {
+            val ok = activity.contentResolver.openInputStream(uri)?.use { input ->
+                var total = 0L
+                val buf = ByteArray(8192)
+                dest.outputStream().use { output ->
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        total += n
+                        if (total > maxBytes) return@use false
+                        output.write(buf, 0, n)
+                    }
+                    true
+                }
+            } ?: false
+            if (ok) {
+                dest.absolutePath
+            } else {
+                dest.delete()
+                null
+            }
+        } catch (_: Exception) {
+            dest.delete()
+            null
+        }
     }
 
     /** Picks a text file (any location) and resolves `{ name, text }` or `{ text: null }`. */
@@ -687,8 +731,14 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun accessAlias() = if (Build.VERSION.SDK_INT >= 33) "audio" else "storage"
 
-    private fun item(path: String): MediaItem =
-        MediaItem.Builder().setMediaId(path).setUri(Uri.fromFile(File(path))).build()
+    private fun item(path: String): MediaItem {
+        val uri = if (path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true)) {
+            Uri.parse(path)
+        } else {
+            Uri.fromFile(File(path))
+        }
+        return MediaItem.Builder().setMediaId(path).setUri(uri).build()
+    }
 
     private fun maybeEmitDuration() {
         val path = currentPath ?: return

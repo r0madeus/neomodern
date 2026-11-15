@@ -261,7 +261,7 @@
     pinned.init().catch((e) => (player.error = String(e)))
     home.init().catch((e) => (player.error = String(e)))
     void appSettings.load().then(() => {
-      if (appSettings.platform !== 'android') void online.init()
+      void online.init()
       updates.autoCheck()
     })
   })

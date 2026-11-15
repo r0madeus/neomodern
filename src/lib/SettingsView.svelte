@@ -34,11 +34,14 @@
   const show = (c: Exclude<Category, 'all'>) => category === 'all' || category === c
 
   async function pickDownloadDir() {
-    const picked = await open({
-      directory: true,
-      multiple: false,
-      title: t('Choose download folder'),
-    })
+    const picked =
+      appSettings.platform === 'android'
+        ? await invoke<string | null>('library_android_pick_folder')
+        : await open({
+            directory: true,
+            multiple: false,
+            title: t('Choose download folder'),
+          })
     if (typeof picked === 'string') {
       await online.setDownloadDir(picked)
     }
@@ -216,7 +219,6 @@
       feature: 'online',
       label: 'Online search and downloads (YouTube, iTunes)',
       help: 'Online search, streaming and downloads, including album search and covers through iTunes.',
-      desktopOnly: true,
     },
     {
       feature: 'artistInfo',
@@ -554,7 +556,11 @@
               ]}
             >
               <div class="min-w-0">
-                <p id={`net-${f.feature}-label`} class="text-sm font-medium">{t(f.label)}</p>
+                <p id={`net-${f.feature}-label`} class="text-sm font-medium">
+                  {f.feature === 'online' && appSettings.platform === 'android'
+                    ? t('Online search, streaming & downloads (Experimental)')
+                    : t(f.label)}
+                </p>
                 <p id={`net-${f.feature}-help`} class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                   {t(f.help)}
                 </p>
@@ -790,39 +796,70 @@
         </div>
       </section>
 
-      {#if appSettings.platform !== 'android'}
-        <section aria-labelledby="set-online" class="flex flex-col gap-2.5">
-          <h3 id="set-online" class="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            {t('Search & Downloads')}
-          </h3>
-          <div class={cardClass}>
-            {#if !appSettings.allowOnline}
-              <p class="px-4 py-2.5 text-xs text-zinc-500 dark:text-zinc-400" role="status">
-                {t('Turned off in Settings')}
-              </p>
-            {/if}
+      <section aria-labelledby="set-online" class="flex flex-col gap-2.5">
+        <h3 id="set-online" class="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          {t('Search & Downloads')}
+        </h3>
+        <div class={cardClass}>
+          {#if !appSettings.allowOnline}
+            <p class="px-4 py-2.5 text-xs text-zinc-500 dark:text-zinc-400" role="status">
+              {t('Turned off in Settings')}
+            </p>
+          {/if}
 
+          <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium">{t('Download folder')}</p>
+              <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {online.status?.downloadDir ?? t('Loading…')}
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <button type="button" class={actionBtn} onclick={() => void pickDownloadDir()}>
+                {t('Choose…')}
+              </button>
+              <button
+                type="button"
+                class="rounded-full px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                onclick={() => void online.setDownloadDir(null)}
+              >
+                {t('Reset')}
+              </button>
+            </div>
+          </div>
+
+          {#if appSettings.platform === 'android'}
             <div class="flex flex-wrap items-center justify-between gap-3 p-4">
               <div class="min-w-0 flex-1">
-                <p class="text-sm font-medium">{t('Download folder')}</p>
-                <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                  {online.status?.downloadDir ?? t('Loading…')}
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm font-medium">{t('Online extractor')}</p>
+                  <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                    {t('Experimental')}
+                  </span>
+                  {#if !appSettings.allowOnline}
+                    <span class="inline-flex items-center gap-1 rounded-full bg-zinc-200/80 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                      {t('Turned off in Settings')}
+                    </span>
+                  {:else if online.status?.ytdlpAvailable}
+                    <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                      <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                      {t('Ready')}
+                    </span>
+                  {/if}
+                </div>
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {t('Built-in extractor (experimental) · downloads .m4a with tags & cover art')}
                 </p>
               </div>
-              <div class="flex shrink-0 items-center gap-2">
-                <button type="button" class={actionBtn} onclick={() => void pickDownloadDir()}>
-                  {t('Choose…')}
-                </button>
-                <button
-                  type="button"
-                  class="rounded-full px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                  onclick={() => void online.setDownloadDir(null)}
-                >
-                  {t('Reset')}
-                </button>
-              </div>
+              <button
+                type="button"
+                class="rounded-full px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                onclick={() => void online.refreshStatus()}
+              >
+                {t('Refresh')}
+              </button>
             </div>
-
+          {:else}
             <div class="flex flex-wrap items-center justify-between gap-3 p-4">
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
@@ -895,9 +932,9 @@
                 </button>
               </div>
             </div>
-          </div>
-        </section>
-      {/if}
+          {/if}
+        </div>
+      </section>
     {/if}
 
     {#if show('about')}

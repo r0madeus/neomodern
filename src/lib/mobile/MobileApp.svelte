@@ -22,6 +22,7 @@
   import LibraryTab from './LibraryTab.svelte'
   import PlaylistPage from './PlaylistPage.svelte'
   import StatsPage from './StatsPage.svelte'
+  import OnlineAlbumDetail from '../OnlineAlbumDetail.svelte'
   import MiniPlayer from './MiniPlayer.svelte'
   import SelectionBar from '../SelectionBar.svelte'
   import { selection } from '../trackSelection.svelte'
@@ -32,6 +33,7 @@
   import { pushLayer, popLayer, clearLayers, replaceTopLayers } from './layers'
   import { artists } from '../artists.svelte'
   import { home } from '../home.svelte'
+  import { online, type OnlineAlbum } from '../online.svelte'
   import { player } from '../player.svelte'
   import { library } from '../library.svelte'
   import { lyrics } from '../lyrics.svelte'
@@ -47,6 +49,7 @@
     | { type: 'songs' }
     | { type: 'mix'; id: string }
     | { type: 'album'; id: number }
+    | { type: 'onlineAlbum'; album: OnlineAlbum }
     | { type: 'artist'; name: string }
     | { type: 'playlist'; id: number }
     | { type: 'favorites' }
@@ -110,6 +113,7 @@
   const openSongs = () => pushSheet({ type: 'songs' })
   const openMix = (id: string) => pushSheet({ type: 'mix', id })
   const openAlbum = (id: number) => pushSheet({ type: 'album', id })
+  const openOnlineAlbum = (album: OnlineAlbum) => pushSheet({ type: 'onlineAlbum', album })
   const openArtist = (name: string) => pushSheet({ type: 'artist', name })
   const openPlaylist = (id: number) => pushSheet({ type: 'playlist', id })
   const openFavorites = () => pushSheet({ type: 'favorites' })
@@ -199,7 +203,7 @@
             onOpenStats={openStats}
           />
         {:else if tab === 'search'}
-          <SearchTab onOpenAlbum={openAlbum} />
+          <SearchTab onOpenAlbum={openAlbum} onOpenOnlineAlbum={openOnlineAlbum} />
         {:else}
           <LibraryTab
             onOpenPlaylist={openPlaylist}
@@ -246,6 +250,16 @@
           <ArtistPage name={sheet.name} onBack={popLayer} onOpenAlbum={openAlbum} />
         {:else if sheet.type === 'album'}
           <AlbumPage albumId={sheet.id} onBack={popLayer} />
+        {:else if sheet.type === 'onlineAlbum'}
+          <div class="absolute inset-0 bg-zinc-950 pt-3 pb-[var(--mobile-bar-clear,5rem)]">
+            <OnlineAlbumDetail
+              album={sheet.album}
+              onBack={() => {
+                online.closeAlbum()
+                popLayer()
+              }}
+            />
+          </div>
         {/if}
       </MobileSheet>
     {/each}

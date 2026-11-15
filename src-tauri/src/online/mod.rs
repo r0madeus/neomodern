@@ -1,37 +1,29 @@
-//! Desktop online search, streaming resolution and downloading via `yt-dlp`
-//! (with album lookup via the public iTunes Search API). Android keeps stub
-//! types and commands cleanly disabled so shared IPC handlers stay uniform.
+//! Online search, streaming resolution and downloading (via `yt-dlp` on
+//! desktop, built-in InnerTube extractor on Android, and album lookup via
+//! the public iTunes Search API).
 
 use crate::library::Library;
 use crate::library::scan::{display_path, fnv1a};
 use crate::net::{Feature, NetPolicy, client_builder};
 use crate::session::SessionStore;
 use image::ImageFormat;
+use lofty::config::WriteOptions;
+use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::picture::{MimeType, Picture, PictureType};
+use lofty::prelude::{Accessor, ItemKey};
+use lofty::tag::Tag;
+use lofty::tag::items::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 #[cfg(not(target_os = "android"))]
-use lofty::config::WriteOptions;
-#[cfg(not(target_os = "android"))]
-use lofty::file::{AudioFile, TaggedFileExt};
-#[cfg(not(target_os = "android"))]
-use lofty::picture::{MimeType, Picture, PictureType};
-#[cfg(not(target_os = "android"))]
-use lofty::prelude::{Accessor, ItemKey};
-#[cfg(not(target_os = "android"))]
-use lofty::tag::Tag;
-#[cfg(not(target_os = "android"))]
-use lofty::tag::items::Timestamp;
-#[cfg(not(target_os = "android"))]
 use std::process::Command;
-#[cfg(not(target_os = "android"))]
-use std::sync::mpsc;
 
 #[cfg(not(target_os = "android"))]
 pub mod tools;
@@ -39,8 +31,13 @@ pub mod tools;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(12);
 const USER_AGENT: &str = concat!("NeoModern/", env!("CARGO_PKG_VERSION"));
 const MAX_COVER_DOWNLOAD_BYTES: usize = 15 * 1024 * 1024;
-#[cfg(not(target_os = "android"))]
 const MAX_KEPT_JOBS: usize = 25;
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const VISIONOS_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const MAX_AUDIO_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const DOWNLOAD_CHUNK_BYTES: u64 = 2 * 1024 * 1024;
 /// Upper bounds for one yt-dlp run; a hung process is killed after them.
 #[cfg(not(target_os = "android"))]
 const YTDLP_QUERY_TIMEOUT: Duration = Duration::from_secs(90);
@@ -193,12 +190,13 @@ pub struct DownloadRequest {
 
 pub type JobsObserver = Arc<dyn Fn(&[DownloadJob]) + Send + Sync>;
 
-#[cfg(not(target_os = "android"))]
 struct DownloadWork {
     job_id: u64,
     tracks: Vec<OnlineTrack>,
     download_dir: PathBuf,
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     ytdlp_bin: String,
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     ffmpeg_bin: String,
     lib: Arc<Library>,
 }
@@ -208,17 +206,16 @@ pub struct OnlineService {
     /// Artist pictures: user data, so a cache clean-up does not mean
     /// downloading them all again. Defaults to `covers_dir`.
     artist_images_dir: PathBuf,
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     default_download_dir: PathBuf,
     jobs: Arc<Mutex<Vec<DownloadJob>>>,
     /// Jobs the user cancelled; the worker skips or aborts them.
     cancelled: Arc<Mutex<HashSet<u64>>>,
     next_job_id: AtomicU64,
     stream_covers: Mutex<HashMap<String, String>>,
-    #[cfg(not(target_os = "android"))]
     on_jobs: JobsObserver,
     client: reqwest::Client,
     net: Arc<NetPolicy>,
-    #[cfg(not(target_os = "android"))]
     worker_tx: mpsc::Sender<DownloadWork>,
     artist_scan_cancel: Arc<AtomicBool>,
     artist_scan_status: Arc<Mutex<ArtistScanProgress>>,
@@ -245,9 +242,6 @@ impl OnlineService {
         on_jobs: JobsObserver,
         net: Arc<NetPolicy>,
     ) -> Self {
-        #[cfg(target_os = "android")]
-        let _ = on_jobs;
-        #[cfg(not(target_os = "android"))]
         let (worker_tx, worker_rx) = mpsc::channel::<DownloadWork>();
         let jobs = Arc::new(Mutex::new(Vec::new()));
         let cancelled = Arc::new(Mutex::new(HashSet::new()));
@@ -258,7 +252,6 @@ impl OnlineService {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        #[cfg(not(target_os = "android"))]
         {
             let worker_jobs = Arc::clone(&jobs);
             let worker_cancelled = Arc::clone(&cancelled);
@@ -292,11 +285,9 @@ impl OnlineService {
             cancelled,
             next_job_id: AtomicU64::new(1),
             stream_covers: Mutex::new(HashMap::new()),
-            #[cfg(not(target_os = "android"))]
             on_jobs,
             client,
             net,
-            #[cfg(not(target_os = "android"))]
             worker_tx,
             artist_scan_cancel: Arc::new(AtomicBool::new(false)),
             artist_scan_status: Arc::new(Mutex::new(ArtistScanProgress::default())),
@@ -338,6 +329,11 @@ impl OnlineService {
             .unwrap_or_else(|| "ffmpeg".into())
     }
 
+    #[cfg(target_os = "android")]
+    pub fn resolve_ffmpeg_bin(&self) -> String {
+        String::new()
+    }
+
     /// Downloads the official build of `tool` for this machine into the
     /// app's tools folder (see `tools`). Needs online features on.
     #[cfg(not(target_os = "android"))]
@@ -376,7 +372,14 @@ impl OnlineService {
         {
             return PathBuf::from(&first.path);
         }
-        self.default_download_dir.clone()
+        #[cfg(target_os = "android")]
+        {
+            PathBuf::from("/storage/emulated/0/Music/NeoModern")
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            self.default_download_dir.clone()
+        }
     }
 
     /// The yt-dlp to run: the path set in Settings, else the app's own
@@ -420,7 +423,6 @@ impl OnlineService {
 
     /// Cancels a queued or running download. Returns the job list, or `None`
     /// when the job is unknown or already finished.
-    #[cfg(not(target_os = "android"))]
     pub fn cancel_download(&self, id: u64) -> Option<Vec<DownloadJob>> {
         let snapshot = {
             let mut jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
@@ -442,20 +444,16 @@ impl OnlineService {
         Some(snapshot)
     }
 
-    #[cfg(target_os = "android")]
-    pub fn cancel_download(&self, _id: u64) -> Option<Vec<DownloadJob>> {
-        None
-    }
-
     pub fn next_id(&self) -> u64 {
         self.next_job_id.fetch_add(1, Ordering::Relaxed)
     }
 
     #[cfg(target_os = "android")]
     pub fn status(&self, store: &SessionStore, lib: &Library) -> OnlineStatus {
+        let allowed = self.net.allowed(Feature::Online);
         OnlineStatus {
-            ytdlp_available: false,
-            ytdlp_version: None,
+            ytdlp_available: allowed,
+            ytdlp_version: allowed.then(|| "built-in (experimental)".into()),
             ffmpeg_available: false,
             download_dir: display_path(&self.resolve_download_dir(store, lib)),
             ytdlp_path: store.ytdlp_path().map(|p| display_path(&p)),
@@ -506,10 +504,36 @@ impl OnlineService {
     #[cfg(target_os = "android")]
     pub async fn search(
         &self,
-        _query: &str,
+        query: &str,
         _ytdlp_bin: &str,
     ) -> Result<SearchResults, OnlineError> {
-        Err(OnlineError::Unsupported)
+        let client = self.http(Feature::Online)?.clone();
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(SearchResults {
+                albums: Vec::new(),
+                tracks: Vec::new(),
+            });
+        }
+        let (albums_res, tracks_res) = tokio::join!(
+            fetch_itunes_albums(&client, q),
+            fetch_innertube_tracks(&client, &self.covers_dir, q),
+        );
+        let (albums, tracks) = match (albums_res, tracks_res) {
+            (Ok(a), Ok(t)) => (a, t),
+            (Ok(a), Err(e)) => {
+                log::warn!("innertube search failed, returning album results only: {e}");
+                (a, Vec::new())
+            }
+            (Err(e), Ok(t)) => {
+                log::warn!("iTunes album search failed, returning track results only: {e}");
+                (Vec::new(), t)
+            }
+            (Err(_), Err(e)) => return Err(e),
+        };
+        let mut results = SearchResults { albums, tracks };
+        self.cache_search_covers(&mut results).await;
+        Ok(results)
     }
 
     #[cfg(not(target_os = "android"))]
@@ -646,10 +670,18 @@ impl OnlineService {
     #[cfg(target_os = "android")]
     pub async fn resolve_stream(
         &self,
-        _track: &OnlineTrack,
+        track: &OnlineTrack,
         _ytdlp_bin: &str,
     ) -> Result<(String, Option<String>), OnlineError> {
-        Err(OnlineError::Unsupported)
+        let client = self.http(Feature::Online)?;
+        let cover = match (&track.cover, &track.cover_url) {
+            (Some(c), _) => Some(c.clone()),
+            (None, Some(url)) => ensure_cached_cover(client, &self.covers_dir, url).await,
+            (None, None) => None,
+        };
+        let (stream_url, _len, _dur) = resolve_innertube_m4a(client, track).await?;
+        self.remember_stream_cover(&stream_url, cover.clone());
+        Ok((stream_url, cover))
     }
 
     #[cfg(not(target_os = "android"))]
@@ -680,17 +712,6 @@ impl OnlineService {
         Ok((stream_url, cover))
     }
 
-    #[cfg(target_os = "android")]
-    pub fn enqueue_download(
-        &self,
-        _req: DownloadRequest,
-        _store: &SessionStore,
-        _lib: &Arc<Library>,
-    ) -> Result<DownloadJob, OnlineError> {
-        Err(OnlineError::Unsupported)
-    }
-
-    #[cfg(not(target_os = "android"))]
     pub fn enqueue_download(
         &self,
         req: DownloadRequest,
@@ -1362,7 +1383,6 @@ fn url_encode_segment(s: &str) -> String {
     out
 }
 
-#[cfg(not(target_os = "android"))]
 fn trim_finished_jobs(jobs: &mut Vec<DownloadJob>) {
     while jobs.len() > MAX_KEPT_JOBS {
         if let Some(pos) = jobs.iter().rposition(|j| {
@@ -1378,7 +1398,6 @@ fn trim_finished_jobs(jobs: &mut Vec<DownloadJob>) {
     }
 }
 
-#[cfg(not(target_os = "android"))]
 fn update_job(
     jobs: &Mutex<Vec<DownloadJob>>,
     on_jobs: &JobsObserver,
@@ -1395,7 +1414,6 @@ fn update_job(
     on_jobs(&snapshot);
 }
 
-#[cfg(not(target_os = "android"))]
 fn download_worker(
     rx: mpsc::Receiver<DownloadWork>,
     jobs: Arc<Mutex<Vec<DownloadJob>>>,
@@ -1425,7 +1443,7 @@ fn download_worker(
             continue;
         }
         // Queued before the user went offline or switched online features
-        // off: never start yt-dlp for it.
+        // off: never start a download for it.
         if !net.allowed(Feature::Online) {
             cancelled
                 .lock()
@@ -1437,8 +1455,10 @@ fn download_worker(
             });
             continue;
         }
+        #[cfg(not(target_os = "android"))]
         let ffmpeg_ok = command_first_line(&work.ffmpeg_bin, &["-version"]).is_some();
         // A managed ffmpeg is not on PATH, so yt-dlp must be told where it is.
+        #[cfg(not(target_os = "android"))]
         let ffmpeg_location =
             (ffmpeg_ok && work.ffmpeg_bin != "ffmpeg").then_some(work.ffmpeg_bin.as_str());
         update_job(&jobs, &on_jobs, work.job_id, |j| {
@@ -1467,7 +1487,8 @@ fn download_worker(
             });
             let cover_bytes =
                 resolve_cover_bytes(track, &covers_dir, &client, &rt, &mut cached_covers);
-            match download_one_track(
+            #[cfg(not(target_os = "android"))]
+            let result = download_one_track(
                 track,
                 &work.download_dir,
                 &work.ytdlp_bin,
@@ -1475,7 +1496,18 @@ fn download_worker(
                 ffmpeg_location,
                 cover_bytes.as_deref(),
                 &is_cancelled,
-            ) {
+            );
+            #[cfg(target_os = "android")]
+            let result = download_one_track_innertube(
+                track,
+                &work.download_dir,
+                &client,
+                &rt,
+                &net,
+                cover_bytes.as_deref(),
+                &is_cancelled,
+            );
+            match result {
                 Ok(_path) => {
                     succeeded += 1;
                     update_job(&jobs, &on_jobs, work.job_id, |j| {
@@ -1521,7 +1553,6 @@ fn download_worker(
     }
 }
 
-#[cfg(not(target_os = "android"))]
 fn resolve_cover_bytes(
     track: &OnlineTrack,
     covers_dir: &Path,
@@ -1549,7 +1580,6 @@ fn resolve_cover_bytes(
     downloaded
 }
 
-#[cfg(not(target_os = "android"))]
 fn register_and_scan_dir(lib: &Arc<Library>, dir: &Path) {
     if let Err(e) = std::fs::create_dir_all(dir) {
         log::warn!("could not create download dir {}: {e}", dir.display());
@@ -1570,6 +1600,120 @@ fn register_and_scan_dir(lib: &Arc<Library>, dir: &Path) {
             lib.start_scan(matched);
         }
     }
+}
+
+#[cfg(target_os = "android")]
+fn download_one_track_innertube(
+    track: &OnlineTrack,
+    download_dir: &Path,
+    client: &reqwest::Client,
+    rt: &tokio::runtime::Runtime,
+    net: &NetPolicy,
+    cover_bytes: Option<&[u8]>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<PathBuf, OnlineError> {
+    use std::io::Write;
+
+    let (subdirs, stem) = target_track_stem(track);
+    let mut target_dir = download_dir.to_path_buf();
+    for seg in subdirs {
+        target_dir.push(seg);
+    }
+    std::fs::create_dir_all(&target_dir)?;
+
+    let (stream_url, content_len, _dur) = rt.block_on(resolve_innertube_m4a(client, track))?;
+    let tmp_path = target_dir.join(format!(".{stem}.m4a.neomodern-dl.tmp"));
+    let final_path = target_dir.join(format!("{stem}.m4a"));
+
+    let dl_res = (|| -> Result<(), OnlineError> {
+        let mut file = std::fs::File::create(&tmp_path)?;
+        if let Some(total) = content_len.filter(|&n| n > 0) {
+            if total > MAX_AUDIO_DOWNLOAD_BYTES {
+                return Err(OnlineError::Message(format!(
+                    "audio file exceeds {} MB limit",
+                    MAX_AUDIO_DOWNLOAD_BYTES / (1024 * 1024)
+                )));
+            }
+            let mut start = 0u64;
+            while start < total {
+                if cancelled() {
+                    return Err(OnlineError::Cancelled);
+                }
+                if !net.allowed(Feature::Online) {
+                    return Err(OnlineError::Disabled);
+                }
+                let end = (start + DOWNLOAD_CHUNK_BYTES - 1).min(total - 1);
+                let sep = if stream_url.contains('?') { '&' } else { '?' };
+                let chunk_url = format!("{stream_url}{sep}range={start}-{end}");
+                rt.block_on(async {
+                    let mut resp = client
+                        .get(&chunk_url)
+                        .header(reqwest::header::USER_AGENT, VISIONOS_UA)
+                        .send()
+                        .await?;
+                    if !resp.status().is_success() {
+                        return Err(OnlineError::Message(format!(
+                            "audio download returned status {}",
+                            resp.status()
+                        )));
+                    }
+                    while let Some(chunk) = resp.chunk().await? {
+                        if cancelled() {
+                            return Err(OnlineError::Cancelled);
+                        }
+                        file.write_all(&chunk)?;
+                    }
+                    Ok::<(), OnlineError>(())
+                })?;
+                start = end + 1;
+            }
+        } else {
+            rt.block_on(async {
+                let mut resp = client
+                    .get(&stream_url)
+                    .header(reqwest::header::USER_AGENT, VISIONOS_UA)
+                    .send()
+                    .await?;
+                if !resp.status().is_success() {
+                    return Err(OnlineError::Message(format!(
+                        "audio download returned status {}",
+                        resp.status()
+                    )));
+                }
+                let mut written = 0u64;
+                while let Some(chunk) = resp.chunk().await? {
+                    if cancelled() {
+                        return Err(OnlineError::Cancelled);
+                    }
+                    if !net.allowed(Feature::Online) {
+                        return Err(OnlineError::Disabled);
+                    }
+                    written = written.saturating_add(chunk.len() as u64);
+                    if written > MAX_AUDIO_DOWNLOAD_BYTES {
+                        return Err(OnlineError::Message(format!(
+                            "audio file exceeds {} MB limit",
+                            MAX_AUDIO_DOWNLOAD_BYTES / (1024 * 1024)
+                        )));
+                    }
+                    file.write_all(&chunk)?;
+                }
+                Ok::<(), OnlineError>(())
+            })?;
+        }
+        file.flush()?;
+        Ok(())
+    })();
+
+    if let Err(e) = dl_res {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(e);
+    }
+
+    std::fs::rename(&tmp_path, &final_path)?;
+    if let Err(e) = write_downloaded_tags(&final_path, track, cover_bytes) {
+        log::warn!("failed to write tags on {}: {e}", final_path.display());
+    }
+    Ok(final_path)
 }
 
 #[cfg(not(target_os = "android"))]
@@ -2111,7 +2255,6 @@ pub fn target_track_stem(track: &OnlineTrack) -> (Vec<String>, String) {
     (vec![artist, album_dir], stem)
 }
 
-#[cfg(not(target_os = "android"))]
 pub fn write_downloaded_tags(
     path: &Path,
     track: &OnlineTrack,
@@ -2200,7 +2343,6 @@ pub fn write_downloaded_tags(
     res
 }
 
-#[cfg(not(target_os = "android"))]
 fn prepare_picture_bytes(bytes: &[u8]) -> Option<(MimeType, Vec<u8>)> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
         return Some((MimeType::Png, bytes.to_vec()));
@@ -2522,6 +2664,490 @@ pub fn parse_ytdlp_flat_json(
             cover_url: thumb,
         }],
     })
+}
+
+fn is_valid_yt_video_id(s: &str) -> bool {
+    s.len() == 11
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+pub(crate) fn extract_youtube_video_id(url_or_id: &str) -> Option<String> {
+    let t = url_or_id.trim();
+    if is_valid_yt_video_id(t) {
+        return Some(t.to_owned());
+    }
+    let after_scheme = t
+        .strip_prefix("https://")
+        .or_else(|| t.strip_prefix("http://"))?;
+    let (authority, rest) = match after_scheme.find(['/', '?']) {
+        Some(idx) => (&after_scheme[..idx], &after_scheme[idx..]),
+        None => (after_scheme, ""),
+    };
+    let host = authority
+        .split('@')
+        .next_back()
+        .unwrap_or(authority)
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if host == "youtu.be" {
+        let id = rest
+            .trim_start_matches('/')
+            .split(['?', '#', '/'])
+            .next()
+            .unwrap_or("");
+        return is_valid_yt_video_id(id).then(|| id.to_owned());
+    }
+    let is_yt = host == "youtube.com"
+        || host.ends_with(".youtube.com")
+        || host == "youtube-nocookie.com"
+        || host.ends_with(".youtube-nocookie.com");
+    if !is_yt {
+        return None;
+    }
+    if let Some((_, query_part)) = rest.split_once('?') {
+        let query = query_part.split('#').next().unwrap_or("");
+        for pair in query.split('&') {
+            if let Some(val) = pair.strip_prefix("v=")
+                && is_valid_yt_video_id(val)
+            {
+                return Some(val.to_owned());
+            }
+        }
+    }
+    let path = rest.split(['?', '#']).next().unwrap_or("");
+    for prefix in ["/shorts/", "/embed/", "/live/", "/v/"] {
+        if let Some(after) = path.strip_prefix(prefix) {
+            let id = after.split('/').next().unwrap_or("");
+            if is_valid_yt_video_id(id) {
+                return Some(id.to_owned());
+            }
+        }
+    }
+    None
+}
+
+fn extract_yt_text(val: &serde_json::Value) -> String {
+    if let Some(runs) = val.get("runs").and_then(|v| v.as_array()) {
+        let mut out = String::new();
+        for run in runs {
+            if let Some(t) = run.get("text").and_then(|v| v.as_str()) {
+                out.push_str(t);
+            }
+        }
+        return out;
+    }
+    val.get("simpleText")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned()
+}
+
+fn parse_yt_duration_text(text: &str) -> Option<f64> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parts: Vec<u64> = trimmed
+        .split(':')
+        .map(|p| p.trim().parse::<u64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    match parts.as_slice() {
+        [m, s] => Some((m * 60 + s) as f64),
+        [h, m, s] => Some((h * 3600 + m * 60 + s) as f64),
+        _ => None,
+    }
+}
+
+fn walk_innertube_video_renderers(
+    val: &serde_json::Value,
+    max_results: usize,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<(YtCandidate, Option<String>)>,
+) {
+    if out.len() >= max_results {
+        return;
+    }
+    match val {
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                if out.len() >= max_results {
+                    break;
+                }
+                walk_innertube_video_renderers(item, max_results, seen, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            if let Some(vr) = map.get("videoRenderer").and_then(|v| v.as_object())
+                && let Some(video_id) = vr.get("videoId").and_then(|v| v.as_str())
+                && is_valid_yt_video_id(video_id)
+                && !seen.contains(video_id)
+            {
+                let duration_seconds = vr
+                    .get("lengthText")
+                    .map(extract_yt_text)
+                    .as_deref()
+                    .and_then(parse_yt_duration_text);
+                if let Some(dur) = duration_seconds {
+                    let title = vr
+                        .get("title")
+                        .map(extract_yt_text)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_owned();
+                    if !title.is_empty() {
+                        let channel = ["ownerText", "longBylineText", "shortBylineText"]
+                            .into_iter()
+                            .filter_map(|k| vr.get(k).map(extract_yt_text))
+                            .map(|s| s.trim().to_owned())
+                            .find(|s| !s.is_empty())
+                            .unwrap_or_default();
+                        let thumb = vr
+                            .get("thumbnail")
+                            .and_then(|t| t.get("thumbnails"))
+                            .and_then(|a| a.as_array())
+                            .and_then(|arr| {
+                                arr.iter()
+                                    .rev()
+                                    .filter_map(|t| t.get("url").and_then(|u| u.as_str()))
+                                    .find(|u| is_http_url(u))
+                                    .map(str::to_owned)
+                            });
+                        seen.insert(video_id.to_owned());
+                        out.push((
+                            YtCandidate {
+                                url: format!("https://www.youtube.com/watch?v={video_id}"),
+                                title,
+                                channel,
+                                duration_seconds: Some(dur),
+                            },
+                            thumb,
+                        ));
+                    }
+                }
+            }
+            for child in map.values() {
+                if out.len() >= max_results {
+                    break;
+                }
+                walk_innertube_video_renderers(child, max_results, seen, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn parse_innertube_search_candidates(
+    json: &str,
+    max_results: usize,
+) -> Vec<(YtCandidate, Option<String>)> {
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    walk_innertube_video_renderers(&val, max_results, &mut seen, &mut out);
+    out
+}
+
+pub(crate) fn parse_innertube_player_m4a(
+    json: &str,
+) -> Result<(String, Option<u64>, Option<f64>), OnlineError> {
+    let root: serde_json::Value = serde_json::from_str(json)?;
+    let adaptive = root
+        .pointer("/streamingData/adaptiveFormats")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten();
+    let legacy = root
+        .pointer("/streamingData/formats")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten();
+    let formats: Vec<&serde_json::Value> = adaptive.chain(legacy).collect();
+
+    let extract = |f: &&serde_json::Value| -> Option<(String, Option<u64>, Option<f64>)> {
+        let url = f
+            .get("url")
+            .and_then(|v| v.as_str())
+            .filter(|u| u.starts_with("https://"))?;
+        let content_len = f.get("contentLength").and_then(|v| {
+            v.as_str()
+                .and_then(|s| s.parse::<u64>().ok())
+                .or_else(|| v.as_u64())
+        });
+        let dur = f
+            .get("approxDurationMs")
+            .and_then(|v| {
+                v.as_str()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .or_else(|| v.as_f64())
+            })
+            .map(|ms| ms / 1000.0);
+        Some((url.to_owned(), content_len, dur))
+    };
+
+    if let Some(found) = formats
+        .iter()
+        .filter(|f| f.get("itag").and_then(|v| v.as_u64()) == Some(140))
+        .find_map(extract)
+    {
+        return Ok(found);
+    }
+    if let Some(found) = formats
+        .iter()
+        .filter(|f| {
+            f.get("mimeType")
+                .and_then(|v| v.as_str())
+                .is_some_and(|m| m.starts_with("audio/mp4"))
+        })
+        .find_map(extract)
+    {
+        return Ok(found);
+    }
+    if let Some(found) = formats
+        .iter()
+        .filter(|f| {
+            f.get("mimeType")
+                .and_then(|v| v.as_str())
+                .is_some_and(|m| m.starts_with("audio/"))
+        })
+        .find_map(extract)
+    {
+        return Ok(found);
+    }
+
+    let reason = root
+        .pointer("/playabilityStatus/reason")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("no playable audio stream found");
+    Err(OnlineError::Message(reason.to_owned()))
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn parse_visitor_data_token(text: &str) -> String {
+    for (idx, _) in text.match_indices("\"Cgt") {
+        let rest = &text[idx + 1..];
+        if let Some(end) = rest.find('"') {
+            let candidate = &rest[..end];
+            if !candidate.is_empty()
+                && candidate
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'%'))
+            {
+                return candidate.to_owned();
+            }
+        }
+    }
+    String::new()
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+async fn fetch_innertube_visitor_data(client: &reqwest::Client) -> String {
+    let Ok(resp) = client
+        .get("https://www.youtube.com/sw.js_data")
+        .header(reqwest::header::USER_AGENT, VISIONOS_UA)
+        .send()
+        .await
+    else {
+        return String::new();
+    };
+    if !resp.status().is_success() {
+        return String::new();
+    }
+    let Ok(text) = resp.text().await else {
+        return String::new();
+    };
+    parse_visitor_data_token(&text)
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+async fn fetch_innertube_search_raw(
+    client: &reqwest::Client,
+    query: &str,
+    max_results: usize,
+) -> Result<Vec<(YtCandidate, Option<String>)>, OnlineError> {
+    let body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": "2.20250312.04.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "query": query
+    });
+    let resp = client
+        .post("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+        .header(reqwest::header::USER_AGENT, VISIONOS_UA)
+        .header(reqwest::header::ORIGIN, "https://www.youtube.com")
+        .json(&body)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(OnlineError::Message(format!(
+            "YouTube search returned status {}",
+            resp.status()
+        )));
+    }
+    let text = resp.text().await?;
+    Ok(parse_innertube_search_candidates(&text, max_results))
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+async fn hydrate_track_covers(
+    client: &reqwest::Client,
+    covers_dir: &Path,
+    tracks: &mut [OnlineTrack],
+) {
+    let mut handles = Vec::new();
+    for t in tracks.iter().take(12) {
+        if t.cover.is_none()
+            && let Some(url) = t.cover_url.clone()
+        {
+            let client = client.clone();
+            let dir = covers_dir.to_path_buf();
+            handles.push(tokio::task::spawn(async move {
+                let cached = ensure_cached_cover(&client, &dir, &url).await;
+                (url, cached)
+            }));
+        }
+    }
+    let mut resolved = HashMap::new();
+    for h in handles {
+        if let Ok((url, Some(path))) = h.await {
+            resolved.insert(url, path);
+        }
+    }
+    for t in tracks.iter_mut() {
+        if t.cover.is_none()
+            && let Some(url) = &t.cover_url
+            && let Some(path) = resolved.get(url)
+        {
+            t.cover = Some(path.clone());
+        }
+    }
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+async fn fetch_innertube_tracks(
+    client: &reqwest::Client,
+    covers_dir: &Path,
+    query: &str,
+) -> Result<Vec<OnlineTrack>, OnlineError> {
+    let raw = fetch_innertube_search_raw(client, query, 12).await?;
+    let mut tracks: Vec<OnlineTrack> = raw
+        .into_iter()
+        .map(|(c, thumb)| {
+            let channel_artist = clean_yt_artist(Some(c.channel));
+            let (artist, title) = if let Some((a, t)) = c.title.split_once(" - ")
+                && !a.trim().is_empty()
+                && !t.trim().is_empty()
+            {
+                (a.trim().to_owned(), t.trim().to_owned())
+            } else {
+                let title = c.title.trim();
+                (
+                    channel_artist,
+                    if title.is_empty() {
+                        "Untitled".to_owned()
+                    } else {
+                        title.to_owned()
+                    },
+                )
+            };
+            let id = extract_youtube_video_id(&c.url).unwrap_or_else(|| c.url.clone());
+            OnlineTrack {
+                id,
+                title,
+                artist,
+                album: String::new(),
+                album_artist: String::new(),
+                track_no: None,
+                disc_no: None,
+                year: None,
+                duration_seconds: c.duration_seconds,
+                source_url: Some(c.url),
+                cover: None,
+                cover_url: thumb,
+            }
+        })
+        .collect();
+    hydrate_track_covers(client, covers_dir, &mut tracks).await;
+    Ok(tracks)
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+async fn resolve_innertube_m4a(
+    client: &reqwest::Client,
+    track: &OnlineTrack,
+) -> Result<(String, Option<u64>, Option<f64>), OnlineError> {
+    let video_id = match track
+        .source_url
+        .as_deref()
+        .and_then(extract_youtube_video_id)
+    {
+        Some(id) => id,
+        None => {
+            let q = if track.artist.trim().is_empty() {
+                track.title.trim().to_owned()
+            } else {
+                format!("{} - {}", track.artist.trim(), track.title.trim())
+            };
+            let raw = fetch_innertube_search_raw(client, &q, 5).await?;
+            let candidates: Vec<YtCandidate> = raw.into_iter().map(|(c, _)| c).collect();
+            let chosen_url = choose_candidate(track, &candidates)
+                .or_else(|| candidates.first().map(|c| c.url.clone()))
+                .ok_or_else(|| OnlineError::Message("no matching YouTube track found".into()))?;
+            extract_youtube_video_id(&chosen_url)
+                .ok_or_else(|| OnlineError::Message("invalid YouTube video ID".into()))?
+        }
+    };
+
+    let visitor_data = fetch_innertube_visitor_data(client).await;
+    let body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "VISIONOS",
+                "clientVersion": "1.02",
+                "deviceMake": "Apple",
+                "deviceModel": "RealityDevice17,1",
+                "userAgent": VISIONOS_UA,
+                "osName": "visionOS",
+                "osVersion": "26.5.23O471",
+                "hl": "en",
+                "timeZone": "UTC",
+                "utcOffsetMinutes": 0,
+                "visitorData": visitor_data
+            }
+        },
+        "videoId": video_id,
+        "contentCheckOk": true,
+        "racyCheckOk": true
+    });
+    let mut req = client
+        .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
+        .header(reqwest::header::USER_AGENT, VISIONOS_UA)
+        .header("X-Youtube-Client-Name", "101")
+        .header("X-Youtube-Client-Version", "1.02")
+        .header(reqwest::header::ORIGIN, "https://www.youtube.com");
+    if !visitor_data.is_empty() {
+        req = req.header("X-Goog-Visitor-Id", &visitor_data);
+    }
+    let resp = req.json(&body).send().await?;
+    if !resp.status().is_success() {
+        return Err(OnlineError::Message(format!(
+            "YouTube player returned status {}",
+            resp.status()
+        )));
+    }
+    let text = resp.text().await?;
+    parse_innertube_player_m4a(&text)
 }
 
 #[cfg(test)]

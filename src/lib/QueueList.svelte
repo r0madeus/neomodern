@@ -10,50 +10,14 @@
   import { nowCover } from './nowCover.svelte'
   import { player, type TrackInfo } from './player.svelte'
   import { trackMenu } from './contextMenu.svelte'
+  import { trackCovers } from './trackCovers.svelte'
 
   const ROW = 56
-  const COVER_PREFETCH_LIMIT = 40
 
   const current = $derived(player.snapshot.currentIndex)
   const nowTrack = $derived(current !== null ? player.queue[current] ?? null : null)
   const startOffset = $derived(current === null ? 0 : current + 1)
   const upNext = $derived(player.queue.slice(startOffset))
-
-  let covers = $state<Record<string, string | null>>({})
-  const pendingPaths = new Set<string>()
-  let lastLibVersion = -1
-
-  $effect(() => {
-    const libVer = library.stats.version
-    if (libVer !== lastLibVersion) {
-      lastLibVersion = libVer
-      covers = {}
-      pendingPaths.clear()
-    }
-    const paths = upNext
-      .slice(0, COVER_PREFETCH_LIMIT)
-      .map((item) => item.path)
-      .filter((p) => !(p in covers) && !pendingPaths.has(p))
-    if (paths.length === 0) return
-
-    let stale = false
-    for (const p of paths) pendingPaths.add(p)
-    void Promise.all(
-      paths.map(async (path) => {
-        const row = await library.trackByPath(path)
-        return [path, row?.cover ?? null] as const
-      }),
-    ).then((entries) => {
-      for (const p of paths) pendingPaths.delete(p)
-      if (stale) return
-      const next = { ...covers }
-      for (const [path, cover] of entries) next[path] = cover
-      covers = next
-    })
-    return () => {
-      stale = true
-    }
-  })
 
   let listEl = $state<HTMLOListElement | null>(null)
   const drag = createDragReorder({
@@ -111,7 +75,7 @@
       role="group"
     >
       <Cover
-        cover={nowCover.cover ?? covers[nowTrack.path] ?? null}
+        cover={nowCover.cover ?? trackCovers.get(nowTrack.path) ?? null}
         title={nowTrack.title}
         class="size-10 shrink-0 rounded text-xs"
       />
@@ -148,7 +112,7 @@
           oncontextmenu={(e) => void openMenu(e, track, origIndex)}
         >
           <Cover
-            cover={covers[track.path] ?? null}
+            cover={trackCovers.get(track.path) ?? null}
             title={track.title}
             class="size-10 shrink-0 rounded text-xs"
           />

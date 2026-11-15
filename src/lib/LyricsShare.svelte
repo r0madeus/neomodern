@@ -7,8 +7,8 @@
 
   // "Share on LRCLIB" for lyrics the user brought themselves (a .lrc file or
   // the song's tag) when LRCLIB has nothing for the track. Publishing is
-  // public, so it asks first. Rust does the work (proof-of-work, can take a
-  // few minutes) and can be cancelled.
+  // public, so it asks first, and checking LRCLIB happens only on click so
+  // local track metadata is never sent automatically in the background.
   let { class: className = '' }: { class?: string } = $props()
 
   const REASONS: Record<ShareBlock, string> = {
@@ -23,28 +23,44 @@
   const current = $derived(player.snapshot.current)
   const duration = $derived(player.snapshot.durationSeconds)
   const own = $derived(isOwnLyrics(lyrics.result))
+  const canShare = $derived(
+    appSettings.allowLyrics && own && !lyrics.loading && current !== null && lyrics.trackPath === current.path,
+  )
   const here = $derived(current !== null && lyrics.shareFor === current.path)
   const status = $derived(here ? lyrics.shareStatus : null)
   const phase = $derived(here ? lyrics.sharePhase : 'idle')
   let confirming = $state(false)
+  let checking = $state(false)
 
-  // Check once per track and lyrics shown (not while the lookup is running).
+  // Reset local UI state when the track changes without calling checkShare automatically.
   $effect(() => {
-    const path = current?.path
-    if (!path || !own || lyrics.loading || lyrics.trackPath !== path) return
+    void current?.path
+    void canShare
     untrack(() => {
       confirming = false
-      void lyrics.checkShare(path, duration)
+      checking = false
     })
   })
 
   const visible = $derived(
-    appSettings.allowLyrics &&
-      own &&
-      (phase !== 'idle' ||
-        status?.available === true ||
-        status?.reason === 'needsMetadata'),
+    appSettings.allowLyrics && own && (phase !== 'idle' || canShare),
   )
+  const alreadyOnLrclib = $derived(status?.reason === 'onLrclib')
+
+  async function onShareClick() {
+    if (!current || checking) return
+    const path = current.path
+    checking = true
+    try {
+      await lyrics.checkShare(path, duration)
+      if (player.snapshot.current?.path !== path) return
+      if (lyrics.shareStatus?.available) {
+        confirming = true
+      }
+    } finally {
+      if (player.snapshot.current?.path === path) checking = false
+    }
+  }
 
   const link =
     'rounded-full px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10 active:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50'
@@ -79,14 +95,14 @@
       {:else if phase === 'failed'}
         <p role="alert" class="text-red-200">{t('Could not share: {error}', { error: lyrics.shareError ?? '' })}</p>
       {/if}
-      {#if status?.available}
+      {#if status && !status.available && status.reason}
+        <p role="status" class="text-white/60">{t(REASONS[status.reason])}</p>
+      {/if}
+      {#if !alreadyOnLrclib && phase !== 'done' && status?.reason !== 'needsMetadata' && status?.reason !== 'noLocalLyrics' && status?.reason !== 'otherSource'}
         <div>
-          <button class={link} onclick={() => (confirming = true)}>{t('Share on LRCLIB')}</button>
-        </div>
-      {:else if status?.reason === 'needsMetadata'}
-        <div>
-          <button class={link} disabled title={t(REASONS.needsMetadata)}>{t('Share on LRCLIB')}</button>
-          <span class="ml-1 text-white/60">{t(REASONS.needsMetadata)}</span>
+          <button class={link} disabled={checking} onclick={() => void onShareClick()}>
+            {t('Share on LRCLIB')}
+          </button>
         </div>
       {/if}
     {/if}

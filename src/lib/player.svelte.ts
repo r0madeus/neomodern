@@ -100,6 +100,7 @@ class PlayerStore {
   #frame = 0
   #loadedQueueVersion = -1
   #unmutedVolume = 100
+  #visibilityBound = false
 
   position = $derived.by(() => {
     const { seconds, at } = this.#anchor
@@ -115,6 +116,20 @@ class PlayerStore {
       this.#setAnchor(e.payload.seconds)
       if (e.payload.duration !== null) this.snapshot.durationSeconds = e.payload.duration
     })
+    if (typeof document !== 'undefined' && !this.#visibilityBound) {
+      this.#visibilityBound = true
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          cancelAnimationFrame(this.#frame)
+          this.#frame = 0
+        } else if (document.visibilityState === 'visible' && this.snapshot.status === 'playing') {
+          const elapsed = Math.max(0, (performance.now() - this.#anchor.at) / 1000)
+          const duration = this.snapshot.durationSeconds ?? Infinity
+          this.#setAnchor(Math.max(0, Math.min(this.#anchor.seconds + elapsed, duration)))
+          this.#startClock()
+        }
+      })
+    }
     await this.#run('player_snapshot')
   }
 
@@ -225,7 +240,10 @@ class PlayerStore {
     this.#setAnchor(next.positionSeconds)
     if (next.queueVersion !== this.#loadedQueueVersion) void this.#loadQueue(next.queueVersion)
     if (next.status === 'playing' && !wasPlaying) this.#startClock()
-    if (next.status !== 'playing') cancelAnimationFrame(this.#frame)
+    if (next.status !== 'playing') {
+      cancelAnimationFrame(this.#frame)
+      this.#frame = 0
+    }
   }
 
   #setAnchor(seconds: number): void {
@@ -236,8 +254,15 @@ class PlayerStore {
 
   #startClock(): void {
     cancelAnimationFrame(this.#frame)
+    this.#frame = 0
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     const tick = (t: number) => {
-      this.#now = t
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        this.#frame = 0
+        return
+      }
+      // Throttle position reactivity to ~10 Hz while keeping seekbars and 0.1s lyric sync smooth.
+      if (t - this.#now >= 100) this.#now = t
       if (this.snapshot.status === 'playing') this.#frame = requestAnimationFrame(tick)
     }
     this.#frame = requestAnimationFrame(tick)

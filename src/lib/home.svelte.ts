@@ -70,22 +70,35 @@ class HomeStore {
   #initialized = false
   #inFlight: Promise<void> | null = null
   #queued = false
+  #refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   async init(): Promise<void> {
     if (this.#initialized) return
     this.#initialized = true
     await Promise.all([
-      listen('library://changed', () => void this.refresh()),
-      listen('favorites://changed', () => void this.refresh()),
-      listen('playlists://changed', () => void this.refresh()),
-      listen('library://history', () => void this.refresh()),
+      listen('library://changed', () => this.#scheduleRefresh()),
+      listen('favorites://changed', () => this.#scheduleRefresh()),
+      listen('playlists://changed', () => this.#scheduleRefresh()),
+      listen('library://history', () => this.#scheduleRefresh()),
     ])
     await this.refresh()
+  }
+
+  #scheduleRefresh(): void {
+    if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer)
+    this.#refreshTimer = setTimeout(() => {
+      this.#refreshTimer = null
+      void this.refresh()
+    }, 250)
   }
 
   // Bursts of change events are coalesced: one query in flight, and at most
   // one more queued to run after it.
   refresh(): Promise<void> {
+    if (this.#refreshTimer !== null) {
+      clearTimeout(this.#refreshTimer)
+      this.#refreshTimer = null
+    }
     if (this.#inFlight) {
       this.#queued = true
       return this.#inFlight

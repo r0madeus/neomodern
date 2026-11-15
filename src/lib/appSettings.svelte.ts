@@ -48,17 +48,17 @@ class AppSettings {
   /** Master switch: nothing in the app contacts the internet. */
   offlineMode = $state(false)
   /** The user's own per-feature switches (kept while offline mode is on). */
-  netLyrics = $state(true)
-  netOnline = $state(true)
-  netArtistInfo = $state(true)
-  netMetadata = $state(true)
-  netUpdates = $state(true)
+  netLyrics = $state(false)
+  netOnline = $state(false)
+  netArtistInfo = $state(false)
+  netMetadata = $state(false)
+  netUpdates = $state(false)
   /** What Rust really allows now (offline mode applied); controls follow these. */
-  allowLyrics = $state(true)
-  allowOnline = $state(true)
-  allowArtistInfo = $state(true)
-  allowMetadata = $state(true)
-  allowUpdates = $state(true)
+  allowLyrics = $state(false)
+  allowOnline = $state(false)
+  allowArtistInfo = $state(false)
+  allowMetadata = $state(false)
+  allowUpdates = $state(false)
   loaded = $state(false)
 
   async load(): Promise<void> {

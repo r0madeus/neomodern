@@ -85,10 +85,10 @@
           </button>
           <button
             class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg active:scale-95"
-            aria-label={t("Play")}
-            onclick={() => playlists.play(id, 0)}
+            aria-label={t(player.isActiveFrom(`playlist:${id}`) ? 'Pause' : 'Play')}
+            onclick={() => player.playOrToggle(`playlist:${id}`, () => playlists.play(id, 0))}
           >
-            <Icon name="play" class="size-7" />
+            <Icon name={player.isActiveFrom(`playlist:${id}`) ? 'pause' : 'play'} class="size-7" />
           </button>
         </div>
       {:else}

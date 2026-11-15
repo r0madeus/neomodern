@@ -95,12 +95,12 @@
         <button
           type="button"
           class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg shadow-black/30 outline-none transition hover:scale-105 hover:bg-accent-400 focus-visible:ring-2 focus-visible:ring-white/80 disabled:opacity-50"
-          aria-label={t('Play')}
-          title={t('Play')}
+          aria-label={t(player.isActiveFrom(`album:${albumId}`) ? 'Pause' : 'Play')}
+          title={t(player.isActiveFrom(`album:${albumId}`) ? 'Pause' : 'Play')}
           disabled={data!.tracks.length === 0}
-          onclick={() => void library.playAlbum(albumId, 0, false)}
+          onclick={() => player.playOrToggle(`album:${albumId}`, () => library.playAlbum(albumId, 0, false))}
         >
-          <Icon name="play" class="size-7" />
+          <Icon name={player.isActiveFrom(`album:${albumId}`) ? 'pause' : 'play'} class="size-7" />
         </button>
         <ShuffleButton
           disabled={data!.tracks.length === 0}

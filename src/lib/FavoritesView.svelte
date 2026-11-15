@@ -50,9 +50,10 @@
           type="button"
           disabled={totalCount === 0}
           class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-          onclick={() => void favorites.play(0, false)}
+          onclick={() => player.playOrToggle('favorites', () => favorites.play(0, false))}
         >
-          <Icon name="play" class="size-5" /> {t('Play')}
+          <Icon name={player.isActiveFrom('favorites') ? 'pause' : 'play'} class="size-5" />
+          {t(player.isActiveFrom('favorites') ? 'Pause' : 'Play')}
         </button>
         <ShuffleButton
           disabled={totalCount === 0}

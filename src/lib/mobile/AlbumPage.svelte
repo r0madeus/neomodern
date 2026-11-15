@@ -49,11 +49,8 @@
   const totalSeconds = $derived(
     data ? data.tracks.reduce((sum, t) => sum + (t.durationMs ?? 0), 0) / 1000 : 0,
   )
-  const playingThis = $derived(
-    data !== null &&
-      player.snapshot.status === 'playing' &&
-      data.tracks.some((t) => t.path === player.snapshot.current?.path),
-  )
+  // Started from this album and playing (like Spotify: its button pauses).
+  const playingThis = $derived(player.isActiveFrom(`album:${albumId}`))
 
   async function shufflePlay() {
     if (!data || data.tracks.length === 0) return
@@ -117,7 +114,7 @@
         <button
           class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg active:scale-95"
           aria-label={t(playingThis ? 'Pause' : 'Play')}
-          onclick={() => (playingThis ? player.togglePause() : library.playAlbum(albumId, 0))}
+          onclick={() => player.playOrToggle(`album:${albumId}`, () => library.playAlbum(albumId, 0))}
         >
           <Icon name={playingThis ? 'pause' : 'play'} class="size-7" />
         </button>

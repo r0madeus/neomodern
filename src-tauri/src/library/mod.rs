@@ -81,6 +81,8 @@ pub struct TrackRow {
     pub path: String,
     /// Absolute path of the album's cached cover, if any.
     pub cover: Option<String>,
+    /// How many times it was played (0 where a list does not count).
+    pub plays: u32,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

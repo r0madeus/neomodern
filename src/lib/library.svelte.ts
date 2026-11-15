@@ -55,6 +55,8 @@ export interface TrackRow {
   path: string
   /** Cached cover of the track's album. */
   cover: string | null
+  /** Times played (finished or at least 15 s), as in the stats. */
+  plays: number
 }
 
 export interface AlbumRow {

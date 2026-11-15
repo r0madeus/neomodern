@@ -79,6 +79,7 @@
       durationMs: null,
       path: track.path,
       cover: null,
+      plays: 0,
     }
   }
 

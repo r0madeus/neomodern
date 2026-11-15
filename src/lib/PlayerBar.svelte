@@ -74,6 +74,7 @@
         durationMs: null,
         path: cur.path,
         cover: nowCover.cover,
+    plays: 0,
       }}
       <div
         role="region"

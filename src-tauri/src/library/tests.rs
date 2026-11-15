@@ -2163,3 +2163,35 @@ fn favorites_can_be_set_for_many_tracks() {
     assert_eq!(e.lib.set_favorites(&ids[..2], false).unwrap(), 2);
     assert_eq!(e.lib.favorites().unwrap().len(), 1);
 }
+
+#[test]
+fn track_rows_count_plays_like_the_stats() {
+    let e = env();
+    scanned_tracks(&e, &["Alpha", "Beta"]);
+    let tracks = e.lib.tracks_page(0, 10, SortOrder::Title).unwrap();
+    let alpha = &tracks[0];
+    assert_eq!(alpha.plays, 0);
+    let listen = |listened_ms: u64, completed: bool| super::NewListenEvent {
+        path: alpha.path.clone(),
+        title: alpha.title.clone(),
+        artist: alpha.artist.clone(),
+        duration_ms: alpha.duration_ms,
+        started_at: 1_700_000_000,
+        ended_at: 1_700_000_200,
+        listened_ms,
+        completed,
+        skipped: !completed,
+    };
+    // Finished, long enough, and a 5 s skip that does not count.
+    e.lib.record_listen_event(listen(180_000, true)).unwrap();
+    e.lib.record_listen_event(listen(20_000, false)).unwrap();
+    e.lib.record_listen_event(listen(5_000, false)).unwrap();
+
+    let rows = e.lib.tracks_page(0, 10, SortOrder::Title).unwrap();
+    assert_eq!(rows[0].plays, 2);
+    assert_eq!(rows[1].plays, 0);
+    let album = e.lib.album(rows[0].album_id.unwrap()).unwrap();
+    assert_eq!(album.tracks.iter().map(|t| t.plays).sum::<u32>(), 2);
+    let pl = e.lib.create_playlist("P", &[rows[0].id]).unwrap();
+    assert_eq!(e.lib.playlist_tracks(pl.id, 0, 10).unwrap()[0].plays, 2);
+}

@@ -112,6 +112,7 @@
     durationMs: null,
     path: cur.path,
     cover: nowCover.cover,
+    plays: 0,
   }}
   <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pt-1 pb-5">
     <Cover

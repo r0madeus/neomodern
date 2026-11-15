@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
-  import { count, t } from './i18n.svelte'
+  import { count, i18n, t } from './i18n.svelte'
   import { tick } from 'svelte'
   import VirtualList from './VirtualList.svelte'
   import { createDragReorder } from './dragReorder.svelte'
@@ -34,7 +34,7 @@
   let { id, onDeleted }: { id: number; onDeleted: () => void } = $props()
 
   const ROW = 48
-  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_4rem_11rem] items-center gap-3 px-5'
+  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_5rem_4rem_11rem] items-center gap-3 px-5'
 
   const info = $derived(playlists.byId(id))
   let tracks = $state<TrackRow[]>([])
@@ -58,7 +58,7 @@
     return () => (stale = true)
   })
 
-  type PlSortCol = 'added' | 'title' | 'artist' | 'album' | 'duration'
+  type PlSortCol = 'added' | 'title' | 'artist' | 'album' | 'plays' | 'duration'
   let sortCol = $state<PlSortCol>('added')
   let sortDir = $state<'asc' | 'desc'>('asc')
 
@@ -87,6 +87,8 @@
           return a.track.artist.localeCompare(b.track.artist) * mult || a.origIndex - b.origIndex
         case 'album':
           return a.track.album.localeCompare(b.track.album) * mult || a.origIndex - b.origIndex
+        case 'plays':
+          return (a.track.plays - b.track.plays) * mult || a.origIndex - b.origIndex
         case 'duration': {
           const da = a.track.durationMs
           const db = b.track.durationMs
@@ -651,6 +653,7 @@
         { col: 'title' as PlSortCol, label: t('Title'), align: 'justify-start text-left' },
         { col: 'artist' as PlSortCol, label: t('Artist'), align: 'justify-start text-left' },
         { col: 'album' as PlSortCol, label: t('Album'), align: 'justify-start text-left' },
+        { col: 'plays' as PlSortCol, label: t('Plays'), align: 'justify-end text-right' },
         { col: 'duration' as PlSortCol, label: t('Time'), align: 'justify-end text-right' },
       ] as h (h.col)}
         {@const active = sortCol === h.col}
@@ -754,6 +757,9 @@
               <span class="truncate text-zinc-500"><ArtistLinks artist={track.artist} /></span>
               <span class="truncate text-zinc-500">
                 <AlbumLink album={track.album} albumId={track.albumId} />
+              </span>
+              <span class="text-right text-xs tabular-nums text-zinc-500">
+                {track.plays.toLocaleString(i18n.locale)}
               </span>
               <span class="text-right text-xs tabular-nums text-zinc-500">
                 {formatTime(track.durationMs === null ? null : track.durationMs / 1000)}

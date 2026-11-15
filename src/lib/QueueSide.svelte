@@ -72,6 +72,7 @@
       durationMs: null,
       path: item.path,
       cover: item.cover,
+      plays: 0,
     }
   }
 

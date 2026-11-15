@@ -1,7 +1,7 @@
 <script lang="ts">
   import { selection } from './trackSelection.svelte'
   import { appSettings } from './appSettings.svelte'
-  import { count, t } from './i18n.svelte'
+  import { count, i18n, t } from './i18n.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import Cover from './Cover.svelte'
   import Equalizer from './Equalizer.svelte'
@@ -152,6 +152,12 @@
             </span>
             <span class="flex min-w-0 flex-1 items-center">
               <span class="truncate font-medium">{track.title}</span><ExtBadge path={track.path} />
+            </span>
+            <span
+              class="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-500"
+              title={t('Plays')}
+            >
+              {track.plays.toLocaleString(i18n.locale)}
             </span>
             <span class="text-xs tabular-nums text-zinc-500">
               {formatTime(track.durationMs === null ? null : track.durationMs / 1000)}

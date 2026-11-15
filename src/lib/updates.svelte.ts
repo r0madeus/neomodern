@@ -60,7 +60,9 @@ class Updates {
     this.checking = true
     try {
       const found = await invoke<UpdateInfo | null>('app_check_update')
-      write(LAST_CHECK, String(Date.now()))
+      if (!found || found.installable) {
+        write(LAST_CHECK, String(Date.now()))
+      }
       this.status = found ? 'found' : 'upToDate'
       this.available = found && (manual || read(DISMISSED) !== found.version) ? found : null
     } catch {

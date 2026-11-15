@@ -96,6 +96,53 @@ fn can_install(release: &Release) -> bool {
 /// Signed manifest the in-app updater reads (see `tauri.conf.json`).
 const UPDATER_MANIFEST: &str = "latest.json";
 
+/// Whether `release` has finished uploading the files needed for this
+/// platform. A release created manually on GitHub before CI finishes has no
+/// assets at first, or has a signed installer (`.sig`) before `latest.json`
+/// is attached; waiting prevents caching `installable: false` mid-build.
+fn is_release_complete(release: &Release) -> bool {
+    if release.assets.is_empty() {
+        return false;
+    }
+    let ok = |a: &&Asset| a.browser_download_url.starts_with(DOWNLOAD_PREFIX);
+    if cfg!(target_os = "android") && std::env::consts::ARCH == "aarch64" {
+        return pick_apk(&release.assets).is_some();
+    }
+    if cfg!(target_os = "windows") {
+        let has_exe = release.assets.iter().filter(ok).any(|a| a.name.ends_with(".exe"));
+        let has_sig = release
+            .assets
+            .iter()
+            .filter(ok)
+            .any(|a| a.name.ends_with(".exe.sig"));
+        let has_manifest = release
+            .assets
+            .iter()
+            .filter(ok)
+            .any(|a| a.name == UPDATER_MANIFEST);
+        return has_exe && (!has_sig || has_manifest);
+    }
+    if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_some() {
+        let has_appimage = release
+            .assets
+            .iter()
+            .filter(ok)
+            .any(|a| a.name.ends_with(".AppImage"));
+        let has_sig = release
+            .assets
+            .iter()
+            .filter(ok)
+            .any(|a| a.name.ends_with(".AppImage.sig"));
+        let has_manifest = release
+            .assets
+            .iter()
+            .filter(ok)
+            .any(|a| a.name == UPDATER_MANIFEST);
+        return has_appimage && (!has_sig || has_manifest);
+    }
+    true
+}
+
 fn client(timeout: Duration) -> Result<reqwest::Client, reqwest::Error> {
     crate::net::client_builder()
         .user_agent(concat!("NeoModern/", env!("CARGO_PKG_VERSION")))
@@ -169,6 +216,7 @@ async fn newer_release(url: &str, current: &str) -> Result<Option<Release>, reqw
         || release.prerelease
         || !release.html_url.starts_with(RELEASES_PREFIX)
         || !is_newer(&release.tag_name, current)
+        || !is_release_complete(&release)
     {
         return Ok(None);
     }
@@ -312,7 +360,7 @@ mod tests {
     fn update_check_is_refused_without_a_request_when_off() {
         use std::sync::atomic::Ordering;
         let (url, count) = serve(
-            r#"{"tag_name":"v99.0.0","html_url":"https://github.com/r0madeus/neomodern/releases/tag/v99.0.0"}"#,
+            r#"{"tag_name":"v99.0.0","html_url":"https://github.com/r0madeus/neomodern/releases/tag/v99.0.0","assets":[{"name":"NeoModern_99.0.0_x64-setup.exe","browser_download_url":"https://github.com/r0madeus/neomodern/releases/download/v99.0.0/NeoModern_99.0.0_x64-setup.exe"},{"name":"NeoModern_99.0.0_amd64.AppImage","browser_download_url":"https://github.com/r0madeus/neomodern/releases/download/v99.0.0/NeoModern_99.0.0_amd64.AppImage"},{"name":"latest.json","browser_download_url":"https://github.com/r0madeus/neomodern/releases/download/v99.0.0/latest.json"}]}"#,
         );
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -347,6 +395,53 @@ mod tests {
         Asset {
             name: name.into(),
             browser_download_url: url.into(),
+        }
+    }
+
+    #[test]
+    fn skips_incomplete_releases_without_assets_or_manifest() {
+        let base = "https://github.com/r0madeus/neomodern/releases/download/v1.0.0/";
+        let empty = Release {
+            tag_name: "v1.0.0".into(),
+            html_url: "https://github.com/r0madeus/neomodern/releases/tag/v1.0.0".into(),
+            draft: false,
+            prerelease: false,
+            assets: Vec::new(),
+        };
+        assert!(!is_release_complete(&empty));
+
+        if cfg!(target_os = "windows") {
+            let signed_without_manifest = Release {
+                tag_name: "v1.0.0".into(),
+                html_url: "https://github.com/r0madeus/neomodern/releases/tag/v1.0.0".into(),
+                draft: false,
+                prerelease: false,
+                assets: vec![
+                    asset("NeoModern_1.0.0_x64-setup.exe", &format!("{base}a.exe")),
+                    asset(
+                        "NeoModern_1.0.0_x64-setup.exe.sig",
+                        &format!("{base}a.exe.sig"),
+                    ),
+                ],
+            };
+            assert!(!is_release_complete(&signed_without_manifest));
+
+            let complete = Release {
+                tag_name: "v1.0.0".into(),
+                html_url: "https://github.com/r0madeus/neomodern/releases/tag/v1.0.0".into(),
+                draft: false,
+                prerelease: false,
+                assets: vec![
+                    asset("NeoModern_1.0.0_x64-setup.exe", &format!("{base}a.exe")),
+                    asset(
+                        "NeoModern_1.0.0_x64-setup.exe.sig",
+                        &format!("{base}a.exe.sig"),
+                    ),
+                    asset("latest.json", &format!("{base}latest.json")),
+                ],
+            };
+            assert!(is_release_complete(&complete));
+            assert!(can_install(&complete));
         }
     }
 

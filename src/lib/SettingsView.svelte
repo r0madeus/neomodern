@@ -934,16 +934,47 @@
               </div>
             </div>
 
-            <button
-              type="button"
-              class="rounded-full bg-accent-500/15 px-4 py-1.5 text-xs font-semibold text-accent-700 transition hover:bg-accent-500/25 disabled:opacity-50 dark:text-accent-300"
-              disabled={updates.checking || !appSettings.allowUpdates}
-              title={appSettings.allowUpdates ? undefined : t('Turned off in Settings')}
-              onclick={() => void updates.check(true)}
-            >
-              {updates.checking ? t('Checking…') : t('Check for updates')}
-            </button>
+            <div class="flex flex-wrap items-center gap-2">
+              {#if updates.available && appSettings.allowUpdates}
+                {#if updates.available.installable}
+                  <button
+                    type="button"
+                    class="rounded-full bg-accent-500 px-4 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-accent-400 disabled:opacity-50"
+                    disabled={updates.installing}
+                    onclick={() => void updates.install()}
+                  >
+                    {updates.installing
+                      ? updates.progress === null
+                        ? t('Downloading the update…')
+                        : t('Downloading the update… {p}%', { p: Math.round(updates.progress * 100) })
+                      : t('Update')}
+                  </button>
+                {:else}
+                  <button
+                    type="button"
+                    class="rounded-full bg-accent-500 px-4 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-accent-400"
+                    onclick={() => void updates.open()}
+                  >
+                    {t('Download')}
+                  </button>
+                {/if}
+              {/if}
+              <button
+                type="button"
+                class="rounded-full bg-accent-500/15 px-4 py-1.5 text-xs font-semibold text-accent-700 transition hover:bg-accent-500/25 disabled:opacity-50 dark:text-accent-300"
+                disabled={updates.checking || updates.installing || !appSettings.allowUpdates}
+                title={appSettings.allowUpdates ? undefined : t('Turned off in Settings')}
+                onclick={() => void updates.check(true)}
+              >
+                {updates.checking ? t('Checking…') : t('Check for updates')}
+              </button>
+            </div>
           </div>
+          {#if updates.installError}
+            <p class="px-4 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
+              {t(updates.installError)}
+            </p>
+          {/if}
 
           <div class="p-4 text-sm">
             <p class="font-medium">{t('Report a problem')}</p>

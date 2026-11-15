@@ -141,6 +141,27 @@ jobs:
             $assets += $dest
           }
 
+          if ($signatures.Count -gt 0) {
+            $sigFile = $signatures[0]
+            $exeName = $sigFile.Name.Substring(0, $sigFile.Name.Length - 4)
+            $sigText = (Get-Content -Path $sigFile.FullName -Raw).Trim()
+            $baseUrl = "https://github.com/$($env:GITHUB_REPOSITORY)/releases/download/$tag/"
+            $manifest = [ordered]@{
+              version   = ($tag -replace '^v', '')
+              notes     = "NeoModern $tag"
+              pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+              platforms = [ordered]@{
+                "windows-x86_64" = [ordered]@{
+                  signature = $sigText
+                  url       = $baseUrl + [uri]::EscapeDataString($exeName)
+                }
+              }
+            }
+            $manifestFile = Join-Path $staging 'latest.json'
+            Set-Content -Path $manifestFile -Value ($manifest | ConvertTo-Json -Depth 5) -Encoding utf8
+            $assets += $manifestFile
+          }
+
           $checksumFile = Join-Path $staging 'SHA256SUMS.txt'
           Set-Content -Path $checksumFile -Value ($hashes -join "`n") -Encoding utf8
           $assets += $checksumFile
@@ -151,6 +172,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
 
           if ($exists) {
+            # If the release was created manually from the GitHub UI, keep it as a
+            # draft until every platform job and updater-manifest finish.
+            gh release edit $tag --draft=true
             gh release upload $tag @assets --clobber
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } else {

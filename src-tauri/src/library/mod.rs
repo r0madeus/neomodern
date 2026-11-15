@@ -818,7 +818,7 @@ impl Library {
         Ok(())
     }
 
-    fn remove_playlist_cover_if_cached(&self, old: Option<String>) {
+    pub(crate) fn remove_playlist_cover_if_cached(&self, old: Option<String>) {
         let Some(old) = old else { return };
         if old.starts_with("preset:") {
             return;

@@ -40,7 +40,9 @@ pub use changes::{changes_since, max_seq};
 pub use ctx::{device_id, device_name, set_device_name};
 pub use hlc::Hlc;
 pub use key::{norm, track_key};
-pub use peers::{Peer, ack_sent, peer, peers, remove_peer, upsert_peer};
+pub use peers::{
+    Peer, ack_sent, peer, peer_address, peers, remove_peer, set_peer_address, upsert_peer,
+};
 pub use plan::{GuardTrip, Plan, PlaylistLoss};
 pub use validate::check_batch;
 
@@ -308,6 +310,13 @@ pub fn apply(conn: &Connection, batch: &Batch, opts: &ApplyOptions) -> Result<Ap
     };
     quick_check(conn)?;
     Ok(report)
+}
+
+/// The local track a synced key refers to (canonical id), with the same
+/// rules capture and materialise use. Loads the whole track list, so call
+/// it for single lookups (the remote's now-playing cover), not in loops.
+pub fn resolve_key(conn: &Connection, key: &str, duration_ms: Option<i64>) -> Result<Option<i64>> {
+    Ok(key::Resolver::load(conn)?.resolve(key, duration_ms))
 }
 
 /// `PRAGMA quick_check`; anything but "ok" is an [`SyncError::Integrity`].

@@ -1,5 +1,6 @@
 //! Paired devices and their sync watermarks (local only).
 
+use super::ctx::{get_meta, set_meta};
 use super::hlc::is_id;
 use super::{MAX_NAME_CHARS, Result, SyncError};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -80,9 +81,35 @@ pub fn upsert_peer(conn: &Connection, device_id: &str, name: &str, secret: &[u8]
     Ok(())
 }
 
-/// Forgets a paired device (its secret is deleted). Synced data stays.
+/// Forgets a paired device (its secret and stored address are deleted).
+/// Synced data stays.
 pub fn remove_peer(conn: &Connection, device_id: &str) -> Result<bool> {
+    conn.execute(
+        "DELETE FROM sync_meta WHERE key = ?1",
+        [address_key(device_id)],
+    )?;
     Ok(conn.execute("DELETE FROM sync_peers WHERE device_id = ?1", [device_id])? > 0)
+}
+
+fn address_key(device_id: &str) -> String {
+    format!("peer_address:{device_id}")
+}
+
+/// Where a paired computer listens (`ip:port`), for the phone to dial.
+/// Only computers the phone paired with have one (kept in `sync_meta`).
+pub fn peer_address(conn: &Connection, device_id: &str) -> Result<Option<String>> {
+    get_meta(conn, &address_key(device_id))
+}
+
+/// Stores the address of a paired peer (the peer must exist).
+pub fn set_peer_address(conn: &Connection, device_id: &str, address: &str) -> Result<()> {
+    if peer(conn, device_id)?.is_none() {
+        return Err(SyncError::Other("unknown peer".into()));
+    }
+    if address.is_empty() || address.len() > 64 || address.chars().any(char::is_control) {
+        return Err(SyncError::Other("invalid address".into()));
+    }
+    set_meta(conn, &address_key(device_id), address)
 }
 
 /// The peer acknowledged our changes up to `seq`. Never moves backwards.

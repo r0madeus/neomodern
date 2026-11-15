@@ -13,6 +13,7 @@
 //! The database lock is only held while a batch (~500 files) is written, so
 //! queries stay responsive during a scan.
 
+pub mod autoplay;
 pub mod cover_color;
 pub mod db;
 pub mod m3u;
@@ -83,6 +84,9 @@ pub struct TrackRow {
     pub cover: Option<String>,
     /// How many times it was played (0 where a list does not count).
     pub plays: u32,
+    /// When it was added to the playlist (unix seconds); only in playlist
+    /// listings.
+    pub added_to_playlist: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -980,6 +984,20 @@ impl Library {
 
     pub fn all_artist_names(&self) -> Result<Vec<String>> {
         db::all_artist_names(&self.conn())
+    }
+
+    /// Autoplay: up to `n` library songs that fit `seeds` (paths, most
+    /// recent last), none of `exclude`.
+    pub fn autoplay_picks(
+        &self,
+        seeds: &[String],
+        exclude: &std::collections::HashSet<String>,
+        n: usize,
+    ) -> Result<Vec<autoplay::AutoTrack>> {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(1, |d| d.as_nanos() as u64);
+        autoplay::pick(&self.conn(), seeds, exclude, n, unix_now(), seed)
     }
 
     pub fn save_artist_meta(

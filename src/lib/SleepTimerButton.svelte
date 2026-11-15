@@ -7,7 +7,8 @@
   import { t } from './i18n.svelte'
   import { player } from './player.svelte'
 
-  let { mobile = false }: { mobile?: boolean } = $props()
+  /** `card`: the queue sheet's big square button with a label. */
+  let { mobile = false, card = false }: { mobile?: boolean; card?: boolean } = $props()
 
   const CHOICES = [15, 30, 45, 60, 90, 120]
 
@@ -27,7 +28,7 @@
     }
     const r = button?.getBoundingClientRect()
     if (r) {
-      const center = mobile ? r.left + r.width / 2 - MENU_WIDTH / 2 : r.right - MENU_WIDTH
+      const center = mobile || card ? r.left + r.width / 2 - MENU_WIDTH / 2 : r.right - MENU_WIDTH
       place = {
         bottom: window.innerHeight - r.top + 8,
         left: Math.max(8, Math.min(window.innerWidth - MENU_WIDTH - 8, center)),
@@ -96,7 +97,21 @@
     'flex w-full items-center justify-between gap-6 rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'
 </script>
 
-<div class="relative" bind:this={root}>
+<div class={card ? 'relative flex-1' : 'relative'} bind:this={root}>
+  {#if card}
+    <button
+      type="button"
+      class={['flex w-full flex-col items-center gap-1 rounded-xl bg-zinc-800 py-3 text-xs font-medium active:bg-zinc-700', active ? 'text-accent-400' : 'text-zinc-100']}
+      bind:this={button}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-label={summary}
+      onclick={toggle}
+    >
+      <Icon name="moon" class="size-6" />
+      {#if left !== null}{clock(left)}{:else if endOfTrack}{t('End')}{:else}{t('Timer')}{/if}
+    </button>
+  {:else}
   <button
     type="button"
     class={mobile
@@ -121,6 +136,7 @@
       <span class="text-xs font-medium">{t('End')}</span>
     {/if}
   </button>
+  {/if}
 
   {#if open && place}
     <div

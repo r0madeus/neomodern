@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import { selection } from './trackSelection.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import AlbumLink from './AlbumLink.svelte'
@@ -50,9 +51,10 @@
           type="button"
           disabled={totalCount === 0}
           class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-          onclick={() => void favorites.play(0, false)}
+          onclick={() => player.playOrToggle('favorites', () => favorites.play(0, false))}
         >
-          <Icon name="play" class="size-5" /> {t('Play')}
+          <Icon name={player.isActiveFrom('favorites') ? 'pause' : 'play'} class="size-5" />
+          {t(player.isActiveFrom('favorites') ? 'Pause' : 'Play')}
         </button>
         <ShuffleButton
           disabled={totalCount === 0}
@@ -127,7 +129,7 @@
                 title={track.title}
                 class="size-9 shrink-0 rounded text-[10px]"
               />
-              <span class="truncate font-medium">{track.title}</span><ExtBadge path={track.path} />
+              <TitleLink title={track.title} albumId={track.albumId} class="font-medium" /><ExtBadge path={track.path} />
             </span>
             <span class="truncate text-zinc-500"><ArtistLinks artist={track.artist} /></span>
             <span class="truncate text-zinc-500">

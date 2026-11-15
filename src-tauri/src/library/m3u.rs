@@ -211,6 +211,7 @@ mod tests {
             path: "/m/Buray/01.flac".into(),
             cover: None,
             plays: 0,
+            added_to_playlist: None,
         }];
         let e = parse(&render(&rows));
         assert_eq!(

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import { selection } from './trackSelection.svelte'
   import { t } from './i18n.svelte'
   import VirtualList from './VirtualList.svelte'
@@ -135,7 +136,7 @@
               </span>
               <span class="flex min-w-0 items-center gap-3">
                 <Cover cover={track.cover} title={track.title} class="size-9 shrink-0 rounded text-[10px]" />
-                <span class="truncate font-medium">{track.title}</span><ExtBadge path={track.path} />
+                <TitleLink title={track.title} albumId={track.albumId} class="font-medium" /><ExtBadge path={track.path} />
               </span>
               <span class="truncate text-zinc-500"><ArtistLinks artist={track.artist} /></span>
               <span class="truncate text-zinc-500">

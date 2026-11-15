@@ -55,10 +55,10 @@
       <button
         type="button"
         class="flex size-12 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg active:scale-95"
-        aria-label={t('Play')}
-        onclick={() => void favorites.play(0)}
+        aria-label={t(player.isActiveFrom('favorites') ? 'Pause' : 'Play')}
+        onclick={() => player.playOrToggle('favorites', () => favorites.play(0))}
       >
-        <Icon name="play" class="size-6" />
+        <Icon name={player.isActiveFrom('favorites') ? 'pause' : 'play'} class="size-6" />
       </button>
     {/if}
   </div>

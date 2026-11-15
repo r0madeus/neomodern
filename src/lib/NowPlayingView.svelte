@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import { t } from './i18n.svelte'
   import { fly } from 'svelte/transition'
   import AlbumLink from './AlbumLink.svelte'
@@ -73,7 +74,7 @@
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <h2 class="truncate text-3xl leading-tight font-bold">{cur.title}</h2>
+              <h2 class="truncate text-3xl leading-tight font-bold"><TitleLink title={cur.title} path={cur.path} /></h2>
               <p class="mt-1 truncate text-lg text-white/70">
                 {#if cur.artist}
                   <ArtistLinks artist={cur.artist} onNavigate={onClose} />

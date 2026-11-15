@@ -158,7 +158,10 @@ jobs:
             $releaseArgs = @('release', 'create', $tag) + $assets + @(
               '--title', "NeoModern $tag",
               '--target', $env:GITHUB_SHA,
-              '--generate-notes'
+              '--generate-notes',
+              # Stays a draft until every platform and latest.json are up
+              # (the publish job below); the app never sees half a release.
+              '--draft'
             )
             if ($isPrerelease) {
               $releaseArgs += '--prerelease'
@@ -426,3 +429,31 @@ jobs:
             console.log(JSON.stringify(manifest, null, 2))
           '
           gh release upload "$tag" "$work/latest.json" --clobber
+
+  # Last step: make the release public once Windows, Android, the AppImage
+  # and latest.json are all attached. Until then it is a draft, so the
+  # in-app update check (which reads the latest public release) does not
+  # offer a release whose files are still missing.
+  publish:
+    name: Publish release
+    needs: [windows-release, android-release, linux-release, updater-manifest]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
+            tag="$(echo "$INPUT_TAG" | xargs)"
+          else
+            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          fi
+          if [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$tag" --draft=false
+          fi

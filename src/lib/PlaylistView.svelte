@@ -1,7 +1,9 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { count, i18n, t } from './i18n.svelte'
   import { tick } from 'svelte'
+  import { addedAgo } from './dates'
   import VirtualList from './VirtualList.svelte'
   import { createDragReorder } from './dragReorder.svelte'
   import DragPill from './DragPill.svelte'
@@ -33,8 +35,8 @@
 
   let { id, onDeleted }: { id: number; onDeleted: () => void } = $props()
 
-  const ROW = 48
-  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_5rem_2rem_4rem_2rem] items-center gap-3 px-5'
+  const ROW = 56
+  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1fr)_5rem_2rem_4rem_2rem] items-center gap-3 px-5'
 
   const info = $derived(playlists.byId(id))
   let tracks = $state<TrackRow[]>([])
@@ -58,7 +60,7 @@
     return () => (stale = true)
   })
 
-  type PlSortCol = 'added' | 'title' | 'artist' | 'album' | 'plays' | 'duration'
+  type PlSortCol = 'added' | 'title' | 'album' | 'date' | 'plays' | 'duration'
   let sortCol = $state<PlSortCol>('added')
   let sortDir = $state<'asc' | 'desc'>('asc')
 
@@ -83,8 +85,8 @@
           return (a.origIndex - b.origIndex) * mult
         case 'title':
           return a.track.title.localeCompare(b.track.title) * mult || a.origIndex - b.origIndex
-        case 'artist':
-          return a.track.artist.localeCompare(b.track.artist) * mult || a.origIndex - b.origIndex
+        case 'date':
+          return ((a.track.addedToPlaylist ?? 0) - (b.track.addedToPlaylist ?? 0)) * mult || a.origIndex - b.origIndex
         case 'album':
           return a.track.album.localeCompare(b.track.album) * mult || a.origIndex - b.origIndex
         case 'plays':
@@ -364,7 +366,7 @@
 
   async function queueSelected() {
     if (selectedEntries.length === 0) return
-    await player.appendFiles(selectedEntries.map((e) => e.track.path))
+    await player.addToQueue(selectedEntries.map((e) => e.track.path))
     if (!player.error) playlists.flash(t('Added to queue'))
   }
 
@@ -496,12 +498,12 @@
           <button
             type="button"
             disabled={info!.trackCount === 0}
-            aria-label={t('Play')}
-            title={t('Play')}
+            aria-label={t(player.isActiveFrom(`playlist:${id}`) ? 'Pause' : 'Play')}
+            title={t(player.isActiveFrom(`playlist:${id}`) ? 'Pause' : 'Play')}
             class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg shadow-black/30 outline-none transition hover:scale-105 hover:bg-accent-400 focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-            onclick={() => void playlists.play(id, 0, false)}
+            onclick={() => player.playOrToggle(`playlist:${id}`, () => playlists.play(id, 0, false))}
           >
-            <Icon name="play" class="size-7" />
+            <Icon name={player.isActiveFrom(`playlist:${id}`) ? 'pause' : 'play'} class="size-7" />
           </button>
           <ShuffleButton
             disabled={info!.trackCount === 0}
@@ -668,8 +670,8 @@
       {#each [
         { col: 'added' as PlSortCol, label: '#', align: 'justify-end text-right' },
         { col: 'title' as PlSortCol, label: t('Title'), align: 'justify-start text-left' },
-        { col: 'artist' as PlSortCol, label: t('Artist'), align: 'justify-start text-left' },
         { col: 'album' as PlSortCol, label: t('Album'), align: 'justify-start text-left' },
+        { col: 'date' as PlSortCol, label: t('Date added'), align: 'justify-start text-left' },
         { col: 'plays' as PlSortCol, label: t('Plays'), align: 'justify-end text-right' },
         { col: null, label: '', align: '' },
         { col: 'duration' as PlSortCol, label: t('Time'), align: 'justify-end text-right' },
@@ -773,13 +775,21 @@
                   <Equalizer class="text-accent-600 dark:text-accent-400" />
                 {:else}{orig + 1}{/if}
               </span>
+              <!-- Title with the artist under it, like Spotify. -->
               <span class="flex min-w-0 items-center gap-3">
-                <Cover cover={track.cover} title={track.title} class="size-9 shrink-0 rounded text-[10px]" />
-                <span class="truncate font-medium">{track.title}</span><ExtBadge path={track.path} />
+                <Cover cover={track.cover} title={track.title} class="size-10 shrink-0 rounded text-[10px]" />
+                <span class="min-w-0">
+                  <span class="flex min-w-0 items-center">
+                    <TitleLink title={track.title} albumId={track.albumId} class={['font-medium', track.path === currentPath ? 'text-accent-600 dark:text-accent-400' : 'text-zinc-900 dark:text-zinc-100'].join(' ')} /><ExtBadge path={track.path} />
+                  </span>
+                  <span class="block truncate text-[13px] text-zinc-500"><ArtistLinks artist={track.artist} /></span>
+                </span>
               </span>
-              <span class="truncate text-zinc-500"><ArtistLinks artist={track.artist} /></span>
               <span class="truncate text-zinc-500">
                 <AlbumLink album={track.album} albumId={track.albumId} />
+              </span>
+              <span class="truncate text-[13px] text-zinc-500">
+                {track.addedToPlaylist ? addedAgo(track.addedToPlaylist, i18n.locale) : ''}
               </span>
               <span class="text-right text-xs tabular-nums text-zinc-500">
                 {track.plays.toLocaleString(i18n.locale)}

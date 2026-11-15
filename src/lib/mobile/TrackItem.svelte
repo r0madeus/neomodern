@@ -10,6 +10,9 @@
   import { player } from '../player.svelte'
   import Icon from '../Icon.svelte'
   import { longPress, selection } from '../trackSelection.svelte'
+  import { favorites } from '../favorites.svelte'
+  import { playlists } from '../playlists.svelte'
+  import SwipeRow, { type SwipeAction } from './SwipeRow.svelte'
 
   // One song row on phones: cover, title, clickable artist · album links, and a menu.
   let {
@@ -27,6 +30,7 @@
     selectScope = null,
     index = 0,
     onPlay,
+    onRemoveFromPlaylist,
   }: {
     title: string
     subtitle?: string
@@ -44,6 +48,8 @@
     selectScope?: string | null
     index?: number
     onPlay: () => void
+    /** On a playlist page: the menu offers "Remove from this playlist". */
+    onRemoveFromPlaylist?: () => void
   } = $props()
 
   const selectable = $derived(selectScope !== null && track !== null)
@@ -64,10 +70,41 @@
   const effAlbumId = $derived(albumId !== undefined ? albumId : (track?.albumId ?? null))
   const useLinks = $derived(effArtist !== '' || effAlbum !== '')
 
+  // Spotify's swipes: right adds to the queue, left likes (or unlikes).
+  const swipeRight = $derived<SwipeAction | null>(
+    trackId === null
+      ? null
+      : {
+          icon: 'queueAdd',
+          label: t('Add to queue'),
+          run: () => {
+            void player.addToQueue([path])
+            playlists.flash(t('Added to queue'))
+          },
+        },
+  )
+  const liked = $derived(trackId !== null && favorites.has(trackId))
+  const swipeLeft = $derived<SwipeAction | null>(
+    trackId === null
+      ? null
+      : {
+          icon: liked ? 'minusCircle' : 'checkCircle',
+          label: t(liked ? 'Remove from favorites' : 'Add to favorites'),
+          run: () => {
+            const id = trackId
+            if (id === null) return
+            const wasLiked = favorites.has(id)
+            void favorites.toggle(id)
+            playlists.flash(t(wasLiked ? 'Removed from favorites' : 'Added to favorites'))
+          },
+        },
+  )
+
   const current = $derived(player.snapshot.current?.path === path)
   const playing = $derived(current && player.snapshot.status === 'playing')
 </script>
 
+<SwipeRow right={swipeRight} left={swipeLeft} disabled={selecting}>
 <div class={['flex h-16 items-center gap-3 pr-1 pl-4 active:bg-white/5', picked && 'bg-accent-500/15']}>
   <div
     role="button"
@@ -127,9 +164,11 @@
       trackIds={[trackId]}
       {track}
       {onPlay}
+      {onRemoveFromPlaylist}
       editTags
       label={t('More actions for “{title}”', { title })}
       class="p-3 text-zinc-400"
     />
   {/if}
 </div>
+</SwipeRow>

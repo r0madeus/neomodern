@@ -91,7 +91,7 @@
     <div class="flex h-14 items-center gap-1 pr-1 pl-2">
       <div class="min-w-0 flex-1 overflow-hidden" bind:clientWidth={swipe.width}>
         <div
-          class="flex w-[300%] will-change-transform"
+          class="flex w-[300%] shrink-0 will-change-transform"
           style:transform={swipe.transform}
           style:transition={swipe.transition}
         >

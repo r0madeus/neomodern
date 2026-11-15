@@ -1,5 +1,6 @@
 // "New version available" notice. Rust asks GitHub for the latest release;
-// the UI checks at most once a day and remembers a dismissed version.
+// the UI checks at start-up and every few hours while it stays open (at
+// most once per interval) and remembers a dismissed version.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { appSettings } from './appSettings.svelte'
@@ -18,7 +19,7 @@ interface DownloadProgress {
 
 const LAST_CHECK = 'neomodern.update.lastCheck'
 const DISMISSED = 'neomodern.update.dismissed'
-const DAY_MS = 24 * 60 * 60 * 1000
+const INTERVAL_MS = 6 * 60 * 60 * 1000
 
 function read(key: string): string | null {
   try {
@@ -69,10 +70,17 @@ class Updates {
     }
   }
 
-  /** Startup: check if the last check is more than a day old. */
+  #timer: ReturnType<typeof setInterval> | null = null
+
+  /** Start-up: check now if the last check is older than the interval, and
+   *  keep checking while the app stays open (it can run for days). */
   autoCheck(): void {
-    const last = Number(read(LAST_CHECK) ?? 0)
-    if (Date.now() - last > DAY_MS) void this.check()
+    const due = () => {
+      const last = Number(read(LAST_CHECK) ?? 0)
+      if (Date.now() - last > INTERVAL_MS) void this.check()
+    }
+    due()
+    if (this.#timer === null) this.#timer = setInterval(due, 30 * 60 * 1000)
   }
 
   dismiss(): void {

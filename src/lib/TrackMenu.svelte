@@ -12,6 +12,11 @@
   import { playlists, type PlaylistInfo } from './playlists.svelte'
   import { tagEditor } from './tags.svelte'
   import { trackMenu } from './contextMenu.svelte'
+  import Cover from './Cover.svelte'
+  import SaveToMenu from './SaveToMenu.svelte'
+  import { popLayer, pushLayer } from './mobile/layers'
+  import { fade, fly } from 'svelte/transition'
+  import { motionDuration } from './motion'
 
   const WIDTH = 228
   const SUB_WIDTH = 220
@@ -41,11 +46,73 @@
     return { destroy: () => node.remove() }
   }
 
-  function close() {
+  // Phones get Spotify's bottom sheet instead of the popup menu: half open
+  // at first, scroll up for the rest, drag down or Back to close.
+  const NARROW = '(max-width: 639px)'
+  let mobile = $state(window.matchMedia(NARROW).matches)
+  $effect(() => {
+    const mq = window.matchMedia(NARROW)
+    const onChange = () => (mobile = mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  })
+  // The sheet is a history layer so Android's Back closes it.
+  let layerOpen = false
+  $effect(() => {
+    if (!ctx || !mobile || layerOpen) return
+    layerOpen = true
+    pushLayer(() => {
+      layerOpen = false
+      sub = null
+      trackMenu.close()
+    })
+  })
+
+  /** Closes the menu; `then` runs after it is gone (on phones the sheet's
+   *  history layer must be popped before another screen opens). */
+  function close(then?: () => void) {
     sub = null
     creating = false
     playlistName = ''
     trackMenu.close()
+    if (layerOpen) {
+      layerOpen = false
+      popLayer(then)
+    } else {
+      then?.()
+    }
+  }
+
+  // "Add to playlist" on a phone opens the save sheet (playlists, new
+  // playlist, favourites) once the menu is closed.
+  let saveFor = $state<{ trackId: number; title: string } | null>(null)
+  function openSave() {
+    const c = ctx
+    if (!c || c.track.id <= 0) return
+    saveFor = { trackId: c.track.id, title: c.track.title }
+    close()
+  }
+
+  function goQueue() {
+    close(() => trackMenu.openQueue())
+  }
+
+  // Drag down from the top of the sheet to close it.
+  let scroller = $state<HTMLDivElement | null>(null)
+  let pullY = $state(0)
+  let pullStart: number | null = null
+  function onSheetTouchStart(e: TouchEvent) {
+    pullStart = scroller && scroller.scrollTop <= 0 ? e.touches[0].clientY : null
+  }
+  function onSheetTouchMove(e: TouchEvent) {
+    if (pullStart === null) return
+    const dy = e.touches[0].clientY - pullStart
+    pullY = dy > 0 ? dy : 0
+  }
+  function onSheetTouchEnd() {
+    if (pullY > 90) close()
+    pullY = 0
+    pullStart = null
   }
 
   function items(): HTMLElement[] {
@@ -157,7 +224,7 @@
     const c = ctx
     if (!c) return
     close()
-    await player.appendFiles([c.track.path])
+    await player.addToQueue([c.track.path])
     playlists.flash(t('Added to queue'))
   }
 
@@ -201,15 +268,13 @@
   function goArtist(name?: string) {
     const target = name ?? artistList[0]
     if (!target) return
-    close()
-    artists.open(target)
+    close(() => artists.open(target))
   }
 
   function goAlbum() {
     const albumId = ctx?.track.albumId
     if (albumId === null || albumId === undefined) return
-    close()
-    library.openAlbum(albumId)
+    close(() => library.openAlbum(albumId))
   }
 
   function toggleAlbumPin() {
@@ -263,7 +328,112 @@
     'flex w-full items-center gap-2.5 px-3 py-1.5 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800'
 </script>
 
-{#if ctx}
+{#if ctx && mobile}
+  {@const tr = ctx.track}
+  <div
+    use:portal
+    bind:this={menu}
+    role="menu"
+    aria-label={tr.title}
+    tabindex="-1"
+    onkeydown={onKey}
+    class="fixed inset-0 z-[90] text-zinc-100"
+  >
+    <div class="absolute inset-0 bg-black/60" transition:fade={{ duration: motionDuration(150) }}></div>
+    <div
+      bind:this={scroller}
+      role="presentation"
+      class="no-scrollbar absolute inset-0 overflow-y-auto overscroll-contain"
+      ontouchstart={onSheetTouchStart}
+      ontouchmove={onSheetTouchMove}
+      ontouchend={onSheetTouchEnd}
+      ontouchcancel={onSheetTouchEnd}
+    >
+      <div class="flex min-h-full flex-col">
+        <!-- The empty top part: tapping it closes; it scrolls away to show
+             the whole menu. -->
+        <button type="button" class="min-h-[40vh] flex-1" aria-label={t('Close')} tabindex="-1" onclick={() => close()}></button>
+        <div
+          class="rounded-t-2xl bg-zinc-900 pb-[calc(1rem+var(--inset-bottom,0px))] shadow-2xl"
+          style:transform={pullY > 0 ? `translateY(${pullY}px)` : undefined}
+          transition:fly={{ y: 320, duration: motionDuration(220), opacity: 1 }}
+        >
+          <div class="flex justify-center pt-2.5 pb-1.5"><span class="h-1 w-10 rounded-full bg-zinc-600"></span></div>
+          <div class="flex items-center gap-3 border-b border-zinc-800 px-4 pt-2 pb-4">
+            <Cover cover={tr.cover} title={tr.title} class="size-14 shrink-0 rounded text-sm" />
+            <div class="min-w-0">
+              <p class="truncate text-base font-medium">{tr.title}</p>
+              <p class="truncate text-sm text-zinc-400">
+                {[tr.artist, tr.album].filter(Boolean).join(' • ')}
+              </p>
+            </div>
+          </div>
+          <div class="flex flex-col py-1">
+            {#snippet row(icon: import('./Icon.svelte').Name, label: string, action: () => void, accent = false)}
+              <button
+                type="button"
+                role="menuitem"
+                class="flex w-full items-center gap-4 px-4 py-3.5 text-left text-[15px] active:bg-white/5"
+                onclick={action}
+              >
+                <Icon name={icon} class={accent ? 'size-6 shrink-0 text-accent-400' : 'size-6 shrink-0 text-zinc-300'} />
+                <span class="min-w-0 truncate">{label}</span>
+              </button>
+            {/snippet}
+            {@render row('share', t('Copy song info'), () => void doCopy())}
+            {#if hasLibId}
+              {@render row('plusCircle', t('Add to playlist'), openSave)}
+            {/if}
+            {#if ctx.onRemoveFromPlaylist}
+              {@render row('minusCircle', t('Remove from this playlist'), () => {
+                const fn = ctx?.onRemoveFromPlaylist
+                close()
+                fn?.()
+              })}
+            {/if}
+            {#if ctx.onRemoveFromQueue}
+              {@render row('minusCircle', t('Remove from queue'), () => {
+                const fn = ctx?.onRemoveFromQueue
+                close()
+                fn?.()
+              })}
+            {/if}
+            {@render row(
+              starred ? 'checkCircle' : 'plusCircle',
+              starred ? t('Remove from favorites') : t('Add to favorites'),
+              () => void doToggleFavorite(),
+              starred,
+            )}
+            {@render row('queueAdd', t('Add to queue'), () => void doAddQueue())}
+            {@render row('queue', t('Play next'), () => void doPlayNext())}
+            {#if trackMenu.canOpenQueue}
+              {@render row('list', t('Go to queue'), goQueue)}
+            {/if}
+            {#if hasAlbum}
+              {@render row('album', t('Go to album'), goAlbum)}
+            {/if}
+            {#each artistList as name, i (`${name}:${i}`)}
+              {@render row('artist', artistList.length === 1 ? t('Go to artist') : name, () => goArtist(name))}
+            {/each}
+            {#if hasAlbum}
+              {@render row(
+                'pin',
+                t(pinned.isPinned('album', tr.albumId!) ? 'Unpin album' : 'Pin album'),
+                toggleAlbumPin,
+              )}
+            {/if}
+            {#if hasLibId}
+              {@render row('sliders', t('Edit tags…'), doEditTags)}
+            {/if}
+            {#if canReveal}
+              {@render row('folder', t('Show in folder'), () => void doReveal())}
+            {/if}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{:else if ctx}
   <div
     use:portal
     bind:this={menu}
@@ -554,4 +724,8 @@
       {/each}
     </div>
   {/if}
+{/if}
+
+{#if saveFor}
+  <SaveToMenu trackId={saveFor.trackId} title={saveFor.title} anchor={new DOMRect()} onClose={() => (saveFor = null)} />
 {/if}

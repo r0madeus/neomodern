@@ -50,6 +50,8 @@ pub struct QueueEntry {
     pub path: PathBuf,
     pub title: Option<String>,
     pub artist: Option<String>,
+    /// Added with "Add to queue" (Spotify marks these; "Clear" removes them).
+    pub queued: bool,
 }
 
 #[derive(Debug, Default)]
@@ -62,6 +64,9 @@ pub struct Queue {
     repeat: RepeatMode,
     order: Vec<EntryId>,
     rng_state: u64,
+    /// The entry "Add to queue" added last; the next one goes after it while
+    /// it has not played yet (see `enqueue`).
+    last_enqueued: Option<EntryId>,
 }
 
 impl Queue {
@@ -193,6 +198,7 @@ impl Queue {
             path: track.path,
             title: track.title,
             artist: track.artist,
+            queued: false,
         }
     }
 
@@ -205,8 +211,76 @@ impl Queue {
             .collect();
         self.entries = entries;
         self.current = start.filter(|&i| i < self.entries.len());
+        self.last_enqueued = None;
         self.rebuild_order();
         self.version += 1;
+    }
+
+    /// Spotify's "Add to queue": the track plays after the current one and
+    /// after the tracks added to the queue earlier that have not played
+    /// yet, before the rest of the list. Several adds keep their order.
+    pub fn enqueue(&mut self, track: impl Into<Track>) -> EntryId {
+        let anchor = self.last_enqueued.filter(|&id| self.is_upcoming(id));
+        let Some(anchor) = anchor else {
+            let id = self.insert_next(track);
+            if let Some(i) = self.index_of(id) {
+                self.entries[i].queued = true;
+            }
+            self.last_enqueued = Some(id);
+            return id;
+        };
+        let at = self.index_of(anchor).map_or(self.entries.len(), |i| i + 1);
+        let mut entry = self.make_entry(track.into());
+        entry.queued = true;
+        let id = entry.id;
+        self.entries.insert(at, entry);
+        if let Some(c) = self.current
+            && c >= at
+        {
+            self.current = Some(c + 1);
+        }
+        if self.shuffle {
+            let pos = self
+                .order
+                .iter()
+                .position(|&x| x == anchor)
+                .map_or(self.order.len(), |p| p + 1);
+            self.order.insert(pos, id);
+        }
+        self.version += 1;
+        self.last_enqueued = Some(id);
+        id
+    }
+
+    /// Removes the songs added with "Add to queue" that have not played yet
+    /// (Spotify's "Clear"); the list itself goes on. Returns how many.
+    pub fn clear_queued(&mut self) -> usize {
+        let doomed: Vec<usize> = (0..self.entries.len())
+            .filter(|&i| self.entries[i].queued && self.is_upcoming(self.entries[i].id))
+            .collect();
+        for &i in doomed.iter().rev() {
+            self.remove(i);
+        }
+        self.last_enqueued = None;
+        doomed.len()
+    }
+
+    /// Whether `id` is still to play (after the current entry in play order).
+    fn is_upcoming(&self, id: EntryId) -> bool {
+        if self.shuffle {
+            let Some(cur) = self.current_order_pos() else {
+                return self.order.contains(&id);
+            };
+            self.order
+                .iter()
+                .position(|&x| x == id)
+                .is_some_and(|p| p > cur)
+        } else {
+            let Some(cur) = self.current else {
+                return self.index_of(id).is_some();
+            };
+            self.index_of(id).is_some_and(|i| i > cur)
+        }
     }
 
     pub fn append<T: Into<Track>>(&mut self, tracks: Vec<T>) {
@@ -448,6 +522,55 @@ mod tests {
         let mut q = Queue::new();
         q.replace(paths(n), cur);
         q
+    }
+
+    #[test]
+    fn enqueue_keeps_the_order_of_several_adds_before_the_rest() {
+        let mut q = queue(&["a", "b", "c"], Some(0));
+        q.enqueue(PathBuf::from("x"));
+        q.enqueue(PathBuf::from("y"));
+        q.enqueue(PathBuf::from("z"));
+        assert_eq!(names(&q), ["a", "x", "y", "z", "b", "c"]);
+        // Once those played, a new add goes right after the current song.
+        q.set_current(Some(3));
+        q.enqueue(PathBuf::from("w"));
+        assert_eq!(names(&q), ["a", "x", "y", "z", "w", "b", "c"]);
+        q.set_current(Some(5));
+        q.enqueue(PathBuf::from("v"));
+        assert_eq!(names(&q), ["a", "x", "y", "z", "w", "b", "v", "c"]);
+        // A new list forgets the earlier adds.
+        q.replace(paths(&["p", "q"]), Some(0));
+        q.enqueue(PathBuf::from("r"));
+        q.enqueue(PathBuf::from("s"));
+        assert_eq!(names(&q), ["p", "r", "s", "q"]);
+    }
+
+    #[test]
+    fn clear_removes_only_the_upcoming_adds() {
+        let mut q = queue(&["a", "b", "c"], Some(0));
+        q.enqueue(PathBuf::from("x"));
+        q.enqueue(PathBuf::from("y"));
+        q.set_current(Some(1)); // "x" is playing now
+        assert!(q.get(2).unwrap().queued);
+        assert_eq!(q.clear_queued(), 1);
+        assert_eq!(names(&q), ["a", "x", "b", "c"]);
+        assert_eq!(q.current_index(), Some(1));
+    }
+
+    #[test]
+    fn enqueue_with_shuffle_plays_the_adds_next_in_order() {
+        let mut q = Queue::with_seed(7);
+        q.replace(paths(&["a", "b", "c", "d", "e"]), Some(0));
+        q.set_shuffle(true);
+        q.enqueue(PathBuf::from("x"));
+        q.enqueue(PathBuf::from("y"));
+        let mut played = Vec::new();
+        for _ in 0..2 {
+            let i = q.next_index().unwrap();
+            played.push(q.get(i).unwrap().path.clone());
+            q.set_current(Some(i));
+        }
+        assert_eq!(played, [PathBuf::from("x"), PathBuf::from("y")]);
     }
 
     #[test]

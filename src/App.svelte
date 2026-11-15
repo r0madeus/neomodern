@@ -249,6 +249,10 @@
     if (mobile) return
     artists.registerNavigator(openArtist)
     library.registerAlbumNavigator(openAlbum)
+    trackMenu.registerQueueOpener(() => {
+      nowPlaying = false
+      setRightPanel('queue')
+    })
   })
 
   onMount(() => {
@@ -303,6 +307,12 @@
 
   async function onGlobalKey(e: KeyboardEvent) {
     if (mobile) return
+    // Ctrl+O: play files from disk (the queue's "Open files" buttons are gone).
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') {
+      e.preventDefault()
+      void pickFiles(false)
+      return
+    }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
       e.preventDefault()
       online.closeAlbum()
@@ -550,14 +560,16 @@
                 'absolute top-1/2 z-10 flex size-12 -translate-y-1/2 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
                 sidebarCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-2',
               ]}
-              title={t('Play “{title}”', { title })}
-              aria-label={t('Play “{title}”', { title })}
+              title={t(playing && player.snapshot.status === 'playing' ? 'Pause' : 'Play “{title}”', { title })}
+              aria-label={t(playing && player.snapshot.status === 'playing' ? 'Pause' : 'Play “{title}”', { title })}
               onclick={(e) => {
                 e.stopPropagation()
-                play()
+                // The list that is playing pauses / resumes, like Spotify.
+                if (playing) void player.togglePause()
+                else play()
               }}
             >
-              <Icon name="play" class="size-6" />
+              <Icon name={playing && player.snapshot.status === 'playing' ? 'pause' : 'play'} class="size-6" />
             </button>
             <button
               type="button"

@@ -4,7 +4,6 @@
   import Cover from './Cover.svelte'
   import Icon from './Icon.svelte'
   import QueueList from './QueueList.svelte'
-  import { appSettings } from './appSettings.svelte'
   import { trackMenu } from './contextMenu.svelte'
   import { history, type RecentListen } from './history.svelte'
   import { library, type TrackRow } from './library.svelte'
@@ -21,7 +20,6 @@
     onSaved?: (id: number) => void
   } = $props()
 
-  const canOpenFiles = $derived(appSettings.platform !== 'android')
   let tab = $state<'queue' | 'recent'>('queue')
   let saving = $state(false)
   let name = $state('')
@@ -136,7 +134,7 @@
 </header>
 
 {#if tab === 'queue'}
-  {#if player.snapshot.queueLength > 0 || canOpenFiles}
+  {#if player.snapshot.queueLength > 0}
     <div class="shrink-0 border-b border-zinc-200/60 px-4 py-2 dark:border-zinc-800/60">
       {#if saving}
         <form
@@ -182,24 +180,6 @@
               onclick={() => (saving = true)}
             >
               {t('Save as playlist')}
-            </button>
-          {/if}
-          {#if canOpenFiles && player.snapshot.queueLength > 0}
-            <button
-              type="button"
-              class="rounded-md px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              onclick={() => onOpenFiles(true)}
-            >
-              {t('Add to queue')}
-            </button>
-          {/if}
-          {#if canOpenFiles}
-            <button
-              type="button"
-              class="rounded-md px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200/70 dark:text-zinc-200 dark:hover:bg-zinc-800"
-              onclick={() => onOpenFiles(false)}
-            >
-              {t('Open files')}
             </button>
           {/if}
         </div>

@@ -402,6 +402,20 @@
             />
           </div>
 
+          <div class="flex items-start justify-between gap-6 p-4">
+            <div class="min-w-0">
+              <p id="autoplay-label" class="text-sm font-medium">{t('Autoplay')}</p>
+              <p id="autoplay-help" class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                {t('When your music ends, similar songs from your library keep playing. Songs already played this session are not repeated. Not with repeat on.')}
+              </p>
+            </div>
+            <ToggleSwitch
+              ariaLabelledby="autoplay-label"
+              ariaDescribedby="autoplay-help"
+              bind:checked={() => appSettings.autoplay, (next) => void appSettings.setAutoplay(next)}
+            />
+          </div>
+
           <div class="flex flex-col gap-3 p-4">
             <div class="flex items-start justify-between gap-6">
               <div class="min-w-0">

@@ -10,6 +10,7 @@ interface AppSettingsPayload {
   wasapiAvailable: boolean
   lyricsSave: LyricsSave
   lyricsNetease: boolean
+  autoplay: boolean
   offlineMode: boolean
   netLyrics: boolean
   netOnline: boolean
@@ -42,6 +43,8 @@ class AppSettings {
   lyricsSave = $state<LyricsSave>('sidecar')
   /** Also search NetEase Cloud Music when LRCLIB has nothing. */
   lyricsNetease = $state(true)
+  /** Autoplay (K18): fitting songs follow when the queue runs out. */
+  autoplay = $state(true)
   /** Master switch: nothing in the app contacts the internet. */
   offlineMode = $state(false)
   /** The user's own per-feature switches (kept while offline mode is on). */
@@ -84,6 +87,15 @@ class AppSettings {
     }
   }
 
+  async setAutoplay(enabled: boolean): Promise<void> {
+    try {
+      this.#apply(await invoke<AppSettingsPayload>('app_set_autoplay', { enabled }))
+    } catch (e) {
+      player.error = String(e)
+      await this.load()
+    }
+  }
+
   async setLyricsNetease(enabled: boolean): Promise<void> {
     try {
       this.#apply(await invoke<AppSettingsPayload>('app_set_lyrics_netease', { enabled }))
@@ -114,6 +126,7 @@ class AppSettings {
   #apply(s: AppSettingsPayload): void {
     this.lyricsSave = s.lyricsSave
     this.lyricsNetease = s.lyricsNetease
+    this.autoplay = s.autoplay
     this.offlineMode = s.offlineMode
     this.netLyrics = s.netLyrics
     this.netOnline = s.netOnline

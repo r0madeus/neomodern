@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import SleepTimerButton from './SleepTimerButton.svelte'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
@@ -94,14 +95,10 @@
           </span>
         </button>
         <div class="min-w-0 flex-1">
-          <button
-            class="block max-w-full truncate text-left text-sm font-medium text-zinc-900 hover:underline focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-100"
-            onclick={onToggleNowPlayingPanel}
-            aria-pressed={nowPlayingPanel}
-            title={t(nowPlayingPanel ? 'Close now playing' : 'Open now playing')}
-          >
-            {cur.title}
-          </button>
+          <!-- The title opens the album (Spotify); the cover opens the panel. -->
+          <div class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            <TitleLink title={cur.title} path={cur.path} />
+          </div>
           <div class="truncate text-xs text-zinc-500">
             {#if cur.artist}
               <ArtistLinks artist={cur.artist} /> ·

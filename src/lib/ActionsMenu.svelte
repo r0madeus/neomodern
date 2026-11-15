@@ -10,9 +10,14 @@
   let {
     label,
     children,
+    triggerClass = 'rounded-full p-1.5 text-white/70 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/70',
+    iconClass = 'size-7',
   }: {
     label: string
     children: Snippet<[() => void]>
+    /** Look of the "…" button (phones use a round one like Back). */
+    triggerClass?: string
+    iconClass?: string
   } = $props()
 
   const WIDTH = 240
@@ -83,10 +88,10 @@
   title={label}
   aria-haspopup="menu"
   aria-expanded={open}
-  class="rounded-full p-1.5 text-white/70 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
+  class={triggerClass}
   onclick={() => (open ? close() : void show())}
 >
-  <Icon name="more" class="size-7" />
+  <Icon name="more" class={iconClass} />
 </button>
 
 {#if open}

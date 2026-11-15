@@ -57,6 +57,8 @@ export interface TrackRow {
   cover: string | null
   /** Times played (finished or at least 15 s), as in the stats. */
   plays: number
+  /** When it was added to the playlist (unix seconds); playlist pages only. */
+  addedToPlaylist?: number | null
 }
 
 export interface AlbumRow {

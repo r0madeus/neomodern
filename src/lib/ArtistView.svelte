@@ -2,7 +2,8 @@
   import { selection } from './trackSelection.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import AddToPlaylist from './AddToPlaylist.svelte'
-  import AlbumLink from './AlbumLink.svelte'
+  import ArtistLinks from './ArtistLinks.svelte'
+  import TitleLink from './TitleLink.svelte'
   import Cover from './Cover.svelte'
   import Equalizer from './Equalizer.svelte'
   import ExtBadge from './ExtBadge.svelte'
@@ -152,34 +153,43 @@
     }}
   />
 {:else}
-  <div class="h-full overflow-y-auto px-5 pb-8">
-    <button
-      type="button"
-      class="mb-4 rounded-lg px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800"
-      onclick={onBack}
-    >
-      {t('← Artists')}
-    </button>
-
+  <div class="h-full overflow-y-auto pb-8">
     {#if profile}
-      <div
-        class="relative isolate mb-6 flex flex-wrap items-end gap-6 overflow-hidden rounded-2xl p-6 text-white"
-      >
-        <TintedBackdrop background="linear-gradient(135deg, {tint.top}, {tint.surface})" />
-        <Cover
-          cover={portrait}
-          title={profile.name}
-          class="size-40 shrink-0 rounded-full text-5xl shadow-2xl shadow-black/40 sm:size-44"
-        />
-        <div class="min-w-0 flex-1">
-          <p class="text-xs font-semibold tracking-widest text-white/70 uppercase">{t('Artist')}</p>
-          <h2 class="mt-1 truncate pb-1 text-4xl leading-tight font-bold tracking-tight sm:text-5xl">{profile.name}</h2>
-          <p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white/75">
+      {@const ctx = `artist:${profile.name.toLowerCase()}`}
+      <!-- Spotify-style banner: the portrait fills it, the name sits large
+           at the bottom on a darkening gradient. -->
+      <div class="relative isolate flex h-[min(42vh,360px)] min-h-64 items-end overflow-hidden text-white">
+        {#if portrait}
+          <Cover cover={portrait} title={profile.name} class="absolute inset-0 -z-20 size-full rounded-none object-cover object-[center_30%] text-8xl" />
+        {:else}
+          <TintedBackdrop background="linear-gradient(135deg, {tint.top}, {tint.surface})" />
+        {/if}
+        <div class="absolute inset-0 -z-10 bg-gradient-to-b from-black/10 via-black/25 to-black/75"></div>
+        <button
+          type="button"
+          class="absolute top-4 left-4 rounded-full bg-black/40 p-1.5 text-white/90 outline-none hover:bg-black/60 hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
+          aria-label={t('Back')}
+          title={t('Back')}
+          onclick={onBack}
+        >
+          <Icon name="back" class="size-5" />
+        </button>
+        <div class="min-w-0 px-6 pb-6">
+          <p class="text-sm font-medium text-white/90">{t('Artist')}</p>
+          <h2
+            class={[
+              'line-clamp-2 pb-2 leading-[1.05] font-black tracking-tight break-words drop-shadow-lg',
+              profile.name.length <= 14 ? 'text-7xl xl:text-8xl' : profile.name.length <= 28 ? 'text-6xl' : 'text-4xl',
+            ]}
+          >
+            {profile.name}
+          </h2>
+          <p class="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-white/85">
             <span>{count(profile.albumCount, '{n} album', '{n} albums')}</span>
-            <span>·</span>
+            <span aria-hidden="true">•</span>
             <span>{count(profile.trackCount, '{n} track', '{n} tracks')}</span>
             {#if profile.playCount > 0}
-              <span>·</span>
+              <span aria-hidden="true">•</span>
               <span>
                 {t('Your listens: {time} · {plays}', {
                   time: formatHoursMins(profile.listenedMs),
@@ -188,140 +198,124 @@
               </span>
             {/if}
           </p>
-
-          {#if profile.genres.length > 0}
-            <div class="mt-2.5 flex flex-wrap gap-1.5">
-              {#each profile.genres as g (g)}
-                <span class="rounded-full bg-white/10 px-2.5 py-0.5 text-xs text-white/85">{g}</span>
-              {/each}
-            </div>
-          {/if}
-
-          <div class="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={profile.trackCount === 0}
-              class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 transition hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50"
-              onclick={() => void artists.play(profile!.name, 0, false)}
-            >
-              <Icon name="play" class="size-5" />
-              {t('Play')}
-            </button>
-            <ShuffleButton
-              disabled={profile.trackCount === 0}
-              onClick={() => void artists.play(profile!.name, randomTrackIndex(profile!.trackCount), true)}
-            />
-          </div>
         </div>
       </div>
 
-      <div class="flex flex-col gap-8">
-        <!-- Popular tracks & About -->
-        {#if allPopularRows.length > 0 || bio}
-          <div class="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            {#if allPopularRows.length > 0}
-              <section>
-                <h3 class="mb-3 text-base font-semibold">{t('Popular')}</h3>
-                <div class="flex flex-col gap-0.5">
-                  {#each visiblePopular as entry, i (entry.track.id)}
-                    {@const tr = entry.track}
-                    {@const active = tr.path === currentPath}
-                    {@const idx = trackIndexById.get(tr.id) ?? 0}
-                    <div
-                      role="button"
-                      tabindex="0"
-                      title={tr.path}
-                      class={[
-                        'group grid grid-cols-[1.75rem_2.25rem_minmax(0,1fr)_auto_4.25rem_3.5rem] items-center gap-3 rounded-lg px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
-                        selection.has(scope, tr.path)
-                          ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
-                          : active
-                            ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                            : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
-                      ]}
-                      aria-pressed={selection.has(scope, tr.path)}
-                      onclick={(e) => selection.click(e, scope, i, tr, (j) => visiblePopular[j]?.track)}
-                      ondblclick={() => void artists.play(profile!.name, idx)}
-                      oncontextmenu={(e) =>
-                        trackMenu.fromEvent(e, tr, {
-                          onPlay: () => void artists.play(profile!.name, idx),
-                        })}
-                      onkeydown={(e) => {
-                        if (e.target !== e.currentTarget) return
-                        if (selection.key(e, scope, visiblePopular.length, (j) => visiblePopular[j]?.track)) return
-                        if (e.key === 'Enter') void artists.play(profile!.name, idx)
-                      }}
-                    >
-                      <span class="text-right text-xs tabular-nums text-zinc-400">
-                        {#if active && player.snapshot.status === 'playing'}
-                          <Equalizer class="text-accent-600 dark:text-accent-400" />
-                        {:else}
-                          {i + 1}
-                        {/if}
-                      </span>
-                      <Cover cover={tr.cover} title={tr.title} class="size-9 rounded text-[10px]" />
-                      <span class="min-w-0">
-                        <span class="flex items-center truncate font-medium">
-                          <span class="truncate">{tr.title}</span>
-                          <ExtBadge path={tr.path} />
-                        </span>
-                        {#if tr.album}
-                          <span class="block truncate text-xs text-zinc-500">
-                            <AlbumLink album={tr.album} albumId={tr.albumId} />
-                          </span>
-                        {/if}
-                      </span>
-                      <span class="text-xs tabular-nums text-zinc-400">
-                        {entry.playCount > 0
-                          ? count(entry.playCount, '{n} play', '{n} plays')
-                          : ''}
-                      </span>
-                      <span class="flex items-center justify-end gap-0.5">
-                        <FavoriteButton trackId={tr.id} title={tr.title} revealOnHover />
-                        <span class="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-                          <AddToPlaylist
-                            trackIds={[tr.id]}
-                            track={tr}
-                            editTags
-                            onPlay={() => void artists.play(profile!.name, idx)}
-                            label={t('More actions for “{title}”', { title: tr.title })}
-                          />
-                        </span>
-                      </span>
-                      <span class="text-right text-xs tabular-nums text-zinc-500">
-                        {formatTime(tr.durationMs === null ? null : tr.durationMs / 1000)}
-                      </span>
-                    </div>
-                  {/each}
-                </div>
-                {#if allPopularRows.length > POPULAR_COLLAPSED}
-                  <button
-                    type="button"
-                    aria-expanded={showAllTracks}
-                    class="mt-2 rounded-md px-2 py-1 text-xs font-semibold text-zinc-500 transition hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none dark:text-zinc-400 dark:hover:text-zinc-100"
-                    onclick={() => (showAllTracks = !showAllTracks)}
-                  >
-                    {showAllTracks ? t('Show less') : t('All tracks')}
-                  </button>
-                {/if}
-              </section>
-            {/if}
+      <div class="relative isolate">
+        <TintedBackdrop background="linear-gradient(180deg, {tint.surface} 0%, transparent 100%)" />
+        <div class="flex items-center gap-4 px-6 pt-5 pb-4">
+          <button
+            type="button"
+            disabled={profile.trackCount === 0}
+            aria-label={t(player.isActiveFrom(ctx) ? 'Pause' : 'Play')}
+            title={t(player.isActiveFrom(ctx) ? 'Pause' : 'Play')}
+            class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg shadow-black/30 outline-none transition hover:scale-105 hover:bg-accent-400 focus-visible:ring-2 focus-visible:ring-white/80 disabled:opacity-50"
+            onclick={() => player.playOrToggle(ctx, () => artists.play(profile!.name, 0, false))}
+          >
+            <Icon name={player.isActiveFrom(ctx) ? 'pause' : 'play'} class="size-7" />
+          </button>
+          <ShuffleButton
+            disabled={profile.trackCount === 0}
+            onClick={() => void artists.play(profile!.name, randomTrackIndex(profile!.trackCount), true)}
+          />
+          {#if profile.genres.length > 0}
+            <div class="ml-2 flex min-w-0 flex-wrap gap-1.5">
+              {#each profile.genres as g (g)}
+                <span class="rounded-full bg-zinc-200/70 px-2.5 py-0.5 text-xs text-zinc-700 dark:bg-white/10 dark:text-white/85">{g}</span>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
 
-            {#if bio}
-              <section>
-                <h3 class="mb-3 text-base font-semibold">{t('About')}</h3>
-                <div class="rounded-2xl border border-zinc-200 bg-white p-4 text-sm leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
-                  {bio}
+      <div class="flex flex-col gap-8 px-5">
+        {#if allPopularRows.length > 0}
+          <section>
+            <h3 class="mb-3 px-2 text-2xl font-bold">{t('Popular')}</h3>
+            <div class="flex flex-col">
+              {#each visiblePopular as entry, i (entry.track.id)}
+                {@const tr = entry.track}
+                {@const active = tr.path === currentPath}
+                {@const idx = trackIndexById.get(tr.id) ?? 0}
+                <div
+                  role="button"
+                  tabindex="0"
+                  title={tr.path}
+                  class={[
+                    'group grid h-14 grid-cols-[1.75rem_2.5rem_minmax(0,1fr)_minmax(5rem,10rem)_2rem_3.5rem_2rem] items-center gap-3 rounded-md px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
+                    selection.has(scope, tr.path)
+                      ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
+                      : active
+                        ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                        : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+                  ]}
+                  aria-pressed={selection.has(scope, tr.path)}
+                  onclick={(e) => selection.click(e, scope, i, tr, (j) => visiblePopular[j]?.track)}
+                  ondblclick={() => void artists.play(profile!.name, idx)}
+                  oncontextmenu={(e) =>
+                    trackMenu.fromEvent(e, tr, {
+                      onPlay: () => void artists.play(profile!.name, idx),
+                    })}
+                  onkeydown={(e) => {
+                    if (e.target !== e.currentTarget) return
+                    if (selection.key(e, scope, visiblePopular.length, (j) => visiblePopular[j]?.track)) return
+                    if (e.key === 'Enter') void artists.play(profile!.name, idx)
+                  }}
+                >
+                  <span class="text-right text-sm tabular-nums text-zinc-400">
+                    {#if active && player.snapshot.status === 'playing'}
+                      <Equalizer class="ml-auto text-accent-600 dark:text-accent-400" />
+                    {:else}
+                      {i + 1}
+                    {/if}
+                  </span>
+                  <Cover cover={tr.cover} title={tr.title} class="size-10 rounded text-[10px]" />
+                  <!-- Title with the artist under it, like Spotify. -->
+                  <span class="min-w-0">
+                    <span class="flex min-w-0 items-center">
+                      <TitleLink title={tr.title} albumId={tr.albumId} class={active ? 'font-medium text-accent-600 dark:text-accent-400' : 'font-medium text-zinc-900 dark:text-zinc-100'} />
+                      <ExtBadge path={tr.path} />
+                    </span>
+                    <span class="block truncate text-[13px] text-zinc-500"><ArtistLinks artist={tr.artist} /></span>
+                  </span>
+                  <span class="text-right text-sm tabular-nums text-zinc-500">
+                    {entry.playCount.toLocaleString(i18n.locale)}
+                  </span>
+                  <span class="flex justify-center">
+                    <FavoriteButton trackId={tr.id} title={tr.title} revealOnHover />
+                  </span>
+                  <span class="text-right text-sm tabular-nums text-zinc-500">
+                    {formatTime(tr.durationMs === null ? null : tr.durationMs / 1000)}
+                  </span>
+                  <span class="flex justify-end opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+                    <AddToPlaylist
+                      trackIds={[tr.id]}
+                      track={tr}
+                      editTags
+                      onPlay={() => void artists.play(profile!.name, idx)}
+                      label={t('More actions for “{title}”', { title: tr.title })}
+                    />
+                  </span>
                 </div>
-              </section>
+              {/each}
+            </div>
+            {#if allPopularRows.length > POPULAR_COLLAPSED}
+              <button
+                type="button"
+                aria-expanded={showAllTracks}
+                class="mt-3 ml-2 rounded-md px-2 py-1 text-sm font-bold text-zinc-500 transition hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none dark:text-zinc-400 dark:hover:text-zinc-100"
+                onclick={() => (showAllTracks = !showAllTracks)}
+              >
+                {showAllTracks ? t('Show less') : t('See more')}
+              </button>
             {/if}
-          </div>
+          </section>
         {/if}
 
         <!-- Local albums -->
         {#if profile.albums.length > 0}
           <section>
-            <h3 class="mb-3 text-base font-semibold">{t('Albums in library')}</h3>
+            <h3 class="mb-3 px-2 text-2xl font-bold">{t('Albums in library')}</h3>
             <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {#each profile.albums as a (a.id)}
                 <button
@@ -349,7 +343,7 @@
         <!-- Online missing discography -->
         {#if missingAlbums.length > 0}
           <section>
-            <h3 class="mb-3 text-base font-semibold">{t('More albums (Online)')}</h3>
+            <h3 class="mb-3 px-2 text-2xl font-bold">{t('More albums (Online)')}</h3>
             <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {#each missingAlbums as a (a.id)}
                 <button
@@ -370,6 +364,15 @@
                   </div>
                 </button>
               {/each}
+            </div>
+          </section>
+        {/if}
+
+        {#if bio}
+          <section>
+            <h3 class="mb-3 px-2 text-2xl font-bold">{t('About')}</h3>
+            <div class="max-w-3xl rounded-2xl border border-zinc-200 bg-white p-5 text-sm leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
+              {bio}
             </div>
           </section>
         {/if}

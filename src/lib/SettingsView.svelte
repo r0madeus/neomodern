@@ -575,7 +575,7 @@
           {/if}
 
           <div class="flex flex-col gap-3 p-4">
-            <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div class="min-w-0 flex-1">
                 <p class="text-sm font-medium">{t('Artist profiles')}</p>
                 <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">

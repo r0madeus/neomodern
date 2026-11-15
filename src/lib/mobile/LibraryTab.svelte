@@ -9,6 +9,7 @@
   import { pinned } from '../pinned.svelte'
   import { playlists } from '../playlists.svelte'
   import { portal } from '../portal'
+  import { popLayer, pushLayer } from './layers'
 
   // Songs, Albums, Artists and the stats are on Home and in the chips
   // here; music folders are at the top of Settings; importing is under +.
@@ -79,14 +80,24 @@
   }
 
   // Like Spotify: a numbered playlist is made and opened; rename it there.
+  // The sheet is a layer, so Android's back button closes it.
+  function openCreate() {
+    if (createOpen) return
+    createOpen = true
+    pushLayer(() => (createOpen = false))
+  }
+  function closeCreate() {
+    if (createOpen) popLayer()
+  }
+
   async function create() {
-    createOpen = false
+    closeCreate()
     const made = await playlists.create(t('My playlist #{n}', { n: playlists.list.length + 1 }))
     if (made) onOpenPlaylist(made.id)
   }
 
   async function importM3u() {
-    createOpen = false
+    closeCreate()
     const made = await playlists.importM3u()
     if (made) onOpenPlaylist(made.id)
   }
@@ -246,7 +257,7 @@
         aria-label={t('Create')}
         aria-haspopup="menu"
         aria-expanded={createOpen}
-        onclick={() => (createOpen = true)}
+        onclick={openCreate}
       >
         <Icon name="plus" class="size-6" />
       </button>
@@ -467,13 +478,13 @@
 
 {#if createOpen}
   <!-- Spotify-style "+" sheet, above the mini player and the tabs. -->
-  <div use:portal class="fixed inset-0 z-[60] flex items-end bg-black/60" role="presentation" onclick={() => (createOpen = false)}>
+  <div use:portal class="fixed inset-0 z-[60] flex items-end bg-black/60" role="presentation" onclick={closeCreate}>
     <div
       role="menu"
       tabindex="-1"
       class="w-full rounded-t-2xl bg-zinc-900 px-2 pt-2 pb-[calc(1rem+var(--inset-bottom,0px))] text-zinc-100 shadow-2xl"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.key === 'Escape' && (createOpen = false)}
+      onkeydown={(e) => e.key === 'Escape' && closeCreate()}
     >
       <div class="mx-auto mb-2 h-1 w-10 rounded-full bg-zinc-600"></div>
       <button type="button" role="menuitem" class="flex w-full items-center gap-4 rounded-lg px-3 py-3 text-left active:bg-white/5" onclick={() => void create()}>

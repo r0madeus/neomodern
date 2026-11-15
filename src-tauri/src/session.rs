@@ -23,6 +23,10 @@ fn default_close_to_tray() -> bool {
     true
 }
 
+fn default_autoplay() -> bool {
+    true
+}
+
 fn default_lyrics_netease() -> bool {
     true
 }
@@ -92,6 +96,10 @@ pub struct SessionState {
     /// [`SessionStore`].
     #[serde(default = "default_lyrics_netease")]
     pub lyrics_netease: bool,
+    /// Autoplay (K18): fitting songs follow when the queue runs out.
+    /// Owned by [`SessionStore`].
+    #[serde(default = "default_autoplay")]
+    pub autoplay: bool,
     /// Master switch: nothing in the app contacts the internet. Owned by
     /// [`SessionStore`].
     #[serde(default)]
@@ -137,6 +145,7 @@ impl Default for SessionState {
             pinned: Vec::new(),
             lyrics_save: SaveMode::default(),
             lyrics_netease: default_lyrics_netease(),
+            autoplay: default_autoplay(),
             offline_mode: false,
             net_lyrics: true,
             net_online: true,
@@ -268,6 +277,7 @@ pub struct SessionStore {
     pinned: Mutex<Vec<PinnedRef>>,
     lyrics_save: Mutex<SaveMode>,
     lyrics_netease: AtomicBool,
+    autoplay: AtomicBool,
     welcome_done: AtomicBool,
     net: Arc<NetPolicy>,
 }
@@ -283,6 +293,7 @@ impl SessionStore {
             pinned: Mutex::new(Vec::new()),
             lyrics_save: Mutex::new(SaveMode::default()),
             lyrics_netease: AtomicBool::new(default_lyrics_netease()),
+            autoplay: AtomicBool::new(default_autoplay()),
             welcome_done: AtomicBool::new(false),
             net: Arc::new(NetPolicy::default()),
         }
@@ -312,6 +323,7 @@ impl SessionStore {
         *self.lyrics_save.lock().unwrap_or_else(|e| e.into_inner()) = state.lyrics_save;
         self.lyrics_netease
             .store(state.lyrics_netease, Ordering::SeqCst);
+        self.autoplay.store(state.autoplay, Ordering::SeqCst);
         self.welcome_done
             .store(state.welcome_done, Ordering::SeqCst);
         self.net.set_offline(state.offline_mode);
@@ -330,6 +342,14 @@ impl SessionStore {
 
     pub fn set_lyrics_save(&self, mode: SaveMode) {
         *self.lyrics_save.lock().unwrap_or_else(|e| e.into_inner()) = mode;
+    }
+
+    pub fn autoplay(&self) -> bool {
+        self.autoplay.load(Ordering::SeqCst)
+    }
+
+    pub fn set_autoplay(&self, enabled: bool) {
+        self.autoplay.store(enabled, Ordering::SeqCst);
     }
 
     pub fn lyrics_netease(&self) -> bool {
@@ -420,6 +440,7 @@ impl SessionStore {
         state.pinned = self.pinned();
         state.lyrics_save = self.lyrics_save();
         state.lyrics_netease = self.lyrics_netease();
+        state.autoplay = self.autoplay();
         state.welcome_done = self.welcome_done();
         state.offline_mode = self.net.offline();
         state.net_lyrics = self.net.feature_enabled(Feature::Lyrics);
@@ -518,6 +539,7 @@ mod tests {
             ],
             lyrics_save: SaveMode::Embed,
             lyrics_netease: false,
+            autoplay: false,
             offline_mode: true,
             net_lyrics: false,
             net_online: true,
@@ -605,6 +627,22 @@ mod tests {
         // Later saves driven by player events keep the value.
         again.maybe_save_position(SessionState::default);
         assert!(!load(&file).close_to_tray);
+    }
+
+    #[test]
+    fn autoplay_is_on_by_default_and_persists() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("session.json");
+        std::fs::write(&file, r#"{"volume":55.0}"#).unwrap();
+        assert!(load(&file).autoplay, "old files: on, like Spotify");
+        let store = SessionStore::new(file.clone());
+        store.load();
+        assert!(store.autoplay());
+        store.set_autoplay(false);
+        store.save_now(&SessionState::default());
+        let again = SessionStore::new(file);
+        again.load();
+        assert!(!again.autoplay());
     }
 
     #[test]

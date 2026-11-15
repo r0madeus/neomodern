@@ -2261,10 +2261,11 @@ mod tests {
 }
 
 #[cfg(test)]
-mod bulk_tests {
+pub(crate) mod bulk_tests {
     use super::*;
 
-    struct Silent;
+    /// An engine that plays nothing (also used by the autoplay tests).
+    pub(crate) struct Silent;
     impl AudioEngine for Silent {
         fn load(&self, _: &Path) -> Result<(), EngineError> {
             Ok(())

@@ -2317,3 +2317,59 @@ fn playlist_entries_remember_when_they_were_added() {
             .is_none()
     );
 }
+
+#[test]
+fn autoplay_picks_fitting_songs_and_goes_on_when_they_run_out() {
+    use std::collections::HashSet;
+    let e = env();
+    let conn = e.lib.conn();
+    let add = |path: &str, artist: &str, genre: &str, year: i64| {
+        conn.execute(
+            "INSERT INTO tracks(folder_id, path, mtime, size, title, artist, genre, year, added_at)
+             VALUES (?1, ?2, 0, 0, ?2, ?3, ?4, ?5, 0)",
+            rusqlite::params![e.folder_id, path, artist, genre, year],
+        )
+        .unwrap();
+    };
+    add("seed", "Daft Punk", "Electronic", 2001);
+    add("dp2", "Daft Punk", "Electronic", 2001);
+    add("dp3", "Daft Punk", "Electronic", 2005);
+    add("dp4", "Daft Punk", "Electronic", 2013);
+    add("justice", "Justice", "Electronic", 2007);
+    add("folk1", "Barış Manço", "Anadolu Rock", 1975);
+    add("folk2", "Cem Karaca", "Anadolu Rock", 1974);
+    drop(conn);
+    let seeds = vec!["seed".to_string()];
+    let none = HashSet::new();
+    let picks = |exclude: &HashSet<String>, n| -> Vec<String> {
+        let conn = e.lib.conn();
+        super::autoplay::pick(&conn, &seeds, exclude, n, 1_000_000_000, 42)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.path)
+            .collect()
+    };
+    // Two songs per artist at most in a batch, then the same genre.
+    let first = picks(&none, 3);
+    assert_eq!(
+        first.iter().filter(|p| p.starts_with("dp")).count(),
+        2,
+        "{first:?}"
+    );
+    assert!(first.contains(&"justice".to_string()), "{first:?}");
+    assert!(!first.contains(&"seed".to_string()));
+    // Played songs are not picked again; when the fitting ones are gone
+    // the rest of the library follows.
+    let played: HashSet<String> = ["dp2", "dp3", "dp4", "justice"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let rest = picks(&played, 5);
+    assert_eq!(rest.len(), 2, "{rest:?}");
+    assert!(rest.iter().all(|p| p.starts_with("folk")));
+    let all: HashSet<String> = ["dp2", "dp3", "dp4", "justice", "folk1", "folk2"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert!(picks(&all, 5).is_empty());
+}

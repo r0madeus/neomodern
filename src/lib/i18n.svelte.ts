@@ -224,6 +224,9 @@ const TR: Record<string, string> = {
   // Playlists
   Playlist: 'Çalma listesi',
   'New playlist': 'Yeni çalma listesi',
+  Autoplay: 'Otomatik çalma',
+  'When your music ends, similar songs from your library keep playing. Songs already played this session are not repeated. Not with repeat on.':
+    'Müziğin bitince kütüphanenden benzer şarkılar çalmaya devam eder. Bu dinlemede çalınan şarkılar tekrar çalınmaz. Tekrarlama açıkken çalışmaz.',
   'Delete playlist': 'Çalma listesini sil',
   'Delete “{name}”?': '“{name}” silinsin mi?',
   'The songs stay in your library.': 'Şarkılar kütüphanende kalır.',

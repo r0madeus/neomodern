@@ -1,4 +1,5 @@
 pub mod audio;
+mod autoplay;
 mod commands;
 mod diagnostics;
 pub mod library;
@@ -99,6 +100,18 @@ pub fn run() {
                         PlayerEvent::State(snap) => {
                             if let Some(p) = handle.try_state::<Arc<Player>>() {
                                 observer_session.on_player_state(&snap, || p.export_session());
+                                // Autoplay (K18): top the queue up near its end.
+                                if let (Some(auto), Some(lib)) = (
+                                    handle.try_state::<Arc<autoplay::Autoplay>>(),
+                                    handle.try_state::<Arc<Library>>(),
+                                ) {
+                                    auto.on_state(
+                                        &snap,
+                                        observer_session.autoplay(),
+                                        Arc::clone(&p),
+                                        Arc::clone(&lib),
+                                    );
+                                }
                             }
                             #[cfg(not(target_os = "android"))]
                             if let Some(keys) = handle.try_state::<media_keys::MediaKeys>() {
@@ -210,6 +223,7 @@ pub fn run() {
                 Err(e) => log::warn!("could not check album covers: {e}"),
             }
             app.manage(library);
+            app.manage(Arc::new(autoplay::Autoplay::default()));
 
             // Found lyrics are kept with the user's data, so a cache
             // clean-up (Android's "Clear cache") does not mean fetching every
@@ -361,6 +375,7 @@ pub fn run() {
             commands::app_open_release,
             commands::app_set_close_to_tray,
             commands::app_set_lyrics_save,
+            commands::app_set_autoplay,
             commands::app_set_lyrics_netease,
             commands::app_set_offline_mode,
             commands::app_set_net_feature,

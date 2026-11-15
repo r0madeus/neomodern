@@ -1080,6 +1080,8 @@ pub struct AppSettings {
     lyrics_save: SaveMode,
     /// Also search NetEase Cloud Music when LRCLIB has nothing.
     lyrics_netease: bool,
+    /// Autoplay: fitting songs follow when the queue runs out.
+    autoplay: bool,
     /// Master switch: nothing contacts the internet.
     offline_mode: bool,
     /// The user's own per-feature switches (kept while offline mode is on).
@@ -1109,6 +1111,7 @@ fn app_settings_now(store: &SessionStore, tray: &TrayStatus) -> AppSettings {
         wasapi_available: cfg!(target_os = "windows"),
         lyrics_save: store.lyrics_save(),
         lyrics_netease: store.lyrics_netease(),
+        autoplay: store.autoplay(),
         offline_mode: store.offline_mode(),
         net_lyrics: store.net_feature(Feature::Lyrics),
         net_online: store.net_feature(Feature::Online),
@@ -1151,6 +1154,18 @@ pub fn app_set_lyrics_save(
     mode: SaveMode,
 ) -> AppSettings {
     store.set_lyrics_save(mode);
+    store.save_now(&player.export_session());
+    app_settings_now(&store, &tray)
+}
+
+#[tauri::command]
+pub fn app_set_autoplay(
+    store: State<'_, Arc<SessionStore>>,
+    tray: State<'_, TrayStatus>,
+    player: State<'_, Arc<Player>>,
+    enabled: bool,
+) -> AppSettings {
+    store.set_autoplay(enabled);
     store.save_now(&player.export_session());
     app_settings_now(&store, &tray)
 }

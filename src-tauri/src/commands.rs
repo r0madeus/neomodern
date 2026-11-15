@@ -1930,7 +1930,8 @@ pub fn library_play_artist(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let tracks = le(lib.artist_tracks(&name))?;
-    s(player.replace_queue(tracks, start_index))
+    let context = Some(format!("artist:{}", name.to_lowercase()));
+    s(player.replace_queue_from(tracks, start_index, context))
 }
 
 #[tauri::command]

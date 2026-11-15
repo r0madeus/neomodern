@@ -179,6 +179,22 @@ contributors and agents.
   song, favourite, album, genre and artist lists; long press on phones.
   Bulk play, play next, add to queue, favourite and add to playlist.
 
+### v0.9.1 (2026-11-15, Spotify-style polish)
+- **Phones**: song swipes follow the finger (previous / current / next);
+  repeated taps no longer stack screens; pushed pages cover the screen
+  below; Library tab without the bottom list (import under "+", music
+  folders in Settings); pin on album and playlist pages; lyrics card is a
+  preview that follows the song (tap for full screen).
+- **Desktop**: Spotify-like sidebar (bigger rows, playing list marked, "+"
+  menu), album and playlist headers (big title, details line, round play,
+  pin, "…" for the rest), simpler playlist rows, "Next in queue" card in the
+  now-playing panel, sleep timer in the song menu (bar icon only while it
+  runs), no duplicate recent tracks on Home.
+- **Everywhere**: plays column in albums and playlists; save button (+ /
+  check) with an "Add to playlist" menu; sleep menu no longer hidden.
+- **Data**: downloaded album covers, artist pictures and lyrics are kept
+  in the data folder (docs/DATA-LAYOUT.md), not lost with the cache.
+
 ## Next
 
 1. **Try metadata matching on real albums** (desktop and phone): the

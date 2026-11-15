@@ -12,10 +12,8 @@ pub mod online;
 pub mod player;
 pub mod queue;
 pub mod session;
-// PC <-> phone sync (docs/SYNC.md). Not wired into the app yet: the
-// service that uses it lands later, hence the allowances.
-#[allow(dead_code, unused_imports)]
-mod sync;
+// PC <-> phone sync and remote control (docs/SYNC.md).
+pub mod sync;
 pub mod tray;
 pub mod update;
 
@@ -94,12 +92,16 @@ pub fn run() {
 
             let handle = app.handle().clone();
             let observer_session = Arc::clone(&session_store);
+            // The phone remote's view of the player (docs/SYNC.md).
+            let remote_feed = sync::RemoteFeed::new();
+            let observer_feed = remote_feed.clone();
             let player = Arc::new(Player::new(
                 Box::new(audio::NetGuardedEngine::new(
                     Box::new(engine),
                     session_store.net_policy(),
                 )),
                 Box::new(move |event| {
+                    observer_feed.on_player_event(&event);
                     let result = match event {
                         PlayerEvent::State(snap) => {
                             if let Some(p) = handle.try_state::<Arc<Player>>() {
@@ -209,6 +211,9 @@ pub fn run() {
                             }
                         }),
                         on_changed: Box::new(move |version| {
+                            if let Some(svc) = changed_handle.try_state::<sync::SyncService>() {
+                                svc.library_changed();
+                            }
                             if let Err(e) = changed_handle.emit("library://changed", version) {
                                 log::warn!("failed to emit library change event: {e}");
                             }
@@ -228,7 +233,25 @@ pub fn run() {
                 Ok(_) => {}
                 Err(e) => log::warn!("could not check album covers: {e}"),
             }
+            // PC <-> phone sync: the desktop listens only while "Allow
+            // phone connections" is on; the phone keeps a session to its
+            // paired computer.
+            let sync_service = sync::SyncService::new(
+                Arc::clone(&library),
+                Some(Arc::clone(&*app.state::<Arc<Player>>())),
+                remote_feed,
+                Arc::new(sync::TauriSink(app.handle().clone())),
+                sync::SyncConfig {
+                    port: sync::link::DEFAULT_PORT,
+                    server: cfg!(not(target_os = "android")),
+                    default_name: sync::default_device_name(),
+                    backup_dir: data_dir.join("sync-backups"),
+                },
+            );
             app.manage(library);
+            app.manage(sync_service.clone());
+            let allow_phones = app.state::<Arc<SessionStore>>().allow_phone_connections();
+            tauri::async_runtime::spawn(async move { sync_service.start(allow_phones).await });
             app.manage(Arc::new(autoplay::Autoplay::default()));
 
             // Found lyrics are kept with the user's data, so a cache
@@ -437,6 +460,20 @@ pub fn run() {
             commands::library_home_mix,
             commands::library_play_mix,
             commands::library_save_mix_playlist,
+            sync::commands::sync_status,
+            sync::commands::sync_set_allow_phone_connections,
+            sync::commands::sync_set_device_name,
+            sync::commands::sync_pair_open,
+            sync::commands::sync_pair_close,
+            sync::commands::sync_remove_peer,
+            sync::commands::sync_connect_pair,
+            sync::commands::sync_now,
+            sync::commands::sync_forget,
+            sync::commands::sync_guard_decide,
+            sync::commands::remote_send,
+            sync::commands::remote_queue_page,
+            sync::commands::remote_state,
+            sync::commands::sync_cover_for_key,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

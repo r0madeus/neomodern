@@ -768,4 +768,99 @@ const TR: Record<string, string> = {
   'My playlist #{n}': 'Çalma listem #{n}',
   'Added to “{name}”': '“{name}” listesine eklendi',
   'Play “{title}”': '“{title}” çal',
+
+  // Phone <-> computer sync and remote control
+  Phone: 'Telefon',
+  Computer: 'Bilgisayar',
+  'Allow phone connections': 'Telefon bağlantılarına izin ver',
+  'Your phone can sync favorites and playlists with this computer and control what it plays. Same Wi-Fi only; off by default. Windows may ask whether NeoModern may use the network.':
+    'Telefonun favorilerini ve çalma listelerini bu bilgisayarla eşitleyebilir ve burada çalanı yönetebilir. Yalnızca aynı Wi-Fi ağında çalışır; varsayılan olarak kapalıdır. Windows, NeoModern’in ağı kullanmasına izin verip vermeyeceğini sorabilir.',
+  'Waiting for phones on port {port}': '{port} numaralı bağlantı noktasında telefon bekleniyor',
+  'Pair a phone': 'Telefon eşle',
+  'Shows a code to type into NeoModern on your phone (Settings › Computer).':
+    'Telefonundaki NeoModern’e yazacağın bir kod gösterir (Ayarlar › Bilgisayar).',
+  'On your phone, enter this code': 'Telefonunda bu kodu gir',
+  'and this address': 've bu adresi',
+  'and one of these addresses': 've bu adreslerden birini',
+  'No local network found. Connect this computer to Wi-Fi or a network cable.':
+    'Yerel ağ bulunamadı. Bu bilgisayarı Wi-Fi’a ya da ağ kablosuna bağla.',
+  'Expires in {time}': '{time} içinde geçersiz olur',
+  'New code': 'Yeni kod',
+  'The code has expired.': 'Kodun süresi doldu.',
+  'Too many wrong codes were typed, so this code no longer works.':
+    'Çok fazla yanlış kod girildi, bu kod artık geçerli değil.',
+  'Paired phones': 'Eşlenmiş telefonlar',
+  'No phones paired yet.': 'Henüz eşlenmiş telefon yok.',
+  Connected: 'Bağlı',
+  'Not connected': 'Bağlı değil',
+  'Connecting…': 'Bağlanıyor…',
+  'Syncing…': 'Eşitleniyor…',
+  'Never synced': 'Hiç eşitlenmedi',
+  'Synced just now': 'Az önce eşitlendi',
+  'Synced {when}': 'Eşitlendi: {when}',
+  '{sent} sent · {received} received · {changed} changed here':
+    '{sent} gönderildi · {received} alındı · burada {changed} değişti',
+  'Remove {device}? It can no longer sync or control this computer until you pair it again.':
+    '{device} kaldırılsın mı? Yeniden eşleyene kadar bu bilgisayarla eşitleme yapamaz ve onu yönetemez.',
+  'Computer name': 'Bilgisayar adı',
+  'Your phone shows this name.': 'Telefonun bu adı gösterir.',
+  'Phone name': 'Telefon adı',
+  'The computer shows this name.': 'Bilgisayar bu adı gösterir.',
+  'Connect to a computer': 'Bir bilgisayara bağlan',
+  'On the computer, open Settings › Phone, turn on “Allow phone connections” and choose “Pair a phone”. Both devices must be on the same Wi-Fi.':
+    'Bilgisayarda Ayarlar › Telefon’u aç, “Telefon bağlantılarına izin ver”i aç ve “Telefon eşle”yi seç. İki cihaz da aynı Wi-Fi ağında olmalı.',
+  'Computer address': 'Bilgisayarın adresi',
+  Code: 'Kod',
+  Connect: 'Bağlan',
+  'Enter the address shown on the computer, e.g. 192.168.1.20.':
+    'Bilgisayarda gösterilen adresi gir, örneğin 192.168.1.20.',
+  'Use the computer’s local network address (it usually starts with 192.168. or 10.).':
+    'Bilgisayarın yerel ağ adresini kullan (genellikle 192.168. ya da 10. ile başlar).',
+  'Wrong code. Check the code on the computer and try again.':
+    'Kod yanlış. Bilgisayardaki kodu kontrol edip yeniden dene.',
+  'Too many wrong codes. Ask the computer for a new code.':
+    'Çok fazla yanlış kod. Bilgisayardan yeni bir kod al.',
+  'The code has expired. Ask the computer for a new code.':
+    'Kodun süresi doldu. Bilgisayardan yeni bir kod al.',
+  'The computer is not showing a code. Choose “Pair a phone” on the computer first.':
+    'Bilgisayar bir kod göstermiyor. Önce bilgisayarda “Telefon eşle”yi seç.',
+  'Another device is pairing right now. Try again in a moment.':
+    'Şu anda başka bir cihaz eşleniyor. Biraz sonra yeniden dene.',
+  'Cannot reach the computer. Check the address and that both devices are on the same Wi-Fi.':
+    'Bilgisayara ulaşılamıyor. Adresi ve iki cihazın da aynı Wi-Fi ağında olduğunu kontrol et.',
+  'The apps do not match. Update NeoModern on both devices.':
+    'Uygulama sürümleri uyuşmuyor. İki cihazda da NeoModern’i güncelle.',
+  'Enter the computer’s local address, e.g. 192.168.1.20.':
+    'Bilgisayarın yerel adresini gir, örneğin 192.168.1.20.',
+  'Remote control': 'Uzaktan kumanda',
+  'Sync now': 'Şimdi eşitle',
+  Forget: 'Unut',
+  'Forget this computer': 'Bu bilgisayarı unut',
+  'Forget {device}? Your music stays on both devices; to sync again you pair with a new code.':
+    '{device} unutulsun mu? Müziklerin iki cihazda da kalır; yeniden eşitlemek için yeni bir kodla eşlersin.',
+  '{device} wants to make big deletions here:': '{device} burada büyük silmeler yapmak istiyor:',
+  'Remove {n} of your {m} favorites': '{m} favorinden {n} tanesini kaldırmak',
+  'Delete the playlist {names}': '{names} listesini silmek',
+  'Delete {n} playlists: {names}': '{n} çalma listesini silmek: {names}',
+  'and {n} more': 've {n} tane daha',
+  'Remove {n} of {m} songs from “{name}”': '“{name}” listesindeki {m} şarkıdan {n} tanesini kaldırmak',
+  'Nothing was changed yet. Keep your data if this was not on purpose.':
+    'Henüz hiçbir şey değişmedi. Bu bilerek yapılmadıysa verilerini koru.',
+  'Keep my data': 'Verilerimi koru',
+  'Playing on': 'Çalan cihaz',
+  'Close remote control': 'Uzaktan kumandayı kapat',
+  'Not connected to {device}': '{device} ile bağlantı yok',
+  'No computer is paired': 'Eşlenmiş bilgisayar yok',
+  'Make sure NeoModern is open on the computer, “Allow phone connections” is on, and both devices are on the same Wi-Fi.':
+    'Bilgisayarda NeoModern’in açık, “Telefon bağlantılarına izin ver”in açık ve iki cihazın da aynı Wi-Fi ağında olduğundan emin ol.',
+  'Pair with a computer in Settings › Computer.': 'Ayarlar › Bilgisayar’dan bir bilgisayarla eşle.',
+  'Try again': 'Yeniden dene',
+  'Nothing is playing': 'Hiçbir şey çalmıyor',
+  'The queue changed on the computer. The list was reloaded; try again.':
+    'Bilgisayardaki sıra değişti. Liste yenilendi; yeniden dene.',
+  'Too many taps at once. Try again in a moment.': 'Aynı anda çok fazla dokunuş. Biraz sonra yeniden dene.',
+  'Not connected to the computer.': 'Bilgisayara bağlı değil.',
+  'The computer did not answer.': 'Bilgisayar yanıt vermedi.',
+  'Nothing else in the queue.': 'Sırada başka şarkı yok.',
+  'Show more': 'Daha fazla göster',
 }

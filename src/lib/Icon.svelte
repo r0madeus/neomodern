@@ -54,6 +54,8 @@
     | 'grid'
     | 'list'
     | 'sort'
+    | 'phone'
+    | 'computer'
 </script>
 
 <script lang="ts">
@@ -120,6 +122,8 @@
     grid: 'M4 4h6.5v6.5H4V4Zm1.5 1.5v3.5H9V5.5H5.5ZM13.5 4H20v6.5h-6.5V4Zm1.5 1.5v3.5h3.5V5.5H15ZM4 13.5h6.5V20H4v-6.5Zm1.5 1.5v3.5H9V15H5.5Zm8-1.5H20V20h-6.5v-6.5Zm1.5 1.5v3.5h3.5V15H15Z',
     list: 'M4 6h2v2H4V6Zm4 0h12v2H8V6Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Z',
     sort: 'M7.5 9.5 12 5l4.5 4.5h-9Zm0 5L12 19l4.5-4.5h-9Z',
+    phone: 'M16 1H8a2.5 2.5 0 0 0-2.5 2.5v17A2.5 2.5 0 0 0 8 23h8a2.5 2.5 0 0 0 2.5-2.5v-17A2.5 2.5 0 0 0 16 1Zm-4 20.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5ZM16.5 18h-9V4h9v14Z',
+    computer: 'M20 18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2H0v2h24v-2h-4ZM4 6h16v10H4V6Z',
   }
 </script>
 

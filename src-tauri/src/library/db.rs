@@ -1110,6 +1110,29 @@ fn rewrite(conn: &Connection, id: i64, ids: &[i64]) -> Result<()> {
 
 /// Removes the entries at the given indexes (duplicates and out-of-range
 /// indexes are ignored) and closes the gaps.
+/// Ids of the playlists that contain `track_id`.
+pub fn playlists_with_track(conn: &Connection, track_id: i64) -> Result<Vec<i64>> {
+    let mut st = conn.prepare_cached(
+        "SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1 ORDER BY playlist_id",
+    )?;
+    Ok(st
+        .query_map([track_id], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?)
+}
+
+/// Removes every entry of `track_id` from playlist `id`.
+pub fn playlist_remove_track(conn: &mut Connection, id: i64, track_id: i64) -> Result<()> {
+    let tx = conn.transaction()?;
+    ensure_playlist(&tx, id)?;
+    let kept: Vec<i64> = order(&tx, id)?
+        .into_iter()
+        .filter(|t| *t != track_id)
+        .collect();
+    rewrite(&tx, id, &kept)?;
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn playlist_remove(conn: &mut Connection, id: i64, indexes: &[usize]) -> Result<()> {
     let tx = conn.transaction()?;
     ensure_playlist(&tx, id)?;

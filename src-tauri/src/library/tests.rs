@@ -2195,3 +2195,28 @@ fn track_rows_count_plays_like_the_stats() {
     let pl = e.lib.create_playlist("P", &[rows[0].id]).unwrap();
     assert_eq!(e.lib.playlist_tracks(pl.id, 0, 10).unwrap()[0].plays, 2);
 }
+
+#[test]
+fn playlists_know_which_contain_a_track_and_drop_it() {
+    let e = env();
+    let ids = scanned_tracks(&e, &["Alpha", "Beta"]);
+    let a = e
+        .lib
+        .create_playlist("A", &[ids[0], ids[1], ids[0]])
+        .unwrap()
+        .id;
+    let b = e.lib.create_playlist("B", &[ids[1]]).unwrap().id;
+    assert_eq!(e.lib.playlists_with_track(ids[0]).unwrap(), [a]);
+    assert_eq!(e.lib.playlists_with_track(ids[1]).unwrap(), [a, b]);
+    // Both copies go; the rest keeps its order.
+    e.lib.playlist_remove_track(a, ids[0]).unwrap();
+    let left: Vec<i64> = e
+        .lib
+        .playlist_tracks(a, 0, 10)
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    assert_eq!(left, [ids[1]]);
+    assert!(e.lib.playlists_with_track(ids[0]).unwrap().is_empty());
+}

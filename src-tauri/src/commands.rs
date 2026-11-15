@@ -916,6 +916,25 @@ pub fn playlist_remove(
     Ok(())
 }
 
+/// Playlists that contain the track (for the "Saved in" list).
+#[tauri::command]
+pub fn playlists_with_track(lib: State<'_, Arc<Library>>, track_id: i64) -> Res<Vec<i64>> {
+    le(lib.playlists_with_track(track_id))
+}
+
+/// Takes every entry of the track out of the playlist.
+#[tauri::command]
+pub fn playlist_remove_track(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    id: i64,
+    track_id: i64,
+) -> Res<()> {
+    le(lib.playlist_remove_track(id, track_id))?;
+    playlists_changed(&app);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn playlist_move(
     app: AppHandle,

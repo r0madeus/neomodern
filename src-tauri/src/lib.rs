@@ -320,6 +320,8 @@ pub fn run() {
             commands::playlist_add_album,
             commands::playlist_remove,
             commands::playlist_move,
+            commands::playlists_with_track,
+            commands::playlist_remove_track,
             commands::playlist_play,
             commands::playlist_from_queue,
             commands::playlist_export_m3u,

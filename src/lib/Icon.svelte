@@ -41,6 +41,8 @@
     | 'sidebar'
     | 'sliders'
     | 'moon'
+    | 'plusCircle'
+    | 'checkCircle'
     | 'equalizer'
     | 'globe'
     | 'info'
@@ -98,6 +100,8 @@
       'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2ZM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5Z',
     home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8h5Z',
     sidebar: 'M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2ZM9 19H5V5h4v14Zm10 0h-8V5h8v14Z',
+    plusCircle: 'M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7Zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8Z',
+    checkCircle: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9Z',
     moon: 'M12.3 2.05A10 10 0 1 0 21.95 11.7 7.5 7.5 0 0 1 12.3 2.05Z',
     equalizer: 'M10 20h4V4h-4v16Zm-6 0h4v-8H4v8ZM16 9v11h4V9h-4Z',
     sliders: 'M3 17v2h6v-2H3ZM3 5v2h10V5H3Zm10 16v-2h8v-2h-8v-2h-2v6h2ZM7 9v2H3v2h4v2h2V9H7Zm14 4v-2H11v2h10Zm-6-4h2V7h4V5h-4V3h-2v6Z',

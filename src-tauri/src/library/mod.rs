@@ -752,6 +752,14 @@ impl Library {
         db::playlist_remove(&mut self.conn(), id, indexes)
     }
 
+    pub fn playlists_with_track(&self, track_id: i64) -> Result<Vec<i64>> {
+        db::playlists_with_track(&self.conn(), track_id)
+    }
+
+    pub fn playlist_remove_track(&self, id: i64, track_id: i64) -> Result<()> {
+        db::playlist_remove_track(&mut self.conn(), id, track_id)
+    }
+
     pub fn playlist_move(&self, id: i64, from: usize, to: usize) -> Result<()> {
         db::playlist_move(&mut self.conn(), id, from, to)
     }

@@ -33,8 +33,10 @@ fn known_phone(id: &str) -> Option<[u8; 32]> {
     (id == phone().id).then_some(PC_SECRET)
 }
 
-fn responder(window: Arc<PairingWindow>) -> Responder<fn(&str) -> Option<[u8; 32]>> {
-    Responder::new(pc(), window, known_phone as fn(&str) -> Option<[u8; 32]>)
+type Lookup = fn(&str) -> Option<[u8; 32]>;
+
+fn responder(window: Arc<PairingWindow>) -> Responder<Lookup> {
+    Responder::new(pc(), window, known_phone as Lookup)
 }
 
 fn other_code(code: &str) -> String {

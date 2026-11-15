@@ -14,6 +14,20 @@ export type TrackMenuOptions = Omit<TrackMenuContext, 'track' | 'x' | 'y' | 'ali
 
 class TrackMenuState {
   current = $state<TrackMenuContext | null>(null)
+  #openQueue: (() => void) | null = null
+
+  /** The phone or desktop shell says how "Go to queue" opens the queue. */
+  registerQueueOpener(fn: () => void): void {
+    this.#openQueue = fn
+  }
+
+  get canOpenQueue(): boolean {
+    return this.#openQueue !== null
+  }
+
+  openQueue(): void {
+    this.#openQueue?.()
+  }
 
   open(ctx: TrackMenuContext): void {
     this.current = ctx

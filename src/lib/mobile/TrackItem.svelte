@@ -27,6 +27,7 @@
     selectScope = null,
     index = 0,
     onPlay,
+    onRemoveFromPlaylist,
   }: {
     title: string
     subtitle?: string
@@ -44,6 +45,8 @@
     selectScope?: string | null
     index?: number
     onPlay: () => void
+    /** On a playlist page: the menu offers "Remove from this playlist". */
+    onRemoveFromPlaylist?: () => void
   } = $props()
 
   const selectable = $derived(selectScope !== null && track !== null)
@@ -127,6 +130,7 @@
       trackIds={[trackId]}
       {track}
       {onPlay}
+      {onRemoveFromPlaylist}
       editTags
       label={t('More actions for “{title}”', { title })}
       class="p-3 text-zinc-400"

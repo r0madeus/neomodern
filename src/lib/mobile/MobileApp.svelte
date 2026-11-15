@@ -36,6 +36,7 @@
   import { library } from '../library.svelte'
   import { lyrics } from '../lyrics.svelte'
   import { playlists } from '../playlists.svelte'
+  import { trackMenu } from '../contextMenu.svelte'
 
   // The phone UI: three primary tabs, pages pushed on top of them, a
   // floating translucent bottom bar with mini player, and full-screen player.
@@ -138,6 +139,7 @@
   $effect(() => {
     artists.registerNavigator((name) => navigateFromOverlays({ type: 'artist', name }))
     library.registerAlbumNavigator((id) => navigateFromOverlays({ type: 'album', id }))
+    trackMenu.registerQueueOpener(openQueue)
   })
 
   // A deleted playlist closes its page when it is on top.

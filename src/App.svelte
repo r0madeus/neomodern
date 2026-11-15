@@ -249,6 +249,10 @@
     if (mobile) return
     artists.registerNavigator(openArtist)
     library.registerAlbumNavigator(openAlbum)
+    trackMenu.registerQueueOpener(() => {
+      nowPlaying = false
+      setRightPanel('queue')
+    })
   })
 
   onMount(() => {

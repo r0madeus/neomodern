@@ -224,6 +224,8 @@ const TR: Record<string, string> = {
   // Playlists
   Playlist: 'Çalma listesi',
   'New playlist': 'Yeni çalma listesi',
+  'Remove from this playlist': 'Bu çalma listesinden çıkar',
+  'Go to queue': 'Sıraya git',
   'Next in queue': 'Sıradaki',
   'Open queue': 'Kuyruğu aç',
   'Build a playlist with songs': 'Şarkılarla bir çalma listesi oluştur',

@@ -105,6 +105,7 @@
           trackId={track.id}
           {track}
           onPlay={() => playlists.play(id, i)}
+          onRemoveFromPlaylist={() => void playlists.removeAt(id, [i])}
         />
       {/each}
     {/if}

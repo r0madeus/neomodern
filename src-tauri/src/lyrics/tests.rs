@@ -1658,6 +1658,80 @@ fn sharing_is_refused_without_requests_when_lyrics_are_off() {
     assert!(server.requests().is_empty());
 }
 
+#[test]
+fn online_stream_uses_queue_meta_and_cleans_youtube_titles() {
+    let dir = TempDir::new().unwrap();
+    let hit_body = serde_json::json!({
+        "syncedLyrics": "[00:06.42] Kimseyi görmedim ben\n",
+        "plainLyrics": "Kimseyi görmedim ben",
+        "instrumental": false,
+        "duration": 239.0
+    })
+    .to_string();
+
+    // Primary raw query (channel + dirty video title) returns 404 + empty search;
+    // cleaned split fallback (`artist=Duman`, `track_name=Senden Daha Güzel`) returns 200.
+    let server = MockServer::start(vec![
+        (404, String::new()),
+        (200, "[]".into()),
+        (200, hit_body),
+    ]);
+    let lib = empty_library(dir.path());
+    let svc = LyricsService::with_base_url(&dir.path().join("cache"), &server.addr).unwrap();
+    let opts = LyricsOptions::new(SaveMode::Sidecar, false, None).with_queue_meta(Some((
+        "Duman - Senden Daha Güzel (Official Video) ft. Guest".into(),
+        "Netd Müzik".into(),
+    )));
+
+    let res = block_on(svc.for_track_with(
+        lib,
+        "https://rr1.googlevideo.com/videoplayback?expire=999999".into(),
+        Some(247.0),
+        false,
+        &opts,
+    ))
+    .unwrap();
+
+    assert_eq!(
+        res,
+        LyricsResult::Synced {
+            source: LyricsSource::Lrclib,
+            lines: vec![LyricLine {
+                time_seconds: 6.42,
+                text: "Kimseyi görmedim ben".into(),
+            }],
+        }
+    );
+    let reqs = server.requests();
+    assert_eq!(reqs.len(), 3);
+    assert!(reqs[2].contains("/api/get?"));
+    assert!(reqs[2].contains("artist_name=Duman"));
+    assert!(reqs[2].contains("track_name=Senden+Daha+G%C3%BCzel"));
+}
+
+#[test]
+fn pick_best_match_tolerates_small_intro_offset_while_rejecting_far_durations() {
+    let far = super::lrclib::LrclibRecord {
+        synced_lyrics: Some("[00:01.00] Remix".into()),
+        plain_lyrics: None,
+        instrumental: false,
+        duration: Some(400.0),
+    };
+    let video_intro = super::lrclib::LrclibRecord {
+        synced_lyrics: Some("[00:02.00] Studio match".into()),
+        plain_lyrics: None,
+        instrumental: false,
+        duration: Some(248.0),
+    };
+
+    let picked = super::lrclib::pick_best_match(vec![far.clone(), video_intro], Some(239));
+    assert_eq!(
+        picked.and_then(|r| r.synced_lyrics),
+        Some("[00:02.00] Studio match".into())
+    );
+    assert!(super::lrclib::pick_best_match(vec![far], Some(239)).is_none());
+}
+
 // ---- live (network) checks: cargo test -- --ignored ----
 
 #[test]

@@ -14,6 +14,7 @@ const USER_AGENT: &str = concat!(
     " (https://github.com/r0madeus/neomodern)"
 );
 const SEARCH_DURATION_TOLERANCE_SECS: f64 = 5.0;
+const LOOSE_DURATION_TOLERANCE_SECS: f64 = 20.0;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,7 +100,20 @@ pub fn pick_best_match(
             if !exact.is_empty() {
                 exact
             } else {
-                valid.into_iter().filter(|r| r.duration.is_none()).collect()
+                // Online videos/intros often differ by 5–20s from the studio master.
+                let loose: Vec<LrclibRecord> = valid
+                    .iter()
+                    .filter(|r| {
+                        r.duration
+                            .is_some_and(|d| (d - target).abs() <= LOOSE_DURATION_TOLERANCE_SECS)
+                    })
+                    .cloned()
+                    .collect();
+                if !loose.is_empty() {
+                    loose
+                } else {
+                    valid.into_iter().filter(|r| r.duration.is_none()).collect()
+                }
             }
         }
         None => valid,

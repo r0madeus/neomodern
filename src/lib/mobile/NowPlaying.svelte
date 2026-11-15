@@ -45,6 +45,7 @@
   const hasLyrics = $derived(
     lyrics.result !== null && (lyrics.result.kind === 'synced' || lyrics.result.kind === 'plain'),
   )
+  const isStream = $derived(!!snap.current && /^https?:\/\//i.test(snap.current.path))
 
   function onTouchStart(e: TouchEvent) {
     if (e.touches.length !== 1) return
@@ -276,12 +277,22 @@
           <div class="flex items-center gap-2">
             {#if snap.current}
               <button
-                class="rounded-full bg-black/25 p-2.5 active:bg-black/40"
-                aria-label={t("Load .lrc file")}
-                onclick={() => snap.current && void lyrics.pickAndAttach(snap.current.path)}
+                class="rounded-full bg-black/25 p-2.5 active:bg-black/40 disabled:opacity-40"
+                aria-label={t("Refresh lyrics")}
+                disabled={lyrics.loading}
+                onclick={() => snap.current && void lyrics.load(snap.current.path, duration, true)}
               >
-                <Icon name="upload" class="size-4" />
+                <Icon name="refresh" class={lyrics.loading ? 'size-4 animate-spin' : 'size-4'} />
               </button>
+              {#if !isStream}
+                <button
+                  class="rounded-full bg-black/25 p-2.5 active:bg-black/40"
+                  aria-label={t("Load .lrc file")}
+                  onclick={() => snap.current && void lyrics.pickAndAttach(snap.current.path)}
+                >
+                  <Icon name="upload" class="size-4" />
+                </button>
+              {/if}
             {/if}
             {#if hasLyrics}
               <button class="rounded-full bg-black/25 p-2.5 active:bg-black/40" aria-label={t("Full-screen lyrics")} onclick={onLyrics}>

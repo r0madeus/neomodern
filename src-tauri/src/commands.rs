@@ -1465,7 +1465,8 @@ pub async fn lyrics_for_track(
         store.lyrics_save(),
         store.lyrics_netease() && store.net_allowed(Feature::Lyrics),
         player.current_path(),
-    );
+    )
+    .with_queue_meta(player.queue_track_meta(&path));
     lyrics
         .for_track_with(lib, path, duration_seconds, force, &opts)
         .await

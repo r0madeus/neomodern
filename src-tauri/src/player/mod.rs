@@ -674,6 +674,28 @@ impl Player {
             .map(|e| e.path.to_string_lossy().into_owned())
     }
 
+    /// Title and artist stored in the queue for `path` (fallback when a track
+    /// is an online stream or has no library/tag metadata on disk).
+    pub fn queue_track_meta(&self, path: &str) -> Option<(String, String)> {
+        let inner = self.lock();
+        let target = Path::new(path);
+        let key = crate::library::scan::display_path(target);
+        let matches_path = |e: &crate::queue::QueueEntry| {
+            e.path == target || crate::library::scan::display_path(&e.path) == key
+        };
+        let entry = inner
+            .queue
+            .current()
+            .filter(|e| matches_path(e))
+            .or_else(|| inner.queue.entries().iter().find(|e| matches_path(e)))?;
+        let title = entry.title.as_deref().unwrap_or("").trim().to_owned();
+        if title.is_empty() {
+            return None;
+        }
+        let artist = entry.artist.as_deref().unwrap_or("").trim().to_owned();
+        Some((title, artist))
+    }
+
     /// Refreshes the title/artist shown for queue entries playing `path`
     /// (after its tags were edited) and publishes a new state. Returns how
     /// many entries changed.
@@ -1511,6 +1533,12 @@ mod tests {
             (page[0].title.as_str(), page[0].artist.as_str()),
             ("02 - Plain", "")
         );
+        assert_eq!(
+            p.queue_track_meta("/music/01 - Track 1.mp3"),
+            Some(("Morning Light".into(), "Nadia Okafor".into()))
+        );
+        assert_eq!(p.queue_track_meta("/music/02 - Plain.mp3"), None);
+        assert_eq!(p.queue_track_meta("/music/missing.mp3"), None);
     }
 
     #[test]

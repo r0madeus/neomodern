@@ -172,38 +172,189 @@ fn query_from_lyrics_meta(meta: &db::TrackLyricsMeta) -> Option<TrackQuery> {
     })
 }
 
-fn resolve_query_sync(
-    lib: &Library,
-    path: &str,
-    duration_hint_secs: Option<f64>,
-) -> Option<TrackQuery> {
-    let audio_path = Path::new(path);
-    let meta = lib
-        .track_meta(path)
-        .ok()
-        .flatten()
-        .or_else(|| scan::read_track_meta(audio_path))?;
-
-    let title = meta.title.trim().to_string();
-    let artist = meta.artist.trim().to_string();
-    if title.is_empty() || artist.is_empty() {
-        return None;
-    }
-
-    let duration_secs = meta
-        .duration_ms
+fn resolve_duration_secs(duration_ms: Option<u64>, duration_hint_secs: Option<f64>) -> Option<u64> {
+    duration_ms
         .filter(|ms| *ms > 0)
         .map(|ms| (ms + 500) / 1000)
         .or_else(|| {
             duration_hint_secs
                 .filter(|d| d.is_finite() && *d > 0.0)
                 .map(|d| d.round() as u64)
-        });
+        })
+}
 
+fn is_noise_bracket(inner: &str) -> bool {
+    let lower = inner.trim().to_ascii_lowercase();
+    const KEYWORDS: &[&str] = &[
+        "official",
+        "lyric",
+        "lyrics",
+        "video",
+        "audio",
+        "visualizer",
+        "klip",
+        "remaster",
+        "hd",
+        "4k",
+        "hq",
+        "mv",
+        "live session",
+        "explicit",
+        "clean version",
+        "sözleri",
+        "resmi",
+    ];
+    KEYWORDS.iter().any(|k| lower.contains(k))
+}
+
+fn strip_video_noise(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let chars: Vec<char> = title.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let open = chars[i];
+        if open == '(' || open == '[' {
+            let close = if open == '(' { ')' } else { ']' };
+            if let Some(rel_end) = chars[i + 1..].iter().position(|&c| c == close) {
+                let inner: String = chars[i + 1..i + 1 + rel_end].iter().collect();
+                if is_noise_bracket(&inner) {
+                    i += rel_end + 2;
+                    continue;
+                }
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    let trimmed = out.trim();
+    // Strip trailing `feat. ...` / `ft. ...` suffix outside brackets (common in YouTube titles).
+    let lower = trimmed.to_ascii_lowercase();
+    let without_feat = [" feat. ", " feat ", " ft. ", " ft "]
+        .iter()
+        .filter_map(|marker| lower.find(marker))
+        .min()
+        .map(|idx| trimmed[..idx].trim())
+        .unwrap_or(trimmed);
+    without_feat
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn clean_artist_suffix(artist: &str) -> String {
+    let s = artist.trim();
+    for suffix in [
+        " - Topic",
+        " - topic",
+        " Official",
+        " official",
+        " VEVO",
+        " vevo",
+    ] {
+        if let Some(stripped) = s.strip_suffix(suffix) {
+            let trimmed = stripped.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_owned();
+            }
+        }
+    }
+    s.to_owned()
+}
+
+fn split_artist_title(title: &str) -> Option<(String, String)> {
+    for sep in [" - ", " – ", " — "] {
+        if let Some((left, right)) = title.split_once(sep) {
+            let a = left.trim();
+            let t = right.trim();
+            if !a.is_empty() && !t.is_empty() {
+                return Some((a.to_owned(), t.to_owned()));
+            }
+        }
+    }
+    None
+}
+
+fn fallback_queries(primary: &TrackQuery) -> Vec<TrackQuery> {
+    let mut out = Vec::new();
+    let cleaned_title = strip_video_noise(&primary.title);
+    let cleaned_artist = clean_artist_suffix(&primary.artist);
+
+    let mut push_unique = |artist: String, title: String| {
+        if title.is_empty() || artist.is_empty() {
+            return;
+        }
+        if artist.eq_ignore_ascii_case(&primary.artist)
+            && title.eq_ignore_ascii_case(&primary.title)
+        {
+            return;
+        }
+        if out.iter().any(|q: &TrackQuery| {
+            q.artist.eq_ignore_ascii_case(&artist) && q.title.eq_ignore_ascii_case(&title)
+        }) {
+            return;
+        }
+        out.push(TrackQuery {
+            title,
+            artist,
+            album: String::new(),
+            duration_secs: primary.duration_secs,
+        });
+    };
+
+    if let Some((split_artist, split_title)) = split_artist_title(&cleaned_title) {
+        push_unique(clean_artist_suffix(&split_artist), split_title);
+    }
+    push_unique(cleaned_artist, cleaned_title);
+    out
+}
+
+fn resolve_query_sync(
+    lib: &Library,
+    path: &str,
+    duration_hint_secs: Option<f64>,
+    queue_meta: Option<&(String, String)>,
+) -> Option<TrackQuery> {
+    let audio_path = Path::new(path);
+    if !crate::session::is_stream_url(audio_path)
+        && let Some(meta) = lib
+            .track_meta(path)
+            .ok()
+            .flatten()
+            .or_else(|| scan::read_track_meta(audio_path))
+    {
+        let title = meta.title.trim().to_string();
+        let artist = meta.artist.trim().to_string();
+        if !title.is_empty() && !artist.is_empty() {
+            return Some(TrackQuery {
+                title,
+                artist,
+                album: meta.album.trim().to_string(),
+                duration_secs: resolve_duration_secs(meta.duration_ms, duration_hint_secs),
+            });
+        }
+    }
+
+    let (raw_title, raw_artist) = queue_meta?;
+    let raw_title = raw_title.trim();
+    let raw_artist = raw_artist.trim();
+    if raw_title.is_empty() {
+        return None;
+    }
+    let duration_secs = resolve_duration_secs(None, duration_hint_secs);
+    if !raw_artist.is_empty() {
+        return Some(TrackQuery {
+            title: raw_title.to_string(),
+            artist: raw_artist.to_string(),
+            album: String::new(),
+            duration_secs,
+        });
+    }
+    let cleaned = strip_video_noise(raw_title);
+    let (artist, title) = split_artist_title(&cleaned)?;
     Some(TrackQuery {
         title,
-        artist,
-        album: meta.album.trim().to_string(),
+        artist: clean_artist_suffix(&artist),
+        album: String::new(),
         duration_secs,
     })
 }
@@ -222,6 +373,8 @@ pub struct LyricsOptions {
     pub netease: bool,
     /// The file the player has loaded: never rewritten while it is current.
     pub current: Option<String>,
+    /// Queue metadata fallback `(title, artist)` for streams or unscanned files.
+    pub queue_meta: Option<(String, String)>,
 }
 
 impl Default for LyricsOptions {
@@ -236,7 +389,13 @@ impl LyricsOptions {
             save,
             netease,
             current,
+            queue_meta: None,
         }
+    }
+
+    pub fn with_queue_meta(mut self, meta: Option<(String, String)>) -> Self {
+        self.queue_meta = meta;
+        self
     }
 }
 
@@ -374,14 +533,27 @@ impl LyricsService {
         force: bool,
         opts: &LyricsOptions,
     ) -> Result<LyricsResult, LyricsError> {
-        let (path_clone, svc, current) = (path.clone(), self.clone(), opts.current.clone());
+        let (path_clone, svc, current, queue_meta) = (
+            path.clone(),
+            self.clone(),
+            opts.current.clone(),
+            opts.queue_meta.clone(),
+        );
         let stage = tokio::task::spawn_blocking(move || {
             // Embed writes queued while their track was playing.
             svc.flush_pending_embeds(current.as_deref());
-            if let Some(local) = find_stored(Path::new(&path_clone)) {
+            let audio_path = Path::new(&path_clone);
+            if !crate::session::is_stream_url(audio_path)
+                && let Some(local) = find_stored(audio_path)
+            {
                 return LocalOrQuery::Local(local);
             }
-            LocalOrQuery::Query(resolve_query_sync(&lib, &path_clone, duration_hint_secs))
+            LocalOrQuery::Query(resolve_query_sync(
+                &lib,
+                &path_clone,
+                duration_hint_secs,
+                queue_meta.as_ref(),
+            ))
         })
         .await
         .map_err(blocking_err)?;
@@ -422,15 +594,33 @@ impl LyricsService {
             Some(record) => record.into_result(),
             None => LyricsResult::NotFound,
         };
+        let alts = if matches!(result, LyricsResult::NotFound) {
+            fallback_queries(&query)
+        } else {
+            Vec::new()
+        };
+        for alt in &alts {
+            if let Some(record) = self.client.fetch(alt).await? {
+                result = record.into_result();
+                if !matches!(result, LyricsResult::NotFound) {
+                    break;
+                }
+            }
+        }
         if matches!(result, LyricsResult::NotFound) && opts.netease {
-            match self.netease.fetch(&query).await {
-                Ok(Some(found)) => result = found,
-                Ok(None) => {}
-                Err(e) => {
-                    // An unreachable unofficial service must not turn into a
-                    // cached "not found" or an error for the user.
-                    log::warn!("netease lookup failed: {e}");
-                    return Ok(LyricsResult::NotFound);
+            for candidate in std::iter::once(&query).chain(alts.iter()) {
+                match self.netease.fetch(candidate).await {
+                    Ok(Some(found)) => {
+                        result = found;
+                        break;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        // An unreachable unofficial service must not turn into a
+                        // cached "not found" or an error for the user.
+                        log::warn!("netease lookup failed: {e}");
+                        return Ok(LyricsResult::NotFound);
+                    }
                 }
             }
         }
@@ -601,8 +791,8 @@ impl LyricsService {
         duration_hint_secs: Option<f64>,
     ) -> Result<(PublishBody, TrackQuery, String), ShareBlock> {
         let own = find_stored(Path::new(path)).ok_or(ShareBlock::NoLocalLyrics)?;
-        let query =
-            resolve_query_sync(lib, path, duration_hint_secs).ok_or(ShareBlock::NeedsMetadata)?;
+        let query = resolve_query_sync(lib, path, duration_hint_secs, None)
+            .ok_or(ShareBlock::NeedsMetadata)?;
         let duration = query
             .duration_secs
             .filter(|d| *d > 0)

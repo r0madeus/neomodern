@@ -7,6 +7,7 @@
   import TintedBackdrop from '../TintedBackdrop.svelte'
   import { motionDuration, viewportHeight } from '../motion'
   import { player, formatTime } from '../player.svelte'
+  import { lyrics } from '../lyrics.svelte'
   import { nowCover } from '../nowCover.svelte'
   import { tintFrom } from '../tint'
 
@@ -40,10 +41,23 @@
         <p class="truncate text-[15px] font-bold">{snap.current.title}</p>
         <p class="truncate text-[13px] text-white/70">{snap.current.artist}</p>
       </div>
+      <button
+        class="rounded-full p-3 text-white/80 active:bg-white/10 disabled:opacity-40"
+        aria-label={t('Refresh lyrics')}
+        disabled={lyrics.loading}
+        onclick={() => snap.current && void lyrics.load(snap.current.path, duration, true)}
+      >
+        <Icon name="refresh" class={lyrics.loading ? 'size-6 animate-spin' : 'size-6'} />
+      </button>
+    {:else}
+      <span class="flex-1"></span>
+      <span class="w-12"></span>
     {/if}
-    <span class="w-12"></span>
   </header>
 
+  {#if lyrics.error}
+    <p class="shrink-0 px-6 pb-1 text-center text-sm text-red-200">{lyrics.error}</p>
+  {/if}
   <LyricLines big dim={tint.dim} class="flex-1 px-6" />
   <LyricsShare class="shrink-0 px-6 pt-2" />
 

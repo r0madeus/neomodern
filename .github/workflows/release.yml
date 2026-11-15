@@ -338,12 +338,92 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          # libmpv links against libjack.so.0, which linuxdeploy omits via the
+          # AppImage excludelist. Newer desktop distros (e.g. Ubuntu 26) don't
+          # install JACK by default, so bundle libjack.so.0 via appimage.files
+          # before linuxdeploy packs and Tauri signs the updater artifact.
+          libjack_src="$(ldconfig -p | awk '/libjack\.so\.0[[:space:]]/{print $NF; exit}')"
+          if [ -z "$libjack_src" ]; then
+            libjack_src="$(find /usr/lib /lib -maxdepth 3 -name 'libjack.so.0*' 2>/dev/null | head -n1 || true)"
+          fi
+          libjack_real=""
+          if [ -n "$libjack_src" ]; then
+            libjack_real="$(readlink -f "$libjack_src" || true)"
+          fi
+          if [ -z "$libjack_real" ] || [ ! -f "$libjack_real" ]; then
+            echo "::error::Could not locate libjack.so.0 on build runner"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/appimage-extra"
+          cp -L "$libjack_real" "$RUNNER_TEMP/appimage-extra/libjack.so.0"
+          LIBJACK_STAGED="$RUNNER_TEMP/appimage-extra/libjack.so.0"
+          APPIMAGE_CFG="$RUNNER_TEMP/appimage-files.json"
+          LIBJACK_STAGED="$LIBJACK_STAGED" APPIMAGE_CFG="$APPIMAGE_CFG" node -e '
+            const fs = require("fs");
+            const cfg = {
+              bundle: {
+                linux: {
+                  appimage: {
+                    files: {
+                      "/usr/lib/libjack.so.0": process.env.LIBJACK_STAGED
+                    }
+                  }
+                }
+              }
+            };
+            fs.writeFileSync(process.env.APPIMAGE_CFG, JSON.stringify(cfg, null, 2) + "\n");
+          '
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            npm run tauri -- build --bundles appimage --config src-tauri/tauri.updater.conf.json
+            npm run tauri -- build --bundles appimage --config "$APPIMAGE_CFG" --config src-tauri/tauri.updater.conf.json
           else
             echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no in-app update for this AppImage."
-            npm run tauri -- build --bundles appimage
+            npm run tauri -- build --bundles appimage --config "$APPIMAGE_CFG"
           fi
+
+      - name: Verify AppImage bundled libraries
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          appimages=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          if [ "${#appimages[@]}" -ne 1 ]; then
+            echo "::error::Expected 1 AppImage, found ${#appimages[@]}"
+            exit 1
+          fi
+          appimage_abs="$(readlink -f "${appimages[0]}")"
+          verify_dir="$RUNNER_TEMP/appimage-verify"
+          rm -rf "$verify_dir"
+          mkdir -p "$verify_dir"
+          (
+            cd "$verify_dir"
+            "$appimage_abs" --appimage-extract >/dev/null
+            if [ ! -f squashfs-root/usr/lib/libjack.so.0 ]; then
+              echo "::error::libjack.so.0 was not bundled into squashfs-root/usr/lib/"
+              exit 1
+            fi
+            ldd_out="$(env -u LD_LIBRARY_PATH ldd squashfs-root/usr/bin/neomodern)"
+            echo "$ldd_out"
+            if echo "$ldd_out" | grep -q "not found"; then
+              echo "::error::Missing shared library dependencies in neomodern binary"
+              exit 1
+            fi
+            expected_jack="$(readlink -f squashfs-root/usr/lib/libjack.so.0)"
+            jack_resolved="$(echo "$ldd_out" | awk '/libjack\.so\.0[[:space:]]*=>/{print $3; exit}')"
+            if [ -z "$jack_resolved" ] || [ "$(readlink -f "$jack_resolved" || true)" != "$expected_jack" ]; then
+              echo "::error::neomodern did not resolve libjack.so.0 from bundled usr/lib (got: ${jack_resolved:-<empty>})"
+              exit 1
+            fi
+            for target in squashfs-root/usr/lib/libjack.so.0 squashfs-root/usr/lib/libmpv.so* squashfs-root/usr/lib/webkit2gtk-4.1/WebKitWebProcess; do
+              [ -e "$target" ] || continue
+              if LD_LIBRARY_PATH="$PWD/squashfs-root/usr/lib:$PWD/squashfs-root/usr/lib/webkit2gtk-4.1" ldd "$target" | grep -q "not found"; then
+                echo "::error::Unresolved shared library in $target"
+                LD_LIBRARY_PATH="$PWD/squashfs-root/usr/lib:$PWD/squashfs-root/usr/lib/webkit2gtk-4.1" ldd "$target"
+                exit 1
+              fi
+            done
+          )
+          rm -rf "$verify_dir"
 
       - name: Upload to the GitHub release
         env:

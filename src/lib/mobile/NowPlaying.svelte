@@ -292,7 +292,20 @@
         {#if lyrics.error}
           <p class="px-4 pb-1 text-sm text-red-200">{lyrics.error}</p>
         {/if}
-        <LyricLines dim={tint.dim} class={hasLyrics ? 'h-[420px] px-4' : 'px-4'} />
+        {#if hasLyrics}
+          <!-- Preview like Spotify: a short card that follows the song by
+               itself; tap it for the full-screen lyrics. -->
+          <button
+            type="button"
+            class="block w-full text-left"
+            aria-label={t('Full-screen lyrics')}
+            onclick={onLyrics}
+          >
+            <LyricLines preview dim={tint.dim} class="h-[240px] px-4" />
+          </button>
+        {:else}
+          <LyricLines dim={tint.dim} class="px-4" />
+        {/if}
         <LyricsShare class="px-4 pt-2 pb-3" />
       </div>
     </section>

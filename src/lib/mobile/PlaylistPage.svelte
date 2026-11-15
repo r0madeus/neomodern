@@ -3,7 +3,8 @@
   import Icon from '../Icon.svelte'
   import PlaylistCover from '../PlaylistCover.svelte'
   import PlaylistCoverModal from '../PlaylistCoverModal.svelte'
-  import PageHeader from './PageHeader.svelte'
+  import ActionsMenu from '../ActionsMenu.svelte'
+  import { underTopBar } from './titleWatch'
   import TrackItem from './TrackItem.svelte'
   import StickyPlay from './StickyPlay.svelte'
   import { playlists } from '../playlists.svelte'
@@ -16,6 +17,8 @@
   const info = $derived(playlists.byId(id))
   let tracks = $state<TrackRow[]>([])
   let editingCover = $state(false)
+  // The bar's title appears once the big title is under the bar.
+  let titleHidden = $state(false)
 
   $effect(() => {
     void playlists.version
@@ -35,19 +38,47 @@
 </script>
 
 <div class="absolute inset-0 flex flex-col bg-zinc-950">
-  <!-- The bar lies over the scrolling list so the play button can stick
-       half over its bottom edge. -->
-  <div class="absolute inset-x-0 top-0 z-10 bg-zinc-950">
-  <PageHeader title={info?.name ?? t('Playlist')} {onBack}>
-    {#snippet actions()}
-      {#if info}
-        <button class="rounded-full px-3 py-2 text-sm font-medium text-zinc-200 active:bg-white/10" onclick={() => info && void playlists.exportM3u(info)}>
-          {t("Export")}
-        </button>
-      {/if}
-    {/snippet}
-  </PageHeader>
-  </div>
+  <!-- Spotify-style bar over the scrolling list (the play button sticks
+       to its edge): back, the name once the big title is under the bar,
+       and "…" for the rest (export). -->
+  <header class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-1 px-1 transition-colors" class:bg-zinc-900={titleHidden}>
+    <button class="rounded-full p-3 text-zinc-100 active:bg-white/10" aria-label={t('Back')} onclick={onBack}>
+      <Icon name="back" class="size-6" />
+    </button>
+    <h1 class={['min-w-0 flex-1 truncate text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
+      {info?.name ?? ''}
+    </h1>
+    {#if info}
+      <ActionsMenu label={t('More actions for “{title}”', { title: info.name })}>
+        {#snippet children(close)}
+          <button
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+            onclick={() => {
+              close()
+              if (info) void playlists.exportM3u(info)
+            }}
+          >
+            <Icon name="upload" class="size-5 text-zinc-500" />
+            {t('Export…')}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+            onclick={() => {
+              close()
+              editingCover = true
+            }}
+          >
+            <Icon name="image" class="size-5 text-zinc-500" />
+            {t('Cover')}
+          </button>
+        {/snippet}
+      </ActionsMenu>
+    {/if}
+  </header>
   <div class="min-h-0 flex-1 overflow-y-auto pt-14 pb-[var(--mobile-bar-clear,5rem)]">
     {#if info}
       <div class="flex flex-col items-center px-4 pt-2 pb-4">
@@ -69,7 +100,7 @@
             {t('Cover')}
           </span>
         </button>
-        <h2 class="mt-4 self-start text-2xl font-bold">{info.name}</h2>
+        <h2 class="mt-4 self-start text-2xl font-bold" {@attach underTopBar((hidden) => (titleHidden = hidden))}>{info.name}</h2>
         <p class="self-start text-xs text-zinc-400">
           {t('Playlist · {count}', { count: count(info.trackCount, '{n} song', '{n} songs') })}
         </p>

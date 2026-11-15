@@ -307,6 +307,12 @@
 
   async function onGlobalKey(e: KeyboardEvent) {
     if (mobile) return
+    // Ctrl+O: play files from disk (the queue's "Open files" buttons are gone).
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') {
+      e.preventDefault()
+      void pickFiles(false)
+      return
+    }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
       e.preventDefault()
       online.closeAlbum()

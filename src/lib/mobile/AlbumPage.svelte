@@ -9,6 +9,7 @@
   import TintedBackdrop from '../TintedBackdrop.svelte'
   import TrackItem from './TrackItem.svelte'
   import StickyPlay from './StickyPlay.svelte'
+  import { underTopBar } from './titleWatch'
   import { metadataMatch } from '../metadata.svelte'
   import { library, type AlbumRow, type TrackRow } from '../library.svelte'
   import type { Rgb } from '../nowCover.svelte'
@@ -20,7 +21,8 @@
 
   let data = $state<{ album: AlbumRow; tracks: TrackRow[] } | null>(null)
   let color = $state<Rgb | null>(null)
-  let scrolled = $state(0)
+  // The bar's title appears once the big title is under the bar.
+  let titleHidden = $state(false)
 
   $effect(() => {
     void library.stats.version
@@ -61,23 +63,23 @@
 </script>
 
 <div class="absolute inset-0 flex flex-col bg-zinc-950">
-  <!-- Back bar: the title fades in once the big header scrolled away. -->
-  <header class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-1 px-1 transition-colors" class:bg-zinc-900={scrolled > 260}>
+  <!-- Back bar: the title fades in once the big title scrolled under it. -->
+  <header class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-1 px-1 transition-colors" class:bg-zinc-900={titleHidden}>
     <button class="rounded-full bg-black/30 p-2.5 text-white active:bg-black/50" aria-label={t("Back")} onclick={onBack}>
       <Icon name="back" class="size-6" />
     </button>
-    {#if scrolled > 260 && data}
+    {#if titleHidden && data}
       <h1 class="min-w-0 flex-1 truncate text-base font-semibold">{data.album.title}</h1>
     {/if}
   </header>
 
-  <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]" onscroll={(e) => (scrolled = e.currentTarget.scrollTop)}>
+  <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
     {#if data}
       <div class="relative isolate overflow-hidden px-4 pt-16 pb-4">
         <TintedBackdrop background="linear-gradient(180deg, {tint.top} 0%, {tint.surface} 65%, var(--color-zinc-950) 100%)" />
         <div class="relative">
           <Cover cover={data.album.cover} title={data.album.title} class="mx-auto aspect-square w-3/5 max-w-64 rounded-md text-5xl shadow-2xl shadow-black/60" />
-          <h2 class="mt-5 text-2xl leading-tight font-bold">{data.album.title}</h2>
+          <h2 class="mt-5 text-2xl leading-tight font-bold" {@attach underTopBar((hidden) => (titleHidden = hidden))}>{data.album.title}</h2>
           <p class="mt-1 text-sm font-medium text-zinc-200">
             <ArtistLinks artist={data.album.albumArtist} />
           </p>

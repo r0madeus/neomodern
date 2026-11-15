@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NeoModern",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "identifier": "io.github.r0madeus.neomodern",
   "build": {
     "frontendDist": "../dist",

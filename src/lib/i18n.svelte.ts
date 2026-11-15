@@ -123,7 +123,7 @@ const TR: Record<string, string> = {
   'Save lyrics': 'Sözleri kaydet',
   'Next to the song (.lrc file)': 'Şarkının yanına (.lrc dosyası)',
   'Inside the song file (tag)': 'Şarkı dosyasının içine (etiket)',
-  "Only in the app's cache": 'Yalnız uygulamanın önbelleğinde',
+  'Only in the app': 'Yalnız uygulamada',
   "Lyrics found online are also saved permanently, so they work offline and in other players. An existing .lrc file or lyrics tag is never replaced. Lyrics in a song's tag are written once the song is no longer the one playing.":
     'Çevrimiçi bulunan sözler kalıcı olarak da kaydedilir; böylece çevrimdışı ve başka oynatıcılarda da çalışır. Var olan bir .lrc dosyası ya da söz etiketi asla değiştirilmez. Etikete yazma, şarkı çalan şarkı olmaktan çıkınca yapılır.',
   'NetEase Cloud Music': 'NetEase Cloud Music',

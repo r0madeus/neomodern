@@ -76,7 +76,7 @@
   const LYRICS_SAVE: { value: LyricsSave; label: string }[] = [
     { value: 'sidecar', label: 'Next to the song (.lrc file)' },
     { value: 'embed', label: 'Inside the song file (tag)' },
-    { value: 'off', label: "Only in the app's cache" },
+    { value: 'off', label: 'Only in the app' },
   ]
 
   // Bulk save and coverage count run in Rust; only small numbers come back.

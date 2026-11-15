@@ -20,6 +20,7 @@
   import RightPanel, { type RightPanelMode } from './lib/RightPanel.svelte'
   import { metadataMatch } from './lib/metadata.svelte'
   import { player } from './lib/player.svelte'
+  import { sync } from './lib/sync.svelte'
   import { library } from './lib/library.svelte'
   import { lyrics } from './lib/lyrics.svelte'
   import { playlists } from './lib/playlists.svelte'
@@ -260,6 +261,7 @@
     history.init().catch((e) => (player.error = String(e)))
     pinned.init().catch((e) => (player.error = String(e)))
     home.init().catch((e) => (player.error = String(e)))
+    void sync.init()
     void appSettings.load().then(() => {
       void online.init()
       updates.autoCheck()

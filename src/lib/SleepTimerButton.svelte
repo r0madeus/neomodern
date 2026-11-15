@@ -3,6 +3,7 @@
   // fades the volume over the last seconds; this only picks the time and
   // shows what is left.
   import Icon from './Icon.svelte'
+  import { portal } from './portal'
   import { t } from './i18n.svelte'
   import { player } from './player.svelte'
 
@@ -12,6 +13,28 @@
 
   let open = $state(false)
   let root = $state<HTMLElement | null>(null)
+  let button = $state<HTMLButtonElement | null>(null)
+  let menu = $state<HTMLElement | null>(null)
+  // The menu is fixed to the viewport: inside the player bar (desktop) or the
+  // full-screen player (phone) it was drawn under the page or clipped.
+  let place = $state<{ bottom: number; left: number } | null>(null)
+  const MENU_WIDTH = 240
+
+  function toggle() {
+    if (open) {
+      open = false
+      return
+    }
+    const r = button?.getBoundingClientRect()
+    if (r) {
+      const center = mobile ? r.left + r.width / 2 - MENU_WIDTH / 2 : r.right - MENU_WIDTH
+      place = {
+        bottom: window.innerHeight - r.top + 8,
+        left: Math.max(8, Math.min(window.innerWidth - MENU_WIDTH - 8, center)),
+      }
+    }
+    open = true
+  }
   let now = $state(Date.now())
 
   const endsAt = $derived(player.snapshot.sleepEndsAt)
@@ -31,7 +54,9 @@
   $effect(() => {
     if (!open) return
     const onDown = (e: PointerEvent) => {
-      if (root && !root.contains(e.target as Node)) open = false
+      const target = e.target as Node
+      if (root?.contains(target) || menu?.contains(target)) return
+      open = false
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -39,11 +64,14 @@
         open = false
       }
     }
+    const close = () => (open = false)
     document.addEventListener('pointerdown', onDown, true)
     document.addEventListener('keydown', onKey, true)
+    window.addEventListener('resize', close)
     return () => {
       document.removeEventListener('pointerdown', onDown, true)
       document.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('resize', close)
     }
   })
 
@@ -79,11 +107,12 @@
             ? 'bg-accent-50 text-accent-700 hover:bg-accent-100 dark:bg-accent-950/60 dark:text-accent-300 dark:hover:bg-accent-950'
             : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white',
         ]}
+    bind:this={button}
     aria-haspopup="menu"
     aria-expanded={open}
     aria-label={summary}
     title={summary}
-    onclick={() => (open = !open)}
+    onclick={toggle}
   >
     <Icon name="moon" class={mobile ? 'size-6' : 'size-5'} />
     {#if left !== null}
@@ -93,14 +122,16 @@
     {/if}
   </button>
 
-  {#if open}
+  {#if open && place}
     <div
       role="menu"
       aria-label={t('Sleep timer')}
-      class={[
-        'absolute bottom-full z-50 mb-2 w-60 rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-800 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100',
-        mobile ? 'left-1/2 -translate-x-1/2' : 'right-0',
-      ]}
+      use:portal
+      bind:this={menu}
+      class="fixed z-[100] rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-800 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+      style:width="{MENU_WIDTH}px"
+      style:bottom="{place.bottom}px"
+      style:left="{place.left}px"
     >
       <p class="px-3 pt-1.5 pb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">{t('Sleep timer')}</p>
       {#each CHOICES as m (m)}

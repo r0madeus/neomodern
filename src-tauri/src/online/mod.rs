@@ -293,13 +293,14 @@ impl OnlineService {
         }
     }
 
-    /// Where downloaded copies of yt-dlp and ffmpeg live.
-    #[cfg(not(target_os = "android"))]
+    /// Where artist pictures are kept (user data, not the cache).
     pub fn with_artist_images_dir(mut self, dir: PathBuf) -> Self {
         self.artist_images_dir = dir;
         self
     }
 
+    /// Where downloaded copies of yt-dlp and ffmpeg live.
+    #[cfg(not(target_os = "android"))]
     pub fn with_tools_dir(mut self, dir: PathBuf) -> Self {
         self.tools = Some(tools::ToolsDir::new(dir));
         self

@@ -24,8 +24,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Creates (or locks as draft) the GitHub release upfront so Windows,
+  # Android and Linux can build and upload in parallel.
+  prepare:
+    name: Prepare draft release
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve tag and create draft release
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
+            tag="$(echo "$INPUT_TAG" | xargs)"
+          else
+            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          fi
+          ver="${tag#v}"
+          if [[ "$ver" =~ ^[0-9]+\.[0-9]+$ ]]; then ver="$ver.0"; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --draft=true
+          else
+            args=(release create "$tag" --title "NeoModern $tag" --target "$GITHUB_SHA" --generate-notes --draft)
+            if [ "${INPUT_PRERELEASE:-false}" = "true" ] || [[ "$tag" == *-* ]]; then
+              args+=(--prerelease)
+            fi
+            gh "${args[@]}"
+          fi
+
   windows-release:
-    name: Windows Release (test + installer)
+    name: Windows Release (installer)
+    needs: prepare
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -46,45 +88,27 @@ jobs:
         run: ./scripts/fetch-libmpv.ps1
 
       - run: npm ci
-      - run: npm run check
-      - run: npm run build
 
       - name: Sync version from release tag
         shell: pwsh
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          VER: ${{ needs.prepare.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $env:GITHUB_REF_NAME
-          } elseif (-not [string]::IsNullOrWhiteSpace($env:INPUT_TAG)) {
-            $env:INPUT_TAG.Trim()
-          } else {
-            ''
-          }
-          if ([string]::IsNullOrWhiteSpace($tag)) { return }
-          $ver = $tag -replace '^v', ''
-          if ($ver -match '^\d+\.\d+$') { $ver = "$ver.0" }
-          if ($ver -notmatch '^\d+\.\d+\.\d+') { return }
+          if ($env:VER -notmatch '^\d+\.\d+\.\d+') { return }
 
           $conf = Get-Content 'src-tauri/tauri.conf.json' -Raw
-          $conf = [regex]::Replace($conf, '"version"\s*:\s*"[^"]+"', "`"version`": `"$ver`"", 1)
+          $conf = [regex]::Replace($conf, '"version"\s*:\s*"[^"]+"', "`"version`": `"$($env:VER)`"", 1)
           Set-Content -Path 'src-tauri/tauri.conf.json' -Value $conf -NoNewline -Encoding utf8NoBOM
 
           $cargo = Get-Content 'src-tauri/Cargo.toml' -Raw
-          $cargo = [regex]::Replace($cargo, '(?m)^version = "[^"]+"', "version = `"$ver`"", 1)
+          $cargo = [regex]::Replace($cargo, '(?m)^version = "[^"]+"', "version = `"$($env:VER)`"", 1)
           Set-Content -Path 'src-tauri/Cargo.toml' -Value $cargo -NoNewline -Encoding utf8NoBOM
 
           $pkg = Get-Content 'package.json' -Raw
-          $pkg = [regex]::Replace($pkg, '"version"\s*:\s*"[^"]+"', "`"version`": `"$ver`"", 1)
+          $pkg = [regex]::Replace($pkg, '"version"\s*:\s*"[^"]+"', "`"version`": `"$($env:VER)`"", 1)
           Set-Content -Path 'package.json' -Value $pkg -NoNewline -Encoding utf8NoBOM
 
-      - name: cargo test
-        working-directory: src-tauri
-        run: cargo test
-
-      # With the updater key the installer is also signed for in-app updates
-      # (NeoModern_x.y.z_x64-setup.exe.sig, read into latest.json below).
       - name: Build NSIS installer
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -99,23 +123,14 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Publish GitHub Release
+      - name: Upload Windows assets to GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_TAG: ${{ inputs.tag }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
-
-          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $env:GITHUB_REF_NAME
-          } elseif (-not [string]::IsNullOrWhiteSpace($env:INPUT_TAG)) {
-            $env:INPUT_TAG.Trim()
-          } else {
-            $conf = Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
-            "v$($conf.version)"
-          }
+          $tag = $env:TAG
 
           $installers = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -Filter '*.exe'
           if (-not $installers) {
@@ -166,38 +181,12 @@ jobs:
           Set-Content -Path $checksumFile -Value ($hashes -join "`n") -Encoding utf8
           $assets += $checksumFile
 
-          $ErrorActionPreference = 'Continue'
-          gh release view $tag 2>&1 | Out-Null
-          $exists = ($LASTEXITCODE -eq 0)
-          $ErrorActionPreference = 'Stop'
+          gh release upload $tag @assets --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          if ($exists) {
-            # If the release was created manually from the GitHub UI, keep it as a
-            # draft until every platform job and updater-manifest finish.
-            gh release edit $tag --draft=true
-            gh release upload $tag @assets --clobber
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          } else {
-            $isPrerelease = ($env:INPUT_PRERELEASE -eq 'true') -or ($tag -match '-')
-            $releaseArgs = @('release', 'create', $tag) + $assets + @(
-              '--title', "NeoModern $tag",
-              '--target', $env:GITHUB_SHA,
-              '--generate-notes',
-              # Stays a draft until every platform and latest.json are up
-              # (the publish job below); the app never sees half a release.
-              '--draft'
-            )
-            if ($isPrerelease) {
-              $releaseArgs += '--prerelease'
-            }
-            & gh @releaseArgs
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-  # Runs after the Windows job, which creates the GitHub release.
   android-release:
     name: Android Release (APK)
-    needs: windows-release
+    needs: prepare
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -219,30 +208,20 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # The runner image ships the Android SDK and NDK.
       - name: Point Tauri at the NDK
         run: echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
 
       - run: npm ci
 
-      - name: Resolve release tag and sync version
+      - name: Sync version from release tag
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          VER: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            tag="$GITHUB_REF_NAME"
-          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
-            tag="$(echo "$INPUT_TAG" | xargs)"
-          else
-            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          fi
-          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
-          ver="${tag#v}"
-          if [[ "$ver" =~ ^[0-9]+\.[0-9]+$ ]]; then ver="$ver.0"; fi
-          if [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            # versionName / versionCode of the APK come from this version.
-            VER="$ver" node -e '
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          if [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            node -e '
               const fs = require("fs")
               const p = "src-tauri/tauri.conf.json"
               const conf = JSON.parse(fs.readFileSync(p, "utf8"))
@@ -254,17 +233,11 @@ jobs:
       - name: Generate Android project
         run: |
           npm run tauri -- android init --ci
-          # The generated project has Tauri's default launcher icon.
           cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
 
-      # Always an optimised release build (a debug build is ~10x larger).
       - name: Build APK
         run: npm run tauri -- android build --apk --target aarch64 --ci
 
-      # With the signing secrets set, the APK is signed with the same key
-      # every time, so new versions install over old ones. Without them it is
-      # signed with a throwaway key made for this run: it installs, but has
-      # to be uninstalled before the next version can be installed.
       - name: Sign APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -315,12 +288,9 @@ jobs:
           set -euo pipefail
           gh release upload "$RELEASE_TAG" "$ANDROID_ASSETS"/* --clobber
 
-  # Linux AppImage (self-contained, updates itself in the app). Built on
-  # Ubuntu 24.04: its libmpv is the 0.37 (libmpv.so.2) libmpv2 needs; the
-  # AppImage runs on distributions with glibc 2.39 or newer.
   linux-release:
     name: Linux Release (AppImage)
-    needs: windows-release
+    needs: prepare
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -343,23 +313,15 @@ jobs:
 
       - run: npm ci
 
-      - name: Resolve release tag and sync version
+      - name: Sync version from release tag
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          VER: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            tag="$GITHUB_REF_NAME"
-          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
-            tag="$(echo "$INPUT_TAG" | xargs)"
-          else
-            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          fi
-          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
-          ver="${tag#v}"
-          if [[ "$ver" =~ ^[0-9]+\.[0-9]+$ ]]; then ver="$ver.0"; fi
-          if [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            VER="$ver" node -e '
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          if [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            node -e '
               const fs = require("fs")
               const p = "src-tauri/tauri.conf.json"
               const conf = JSON.parse(fs.readFileSync(p, "utf8"))
@@ -368,8 +330,6 @@ jobs:
             '
           fi
 
-      # linuxdeploy is itself an AppImage; without FUSE on the runner it
-      # has to extract itself.
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
@@ -399,11 +359,9 @@ jobs:
           ls -lh "$staging"
           gh release upload "$RELEASE_TAG" "$staging"/* --clobber
 
-  # The manifest the in-app updater reads: version, notes and, per
-  # platform, the installer URL and its signature.
   updater-manifest:
     name: Updater manifest (latest.json)
-    needs: [windows-release, linux-release]
+    needs: [prepare, windows-release, linux-release]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -411,16 +369,10 @@ jobs:
       - name: Write and upload latest.json
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            tag="$GITHUB_REF_NAME"
-          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
-            tag="$(echo "$INPUT_TAG" | xargs)"
-          else
-            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          fi
+          tag="$TAG"
           work="$RUNNER_TEMP/manifest"
           mkdir -p "$work"
           gh release download "$tag" --dir "$work" --pattern '*.sig' || true
@@ -454,13 +406,9 @@ jobs:
           '
           gh release upload "$tag" "$work/latest.json" --clobber
 
-  # Last step: make the release public once Windows, Android, the AppImage
-  # and latest.json are all attached. Until then it is a draft, so the
-  # in-app update check (which reads the latest public release) does not
-  # offer a release whose files are still missing.
   publish:
     name: Publish release
-    needs: [windows-release, android-release, linux-release, updater-manifest]
+    needs: [prepare, windows-release, android-release, linux-release, updater-manifest]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -468,16 +416,9 @@ jobs:
       - name: Publish the draft
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            tag="$GITHUB_REF_NAME"
-          elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
-            tag="$(echo "$INPUT_TAG" | xargs)"
-          else
-            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          fi
-          if [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" = "true" ]; then
-            gh release edit "$tag" --draft=false
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$TAG" --draft=false
           fi

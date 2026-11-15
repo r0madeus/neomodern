@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -270,7 +270,35 @@ pub fn init(conn: &Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 11)?;
         tx.commit()?;
     }
+    if version < 12 {
+        // When each song was added to its playlist ("Date added"). Older
+        // entries get the playlist's creation time: the best guess there is.
+        let tx = conn.unchecked_transaction()?;
+        let has_column: bool = tx.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('playlist_tracks') WHERE name = 'added_at'",
+            [],
+            |r| r.get(0),
+        )?;
+        if !has_column {
+            tx.execute_batch("ALTER TABLE playlist_tracks ADD COLUMN added_at INTEGER;")?;
+        }
+        tx.execute(
+            "UPDATE playlist_tracks SET added_at =
+                 (SELECT created_at FROM playlists p WHERE p.id = playlist_tracks.playlist_id)
+             WHERE added_at IS NULL",
+            [],
+        )?;
+        tx.pragma_update(None, "user_version", 12)?;
+        tx.commit()?;
+    }
     Ok(())
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
 }
 
 /// The year shown for an album: the most common track year, the latest one
@@ -560,12 +588,27 @@ pub fn counts(conn: &Connection) -> Result<(u64, u64)> {
 
 /// Track columns, then `plays`: listens that count as a play (finished or
 /// at least 15 s, same rule as `PLAY_EXPR`), matched by track id or path.
-const TRACK_SELECT: &str = "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
+/// The columns `track_row` reads (a macro so it can be `concat!`ed).
+macro_rules! track_columns {
+    () => {
+        "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
         t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover,
         (SELECT COUNT(*) FROM listen_events le
           WHERE (le.track_id = t.id OR le.path = t.path)
-            AND (le.completed = 1 OR le.listened_ms >= 15000)) AS plays
-     FROM tracks t LEFT JOIN albums a ON a.id = t.album_id";
+            AND (le.completed = 1 OR le.listened_ms >= 15000)) AS plays"
+    };
+}
+const TRACK_SELECT: &str = concat!(
+    track_columns!(),
+    " FROM tracks t LEFT JOIN albums a ON a.id = t.album_id"
+);
+/// Playlist entries: the track columns plus when it was added.
+const PLAYLIST_TRACK_SELECT: &str = concat!(
+    track_columns!(),
+    ", pt.added_at AS entry_added_at
+     FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
+     LEFT JOIN albums a ON a.id = t.album_id"
+);
 
 fn opt_u32(v: Option<i64>) -> Option<u32> {
     v.and_then(|n| u32::try_from(n).ok())
@@ -588,6 +631,11 @@ fn track_row(r: &Row<'_>) -> rusqlite::Result<TrackRow> {
             .and_then(|n| u64::try_from(n).ok()),
         path: r.get(9)?,
         cover: r.get(10)?,
+        added_to_playlist: r
+            .as_ref()
+            .column_index("entry_added_at")
+            .ok()
+            .and_then(|i| r.get::<_, Option<i64>>(i).ok().flatten()),
         // Only queries that select a `plays` column have it.
         plays: r
             .as_ref()
@@ -945,12 +993,13 @@ fn append_tracks(conn: &Connection, id: i64, track_ids: &[i64]) -> Result<usize>
         |r| r.get(0),
     )?;
     let mut insert = conn.prepare_cached(
-        "INSERT INTO playlist_tracks(playlist_id, position, track_id)
-         SELECT ?1, ?2, id FROM tracks WHERE id = ?3",
+        "INSERT INTO playlist_tracks(playlist_id, position, track_id, added_at)
+         SELECT ?1, ?2, id, ?4 FROM tracks WHERE id = ?3",
     )?;
+    let now = now_secs();
     let mut added = 0;
     for track_id in track_ids {
-        if insert.execute(rusqlite::params![id, next, track_id])? > 0 {
+        if insert.execute(rusqlite::params![id, next, track_id, now])? > 0 {
             next += 1;
             added += 1;
         }
@@ -1041,7 +1090,7 @@ pub fn playlist_tracks(
 ) -> Result<Vec<TrackRow>> {
     ensure_playlist(conn, id)?;
     let mut st = conn.prepare(&format!(
-        "{TRACK_SELECT} JOIN playlist_tracks pt ON pt.track_id = t.id
+        "{PLAYLIST_TRACK_SELECT}
          WHERE pt.playlist_id = ?1 ORDER BY pt.position LIMIT ?2 OFFSET ?3"
     ))?;
     let rows = st.query_map(
@@ -1086,24 +1135,29 @@ pub fn playlist_add_album(conn: &mut Connection, id: i64, album_id: i64) -> Resu
     Ok(added)
 }
 
-/// Track ids of a playlist in order.
-fn order(conn: &Connection, id: i64) -> Result<Vec<i64>> {
+/// A playlist entry: the track and when it was added.
+type Entry = (i64, Option<i64>);
+
+/// Entries of a playlist in order.
+fn order(conn: &Connection, id: i64) -> Result<Vec<Entry>> {
     let mut st = conn.prepare_cached(
-        "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+        "SELECT track_id, added_at FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
     )?;
     Ok(st
-        .query_map([id], |r| r.get(0))?
+        .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<std::result::Result<_, _>>()?)
 }
 
-/// Replaces the playlist's entries with `ids` at positions 0..n.
-fn rewrite(conn: &Connection, id: i64, ids: &[i64]) -> Result<()> {
+/// Replaces the playlist's entries with `entries` at positions 0..n; each
+/// keeps its "added" time.
+fn rewrite(conn: &Connection, id: i64, entries: &[Entry]) -> Result<()> {
     conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?1", [id])?;
     let mut insert = conn.prepare_cached(
-        "INSERT INTO playlist_tracks(playlist_id, position, track_id) VALUES (?1, ?2, ?3)",
+        "INSERT INTO playlist_tracks(playlist_id, position, track_id, added_at)
+         VALUES (?1, ?2, ?3, ?4)",
     )?;
-    for (pos, track_id) in ids.iter().enumerate() {
-        insert.execute(rusqlite::params![id, pos as i64, track_id])?;
+    for (pos, (track_id, added_at)) in entries.iter().enumerate() {
+        insert.execute(rusqlite::params![id, pos as i64, track_id, added_at])?;
     }
     Ok(())
 }
@@ -1124,9 +1178,9 @@ pub fn playlists_with_track(conn: &Connection, track_id: i64) -> Result<Vec<i64>
 pub fn playlist_remove_track(conn: &mut Connection, id: i64, track_id: i64) -> Result<()> {
     let tx = conn.transaction()?;
     ensure_playlist(&tx, id)?;
-    let kept: Vec<i64> = order(&tx, id)?
+    let kept: Vec<Entry> = order(&tx, id)?
         .into_iter()
-        .filter(|t| *t != track_id)
+        .filter(|(t, _)| *t != track_id)
         .collect();
     rewrite(&tx, id, &kept)?;
     tx.commit()?;
@@ -1137,7 +1191,7 @@ pub fn playlist_remove(conn: &mut Connection, id: i64, indexes: &[usize]) -> Res
     let tx = conn.transaction()?;
     ensure_playlist(&tx, id)?;
     let drop: std::collections::HashSet<usize> = indexes.iter().copied().collect();
-    let kept: Vec<i64> = order(&tx, id)?
+    let kept: Vec<Entry> = order(&tx, id)?
         .into_iter()
         .enumerate()
         .filter(|(i, _)| !drop.contains(i))

@@ -83,6 +83,9 @@ pub struct TrackRow {
     pub cover: Option<String>,
     /// How many times it was played (0 where a list does not count).
     pub plays: u32,
+    /// When it was added to the playlist (unix seconds); only in playlist
+    /// listings.
+    pub added_to_playlist: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

@@ -137,7 +137,7 @@ fn schema_version_is_set() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 11);
+    assert_eq!(v, 12);
 }
 
 #[test]
@@ -692,7 +692,7 @@ fn migrates_a_v1_database_to_latest() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 11);
+    assert_eq!(v, 12);
     let tracks = lib.tracks_page(0, 10, SortOrder::Title).unwrap();
     assert_eq!(tracks.len(), 1, "existing data survives the migration");
     let pl = lib.create_playlist("Mix", &[tracks[0].id]).unwrap();
@@ -733,7 +733,7 @@ fn migrates_a_v2_database_and_keeps_a_folder_album_whole() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 11);
+        assert_eq!(v, 12);
         let fk_issues = conn
             .prepare("PRAGMA foreign_key_check")
             .unwrap()
@@ -1769,7 +1769,7 @@ fn migrating_to_v8_merges_year_split_albums_and_resplits_artists() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 11);
+    assert_eq!(v, 12);
     let albums = lib.albums_page(0, 10).unwrap();
     assert_eq!(albums.len(), 1);
     assert_eq!((albums[0].year, albums[0].track_count), (Some(1994), 4));
@@ -1812,7 +1812,7 @@ fn migrating_a_v8_database_adds_tag_history() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 11);
+    assert_eq!(v, 12);
     assert_eq!(lib.folders().unwrap().len(), 1);
     let cols: Vec<String> = lib
         .conn()
@@ -2275,5 +2275,45 @@ fn downloaded_covers_and_artist_pictures_move_out_of_the_cache() {
     assert_eq!(
         lib.albums_page(0, 10).unwrap()[0].cover.as_deref(),
         Some(cover.as_str())
+    );
+}
+
+#[test]
+fn playlist_entries_remember_when_they_were_added() {
+    let e = env();
+    let ids = scanned_tracks(&e, &["Alpha", "Beta", "Gamma"]);
+    let p = e.lib.create_playlist("P", &[ids[0], ids[1]]).unwrap().id;
+    // Pretend the first two were added long ago.
+    e.lib
+        .conn()
+        .execute("UPDATE playlist_tracks SET added_at = 100 + position", [])
+        .unwrap();
+    e.lib.playlist_add_tracks(p, &[ids[2]]).unwrap();
+    let added = |lib: &Library| -> Vec<(i64, Option<i64>)> {
+        lib.playlist_tracks(p, 0, 10)
+            .unwrap()
+            .iter()
+            .map(|t| (t.id, t.added_to_playlist))
+            .collect()
+    };
+    let rows = added(&e.lib);
+    assert_eq!(rows[0], (ids[0], Some(100)));
+    assert_eq!(rows[1], (ids[1], Some(101)));
+    assert!(
+        rows[2].1.unwrap() > 1_600_000_000,
+        "a new entry gets the time it was added"
+    );
+    // Moving and removing keep each entry's date.
+    e.lib.playlist_move(p, 2, 0).unwrap();
+    e.lib.playlist_remove_track(p, ids[1]).unwrap();
+    let rows = added(&e.lib);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].0, ids[2]);
+    assert_eq!(rows[1], (ids[0], Some(100)));
+    // Other listings do not carry it.
+    assert!(
+        e.lib.tracks_page(0, 10, SortOrder::Title).unwrap()[0]
+            .added_to_playlist
+            .is_none()
     );
 }

@@ -2,6 +2,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { count, i18n, t } from './i18n.svelte'
   import { tick } from 'svelte'
+  import { addedAgo } from './dates'
   import VirtualList from './VirtualList.svelte'
   import { createDragReorder } from './dragReorder.svelte'
   import DragPill from './DragPill.svelte'
@@ -33,8 +34,8 @@
 
   let { id, onDeleted }: { id: number; onDeleted: () => void } = $props()
 
-  const ROW = 48
-  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_5rem_2rem_4rem_2rem] items-center gap-3 px-5'
+  const ROW = 56
+  const COLS = 'grid grid-cols-[1.5rem_2.5rem_minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1fr)_5rem_2rem_4rem_2rem] items-center gap-3 px-5'
 
   const info = $derived(playlists.byId(id))
   let tracks = $state<TrackRow[]>([])
@@ -58,7 +59,7 @@
     return () => (stale = true)
   })
 
-  type PlSortCol = 'added' | 'title' | 'artist' | 'album' | 'plays' | 'duration'
+  type PlSortCol = 'added' | 'title' | 'album' | 'date' | 'plays' | 'duration'
   let sortCol = $state<PlSortCol>('added')
   let sortDir = $state<'asc' | 'desc'>('asc')
 
@@ -83,8 +84,8 @@
           return (a.origIndex - b.origIndex) * mult
         case 'title':
           return a.track.title.localeCompare(b.track.title) * mult || a.origIndex - b.origIndex
-        case 'artist':
-          return a.track.artist.localeCompare(b.track.artist) * mult || a.origIndex - b.origIndex
+        case 'date':
+          return ((a.track.addedToPlaylist ?? 0) - (b.track.addedToPlaylist ?? 0)) * mult || a.origIndex - b.origIndex
         case 'album':
           return a.track.album.localeCompare(b.track.album) * mult || a.origIndex - b.origIndex
         case 'plays':
@@ -668,8 +669,8 @@
       {#each [
         { col: 'added' as PlSortCol, label: '#', align: 'justify-end text-right' },
         { col: 'title' as PlSortCol, label: t('Title'), align: 'justify-start text-left' },
-        { col: 'artist' as PlSortCol, label: t('Artist'), align: 'justify-start text-left' },
         { col: 'album' as PlSortCol, label: t('Album'), align: 'justify-start text-left' },
+        { col: 'date' as PlSortCol, label: t('Date added'), align: 'justify-start text-left' },
         { col: 'plays' as PlSortCol, label: t('Plays'), align: 'justify-end text-right' },
         { col: null, label: '', align: '' },
         { col: 'duration' as PlSortCol, label: t('Time'), align: 'justify-end text-right' },
@@ -773,13 +774,21 @@
                   <Equalizer class="text-accent-600 dark:text-accent-400" />
                 {:else}{orig + 1}{/if}
               </span>
+              <!-- Title with the artist under it, like Spotify. -->
               <span class="flex min-w-0 items-center gap-3">
-                <Cover cover={track.cover} title={track.title} class="size-9 shrink-0 rounded text-[10px]" />
-                <span class="truncate font-medium">{track.title}</span><ExtBadge path={track.path} />
+                <Cover cover={track.cover} title={track.title} class="size-10 shrink-0 rounded text-[10px]" />
+                <span class="min-w-0">
+                  <span class="flex min-w-0 items-center">
+                    <span class={['truncate font-medium', track.path === currentPath ? 'text-accent-600 dark:text-accent-400' : 'text-zinc-900 dark:text-zinc-100']}>{track.title}</span><ExtBadge path={track.path} />
+                  </span>
+                  <span class="block truncate text-[13px] text-zinc-500"><ArtistLinks artist={track.artist} /></span>
+                </span>
               </span>
-              <span class="truncate text-zinc-500"><ArtistLinks artist={track.artist} /></span>
               <span class="truncate text-zinc-500">
                 <AlbumLink album={track.album} albumId={track.albumId} />
+              </span>
+              <span class="truncate text-[13px] text-zinc-500">
+                {track.addedToPlaylist ? addedAgo(track.addedToPlaylist, i18n.locale) : ''}
               </span>
               <span class="text-right text-xs tabular-nums text-zinc-500">
                 {track.plays.toLocaleString(i18n.locale)}

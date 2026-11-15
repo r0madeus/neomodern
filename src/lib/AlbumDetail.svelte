@@ -204,7 +204,7 @@
         <li
           class={[
             ROW_COLS,
-            'group h-12 rounded-md px-3 text-sm',
+            'group h-14 rounded-md px-3 text-sm',
             selection.has(`album:${albumId}`, track.path)
               ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
               : track.path === currentPath
@@ -231,8 +231,12 @@
                 {track.trackNo ?? i + 1}
               {/if}
             </span>
-            <span class="flex min-w-0 items-center">
-              <span class={['truncate font-medium', track.path === currentPath && 'text-accent-600 dark:text-accent-400']}>{track.title}</span><ExtBadge path={track.path} />
+            <!-- Title with the artist under it, like Spotify. -->
+            <span class="min-w-0">
+              <span class="flex min-w-0 items-center">
+                <span class={['truncate font-medium', track.path === currentPath ? 'text-accent-600 dark:text-accent-400' : 'text-zinc-900 dark:text-zinc-100']}>{track.title}</span><ExtBadge path={track.path} />
+              </span>
+              <span class="block truncate text-[13px] text-zinc-500"><ArtistLinks artist={track.artist} onNavigate={onBack} /></span>
             </span>
             <span class="text-sm tabular-nums text-zinc-500">
               {track.plays.toLocaleString(i18n.locale)}

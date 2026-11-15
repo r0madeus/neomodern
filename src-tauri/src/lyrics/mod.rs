@@ -10,7 +10,7 @@ pub mod publish;
 pub mod save;
 
 use crate::library::tags::{self, is_playing_path};
-use crate::library::{Library, SortOrder, scan};
+use crate::library::{Library, db, scan};
 use crate::net::{Feature, NetPolicy};
 use cache::{LyricsCache, cache_key, now_unix_secs};
 use lrclib::{DEFAULT_BASE_URL, LrclibClient, PublishBody};
@@ -144,6 +144,32 @@ pub fn attach_local_lrc(audio_path: &Path, lrc_path: &Path) -> Result<LyricsResu
         scan::write_atomic(&dest, &bytes)?;
     }
     Ok(result)
+}
+
+fn query_from_lyrics_meta(meta: &db::TrackLyricsMeta) -> Option<TrackQuery> {
+    let mut title = meta.title.trim().to_string();
+    if title.is_empty() {
+        title = Path::new(&meta.path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().trim().to_string())
+            .unwrap_or_default();
+    }
+    let artist = meta.artist.trim().to_string();
+    if title.is_empty() || artist.is_empty() {
+        return None;
+    }
+
+    let duration_secs = meta
+        .duration_seconds
+        .filter(|d| d.is_finite() && *d > 0.0)
+        .map(|d| d.round() as u64);
+
+    Some(TrackQuery {
+        title,
+        artist,
+        album: meta.album.trim().to_string(),
+        duration_secs,
+    })
 }
 
 fn resolve_query_sync(
@@ -494,13 +520,12 @@ impl LyricsService {
         if mode == SaveMode::Off {
             return out;
         }
-        let Ok(tracks) = lib.all_tracks(SortOrder::Added) else {
+        let Ok(tracks) = lib.all_tracks_lyrics_meta() else {
             return out;
         };
         let now = now_unix_secs();
         for track in tracks {
-            let path = track.path.to_string_lossy().into_owned();
-            let Some(query) = resolve_query_sync(lib, &path, None) else {
+            let Some(query) = query_from_lyrics_meta(&track) else {
                 continue;
             };
             let key = cache_key(
@@ -515,13 +540,13 @@ impl LyricsService {
             let Some(text) = save::to_lrc_text(&cached) else {
                 continue;
             };
-            let written = if mode == SaveMode::Embed && is_playing_path(&path, current) {
+            let written = if mode == SaveMode::Embed && is_playing_path(&track.path, current) {
                 false
             } else {
-                match save::save(mode, &track.path, &text) {
+                match save::save(mode, Path::new(&track.path), &text) {
                     Ok(w) => w,
                     Err(e) => {
-                        log::warn!("could not save lyrics for {path}: {e}");
+                        log::warn!("could not save lyrics for {}: {e}", track.path);
                         false
                     }
                 }
@@ -540,18 +565,17 @@ impl LyricsService {
     /// never looked up. Blocking.
     pub fn coverage_blocking(&self, lib: &Library) -> Coverage {
         let mut out = Coverage::default();
-        let Ok(tracks) = lib.all_tracks(SortOrder::Added) else {
+        let Ok(tracks) = lib.all_tracks_lyrics_meta() else {
             return out;
         };
         let now = now_unix_secs();
         for track in tracks {
-            let audio = track.path.as_path();
+            let audio = Path::new(&track.path);
             if find_local_lrc(audio).is_some() {
                 out.with_lyrics += 1;
                 continue;
             }
-            let path = audio.to_string_lossy().into_owned();
-            let cached = resolve_query_sync(lib, &path, None).and_then(|q| {
+            let cached = query_from_lyrics_meta(&track).and_then(|q| {
                 self.cache.get(
                     &cache_key(&q.artist, &q.title, &q.album, q.duration_secs),
                     now,

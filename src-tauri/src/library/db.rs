@@ -294,7 +294,10 @@ pub fn init(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_listen_events_artist_nocase ON listen_events(artist COLLATE NOCASE);
          CREATE INDEX IF NOT EXISTS idx_tracks_genre_norm ON tracks(LOWER(TRIM(genre)));
-         CREATE INDEX IF NOT EXISTS idx_tracks_album_added ON tracks(album_id, added_at DESC);",
+         CREATE INDEX IF NOT EXISTS idx_tracks_album_added ON tracks(album_id, added_at DESC);
+         CREATE INDEX IF NOT EXISTS idx_listen_events_track_play ON listen_events(track_id, completed, listened_ms);
+         CREATE INDEX IF NOT EXISTS idx_listen_events_unlinked_path_play ON listen_events(path, completed, listened_ms) WHERE track_id IS NULL;
+         CREATE INDEX IF NOT EXISTS idx_listen_events_started_at ON listen_events(started_at);",
     )?;
     Ok(())
 }
@@ -598,9 +601,12 @@ macro_rules! track_columns {
     () => {
         "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
         t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover,
-        (SELECT COUNT(*) FROM listen_events le
-          WHERE (le.track_id = t.id OR le.path = t.path)
-            AND (le.completed = 1 OR le.listened_ms >= 15000)) AS plays"
+        ((SELECT COUNT(*) FROM listen_events le
+           WHERE le.track_id = t.id
+             AND (le.completed = 1 OR le.listened_ms >= 15000))
+         + (SELECT COUNT(*) FROM listen_events le
+           WHERE le.track_id IS NULL AND le.path = t.path
+             AND (le.completed = 1 OR le.listened_ms >= 15000))) AS plays"
     };
 }
 const TRACK_SELECT: &str = concat!(
@@ -873,6 +879,35 @@ pub fn track_cover_by_path(conn: &Connection, path: &str) -> Result<Option<Strin
     .optional()
     .map(Option::flatten)
     .map_err(Into::into)
+}
+
+#[derive(Debug, Clone)]
+pub struct TrackLyricsMeta {
+    pub path: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration_seconds: Option<f64>,
+}
+
+pub fn all_tracks_lyrics_meta(conn: &Connection) -> Result<Vec<TrackLyricsMeta>> {
+    let mut st = conn.prepare(
+        "SELECT t.path, t.title, t.artist, COALESCE(a.title, ''), t.duration_ms
+         FROM tracks t
+         LEFT JOIN albums a ON a.id = t.album_id
+         ORDER BY t.id",
+    )?;
+    let rows = st.query_map([], |r| {
+        let duration_ms: Option<i64> = r.get(4)?;
+        Ok(TrackLyricsMeta {
+            path: r.get(0)?,
+            title: r.get(1)?,
+            artist: r.get(2)?,
+            album: r.get(3)?,
+            duration_seconds: duration_ms.map(|ms| ms as f64 / 1000.0),
+        })
+    })?;
+    Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
 pub fn track_meta_by_path(conn: &Connection, path: &str) -> Result<Option<TrackMeta>> {

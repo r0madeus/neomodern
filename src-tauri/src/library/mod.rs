@@ -750,6 +750,10 @@ impl Library {
         db::all_tracks(&self.conn(), sort)
     }
 
+    pub fn all_tracks_lyrics_meta(&self) -> Result<Vec<db::TrackLyricsMeta>> {
+        db::all_tracks_lyrics_meta(&self.conn())
+    }
+
     /// Tracks matching `query` in `sort` order, ready for the queue.
     pub fn matching_tracks(&self, sort: impl Into<SortSpec>, query: &str) -> Result<Vec<Track>> {
         db::matching_tracks(&self.conn(), sort, query)

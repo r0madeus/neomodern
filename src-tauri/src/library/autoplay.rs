@@ -177,9 +177,16 @@ fn candidates(conn: &Connection) -> Result<Vec<Candidate>> {
     }
     let mut st = conn.prepare(
         "SELECT t.id, t.path, t.title, t.artist, COALESCE(t.genre, ''), t.year, t.album_id,
-                (SELECT COUNT(*) FROM listen_events le
-                  WHERE le.track_id = t.id AND (le.completed = 1 OR le.listened_ms >= 15000)),
-                (SELECT MAX(le.started_at) FROM listen_events le WHERE le.track_id = t.id),
+                ((SELECT COUNT(*) FROM listen_events le
+                   WHERE le.track_id = t.id
+                     AND (le.completed = 1 OR le.listened_ms >= 15000))
+                 + (SELECT COUNT(*) FROM listen_events le
+                   WHERE le.track_id IS NULL AND le.path = t.path
+                     AND (le.completed = 1 OR le.listened_ms >= 15000))),
+                NULLIF(MAX(
+                    COALESCE((SELECT MAX(le.started_at) FROM listen_events le WHERE le.track_id = t.id), 0),
+                    COALESCE((SELECT MAX(le.started_at) FROM listen_events le WHERE le.track_id IS NULL AND le.path = t.path), 0)
+                ), 0),
                 EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
          FROM tracks t",
     )?;

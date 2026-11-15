@@ -129,7 +129,10 @@ pub fn run() {
                         }
                         PlayerEvent::Position { seconds, duration } => {
                             if let Some(p) = handle.try_state::<Arc<Player>>() {
-                                observer_session.maybe_save_position(|| p.export_session());
+                                let (qv, idx, pos) = p.progress_state();
+                                observer_session.maybe_save_progress(qv, idx, pos, || {
+                                    p.export_session()
+                                });
                             }
                             handle.emit("player://position", PositionPayload { seconds, duration })
                         }

@@ -655,6 +655,13 @@ impl Player {
         .normalized()
     }
 
+    /// Lightweight playback progress snapshot used for periodic session saves
+    /// without cloning the full queue.
+    pub fn progress_state(&self) -> (u64, Option<usize>, f64) {
+        let inner = self.lock();
+        (inner.queue.version(), inner.queue.current_index(), inner.position)
+    }
+
     /// The path of the loaded (current) queue entry, if any.
     pub fn current_path(&self) -> Option<String> {
         self.lock()

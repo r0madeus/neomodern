@@ -14,14 +14,11 @@
   import AlbumsView from './lib/AlbumsView.svelte'
   import ArtistsView from './lib/ArtistsView.svelte'
   import FavoritesView from './lib/FavoritesView.svelte'
-  import StatsView from './lib/StatsView.svelte'
   import SearchView from './lib/SearchView.svelte'
-  import SettingsView from './lib/SettingsView.svelte'
   import PlaylistView from './lib/PlaylistView.svelte'
   import LyricsView from './lib/LyricsView.svelte'
   import RightPanel, { type RightPanelMode } from './lib/RightPanel.svelte'
-  import TagEditor from './lib/TagEditor.svelte'
-  import MetadataMatchModal from './lib/MetadataMatchModal.svelte'
+  import { metadataMatch } from './lib/metadata.svelte'
   import { player } from './lib/player.svelte'
   import { library } from './lib/library.svelte'
   import { lyrics } from './lib/lyrics.svelte'
@@ -34,7 +31,6 @@
   import { appSettings } from './lib/appSettings.svelte'
   import { theme } from './lib/theme.svelte'
   import { online } from './lib/online.svelte'
-  import MobileApp from './lib/mobile/MobileApp.svelte'
   import NowPlayingView from './lib/NowPlayingView.svelte'
   import UpdateBanner from './lib/UpdateBanner.svelte'
   import Welcome from './lib/Welcome.svelte'
@@ -400,7 +396,9 @@
 <svelte:window onkeydown={onGlobalKey} bind:innerWidth />
 
 {#if mobile}
-  <MobileApp />
+  {#await import('./lib/mobile/MobileApp.svelte') then Mod}
+    <Mod.default />
+  {/await}
 {:else}
 <div class="flex h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
   <div class="flex min-h-0 flex-1">
@@ -772,13 +770,17 @@
                   onOpenLocalAlbum={(id) => openAlbum(id)}
                 />
               {:else if view === 'stats'}
-                <StatsView onOpenAlbum={(id) => openAlbum(id)} />
+                {#await import('./lib/StatsView.svelte') then Mod}
+                  <Mod.default onOpenAlbum={(id) => openAlbum(id)} />
+                {/await}
               {:else if view === 'favorites'}
                 <FavoritesView />
               {:else if view === 'playlist' && playlistId !== null}
                 <PlaylistView id={playlistId} onDeleted={() => go('songs')} />
               {:else}
-                <SettingsView />
+                {#await import('./lib/SettingsView.svelte') then Mod}
+                  <Mod.default />
+                {/await}
               {/if}
             </div>
           {/key}
@@ -830,6 +832,14 @@
 
 <Welcome />
 
-<TagEditor />
-<MetadataMatchModal />
+{#if tagEditor.request !== null}
+  {#await import('./lib/TagEditor.svelte') then Mod}
+    <Mod.default />
+  {/await}
+{/if}
+{#if metadataMatch.request !== null}
+  {#await import('./lib/MetadataMatchModal.svelte') then Mod}
+    <Mod.default />
+  {/await}
+{/if}
 <TrackMenu />

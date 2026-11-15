@@ -281,6 +281,8 @@ impl From<&PlayerSnapshot> for StructuralKey {
 struct GuardState {
     last_written_at: Option<Instant>,
     last_structure: Option<StructuralKey>,
+    last_queue_version: Option<u64>,
+    last: SessionState,
 }
 
 fn clean_opt_path(path: Option<PathBuf>) -> Option<PathBuf> {
@@ -453,7 +455,7 @@ impl SessionStore {
         }
     }
 
-    fn write_locked(&self, g: &mut GuardState, mut state: SessionState, now: Instant) {
+    fn apply_store_fields(&self, state: &mut SessionState) {
         state.close_to_tray = self.close_to_tray();
         state.download_dir = self.download_dir();
         state.ytdlp_path = self.ytdlp_path();
@@ -468,15 +470,23 @@ impl SessionStore {
         state.net_artist_info = self.net.feature_enabled(Feature::ArtistInfo);
         state.net_metadata = self.net.feature_enabled(Feature::Metadata);
         state.net_updates = self.net.feature_enabled(Feature::Updates);
+    }
+
+    fn write_locked(&self, g: &mut GuardState, mut state: SessionState, now: Instant) -> bool {
+        self.apply_store_fields(&mut state);
         if let Err(e) = save(&self.path, &state) {
             log::warn!("failed to save session state: {e}");
+            false
         } else {
             g.last_written_at = Some(now);
+            g.last = state;
+            true
         }
     }
 
     pub fn save_now(&self, state: &SessionState) {
         let mut g = self.guard.lock().unwrap_or_else(|e| e.into_inner());
+        g.last_queue_version = None;
         self.write_locked(&mut g, state.clone(), Instant::now());
     }
 
@@ -491,7 +501,11 @@ impl SessionStore {
         if !structure_changed && !due {
             return;
         }
-        self.write_locked(&mut g, build(), now);
+        if self.write_locked(&mut g, build(), now) {
+            g.last_queue_version = Some(snap.queue_version);
+        } else {
+            g.last_queue_version = None;
+        }
         g.last_structure = Some(key);
     }
 
@@ -504,7 +518,51 @@ impl SessionStore {
         if !due {
             return;
         }
+        g.last_queue_version = None;
         self.write_locked(&mut g, build(), now);
+    }
+
+    /// Saves playback progress at most once per `POSITION_SAVE_INTERVAL`,
+    /// reusing the cached queue when `queue_version` has not changed so the
+    /// caller avoids cloning `Vec<SavedTrack>` on the `Player` mutex.
+    pub fn maybe_save_progress(
+        &self,
+        queue_version: u64,
+        current_index: Option<usize>,
+        position_seconds: f64,
+        build: impl FnOnce() -> SessionState,
+    ) {
+        let now = Instant::now();
+        let mut g = self.guard.lock().unwrap_or_else(|e| e.into_inner());
+        let due = g
+            .last_written_at
+            .is_none_or(|t| now.duration_since(t) >= POSITION_SAVE_INTERVAL);
+        if !due {
+            return;
+        }
+        if g.last_queue_version == Some(queue_version)
+            && current_index.is_none_or(|i| i < g.last.queue.len())
+        {
+            g.last.current_index = current_index;
+            g.last.position_seconds = if position_seconds.is_finite() && position_seconds >= 0.0 {
+                position_seconds
+            } else {
+                0.0
+            };
+            self.apply_store_fields(&mut g.last);
+            if let Err(e) = save(&self.path, &g.last) {
+                log::warn!("failed to save session state: {e}");
+                g.last_queue_version = None;
+            } else {
+                g.last_written_at = Some(now);
+            }
+            return;
+        }
+        if self.write_locked(&mut g, build(), now) {
+            g.last_queue_version = Some(queue_version);
+        } else {
+            g.last_queue_version = None;
+        }
     }
 }
 
@@ -790,5 +848,108 @@ mod tests {
         assert!(!is_stream_url(Path::new(r"C:\Music\song.mp3")));
         assert!(!is_stream_url(Path::new("/music/song.mp3")));
         assert!(!is_stream_url(Path::new("content://media/external/audio/1")));
+    }
+
+    #[test]
+    fn maybe_save_progress_reuses_cached_queue_across_same_version_ticks() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("session.json");
+        let store = SessionStore::new(file.clone());
+        let track = SavedTrack {
+            path: PathBuf::from("/music/song.flac"),
+            title: Some("Song".into()),
+            artist: Some("Artist".into()),
+        };
+
+        let mut build_calls = 0usize;
+        store.maybe_save_progress(7, Some(0), 12.5, || {
+            build_calls += 1;
+            SessionState {
+                queue: vec![track.clone()],
+                current_index: Some(0),
+                position_seconds: 12.5,
+                ..SessionState::default()
+            }
+        });
+        assert_eq!(build_calls, 1);
+        assert_eq!(load(&file).position_seconds, 12.5);
+        assert_eq!(load(&file).queue, vec![track.clone()]);
+
+        // Throttled within 5 seconds: neither builds nor writes.
+        store.maybe_save_progress(7, Some(0), 15.0, || {
+            build_calls += 1;
+            SessionState::default()
+        });
+        assert_eq!(build_calls, 1);
+        assert_eq!(load(&file).position_seconds, 12.5);
+
+        // Simulate elapsed save interval; same queue_version must skip build().
+        store
+            .guard
+            .lock()
+            .unwrap()
+            .last_written_at
+            .replace(Instant::now() - POSITION_SAVE_INTERVAL - Duration::from_secs(1));
+        store.maybe_save_progress(7, Some(0), 27.5, || {
+            build_calls += 1;
+            panic!("build should not be called when queue_version is unchanged");
+        });
+        assert_eq!(build_calls, 1);
+        let saved = load(&file);
+        assert_eq!(saved.position_seconds, 27.5);
+        assert_eq!(saved.current_index, Some(0));
+        assert_eq!(saved.queue, vec![track.clone()]);
+
+        // Changing queue_version after the interval rebuilds once and caches again.
+        store
+            .guard
+            .lock()
+            .unwrap()
+            .last_written_at
+            .replace(Instant::now() - POSITION_SAVE_INTERVAL - Duration::from_secs(1));
+        let track2 = SavedTrack {
+            path: PathBuf::from("/music/second.flac"),
+            title: Some("Second".into()),
+            artist: Some("Artist".into()),
+        };
+        store.maybe_save_progress(8, Some(1), 3.0, || {
+            build_calls += 1;
+            SessionState {
+                queue: vec![track.clone(), track2.clone()],
+                current_index: Some(1),
+                position_seconds: 3.0,
+                ..SessionState::default()
+            }
+        });
+        assert_eq!(build_calls, 2);
+        let saved = load(&file);
+        assert_eq!(saved.queue.len(), 2);
+        assert_eq!(saved.current_index, Some(1));
+        assert_eq!(saved.position_seconds, 3.0);
+
+        // Explicit save_now resets cached queue_version so the next progress tick resyncs once.
+        store.save_now(&SessionState {
+            queue: vec![track.clone()],
+            current_index: Some(0),
+            position_seconds: 1.0,
+            ..SessionState::default()
+        });
+        store
+            .guard
+            .lock()
+            .unwrap()
+            .last_written_at
+            .replace(Instant::now() - POSITION_SAVE_INTERVAL - Duration::from_secs(1));
+        store.maybe_save_progress(8, Some(0), 9.0, || {
+            build_calls += 1;
+            SessionState {
+                queue: vec![track.clone()],
+                current_index: Some(0),
+                position_seconds: 9.0,
+                ..SessionState::default()
+            }
+        });
+        assert_eq!(build_calls, 3);
+        assert_eq!(load(&file).position_seconds, 9.0);
     }
 }

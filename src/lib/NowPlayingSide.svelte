@@ -11,13 +11,16 @@
   import { nowCover } from './nowCover.svelte'
   import { player } from './player.svelte'
   import { tintFrom } from './tint'
+  import { trackCovers } from './trackCovers.svelte'
 
   let {
     onClose,
     onExpand,
+    onOpenQueue,
   }: {
     onClose: () => void
     onExpand: () => void
+    onOpenQueue: () => void
   } = $props()
 
   const snap = $derived(player.snapshot)
@@ -215,6 +218,44 @@
           {/if}
         </div>
       </div>
+    {/if}
+
+    {#if snap.nextTrack}
+      {@const next = snap.nextTrack}
+      <!-- Spotify-style "Next in queue": what plays after this song
+           (shuffle and repeat applied); clicking it skips to it. -->
+      <section
+        aria-labelledby="np-next-heading"
+        class="rounded-xl border border-zinc-200/80 bg-white/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/90"
+      >
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <h3 id="np-next-heading" class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{t('Next in queue')}</h3>
+          <button
+            type="button"
+            class="text-xs font-semibold text-zinc-500 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
+            onclick={onOpenQueue}
+          >
+            {t('Open queue')}
+          </button>
+        </div>
+        <button
+          type="button"
+          class="group -m-1.5 flex w-[calc(100%+0.75rem)] items-center gap-3 rounded-lg p-1.5 text-left hover:bg-zinc-200/70 dark:hover:bg-zinc-800/80"
+          title={t('Play “{title}”', { title: next.title })}
+          onclick={() => void player.next()}
+        >
+          <span class="relative shrink-0">
+            <Cover cover={trackCovers.get(next.path) ?? null} title={next.title} class="size-12 rounded-md text-xs" />
+            <span class="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <Icon name="play" class="size-5" />
+            </span>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{next.title}</span>
+            <span class="block truncate text-xs text-zinc-500 dark:text-zinc-400">{next.artist || t('Unknown artist')}</span>
+          </span>
+        </button>
+      </section>
     {/if}
   </div>
 {:else}

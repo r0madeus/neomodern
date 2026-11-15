@@ -791,6 +791,7 @@
         mode={rightPanel}
         onClose={() => setRightPanel(null)}
         onExpand={() => (nowPlaying = true)}
+        onOpenQueue={() => setRightPanel('queue')}
         onOpenFiles={pickFiles}
         onSaved={openPlaylist}
       />

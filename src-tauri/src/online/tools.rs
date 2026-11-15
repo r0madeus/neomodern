@@ -249,7 +249,8 @@ impl ToolsDir {
                 .into_iter()
                 .filter_map(Result::ok)
                 .find(|e| {
-                    e.file_type().is_file()
+                    !e.path_is_symlink()
+                        && e.file_type().is_file()
                         && e.file_name() == ffmpeg_name.as_str()
                         && e.path().parent().and_then(Path::file_name) == Some("bin".as_ref())
                 })
@@ -260,7 +261,7 @@ impl ToolsDir {
             let bin_dir = found.parent().unwrap_or(&staging).to_path_buf();
             for name in ["ffmpeg", "ffprobe"] {
                 let from = bin_dir.join(exe(name));
-                if from.is_file() {
+                if std::fs::symlink_metadata(&from).is_ok_and(|m| m.file_type().is_file()) {
                     let to = self.dir.join(exe(name));
                     replace_file(&from, &to)?;
                     make_executable(&to)?;

@@ -506,7 +506,25 @@ class AudioPlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
         try {
-            val text = activity.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            val maxBytes = 2 * 1024 * 1024
+            val text = activity.contentResolver.openInputStream(uri)?.use { stream ->
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val remaining = (maxBytes + 1) - total
+                    if (remaining <= 0) break
+                    val n = stream.read(buf, 0, minOf(buf.size, remaining))
+                    if (n < 0) break
+                    total += n
+                    if (total > maxBytes) {
+                        invoke.reject("File is too large (max 2 MB)")
+                        return
+                    }
+                    out.write(buf, 0, n)
+                }
+                out.toByteArray().toString(Charsets.UTF_8)
+            }
             invoke.resolve(JSObject().put("name", displayName(uri)).put("text", text))
         } catch (e: Exception) {
             invoke.reject("Could not read the file: ${e.message}")

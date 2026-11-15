@@ -20,6 +20,7 @@ const USER_AGENT: &str = concat!(
 /// MusicBrainz allows about one request per second per IP.
 const DEFAULT_MIN_INTERVAL: Duration = Duration::from_millis(1100);
 const DEFAULT_RETRY_DELAY: Duration = Duration::from_secs(2);
+const MAX_COVER_DOWNLOAD_BYTES: usize = 15 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct MbConfig {
@@ -358,9 +359,24 @@ impl MbClient {
             "{}/release-group/{release_group_id}/front-{size}",
             self.cfg.caa_base_url.trim_end_matches('/')
         );
-        let res = self.http()?.get(url).send().await?;
+        let mut res = self.http()?.get(url).send().await?;
         match res.status() {
-            StatusCode::OK => Ok(Some(res.bytes().await?.to_vec())),
+            StatusCode::OK => {
+                if res
+                    .content_length()
+                    .is_some_and(|len| len > MAX_COVER_DOWNLOAD_BYTES as u64)
+                {
+                    return Err(MetadataError::Invalid("cover image is too large".into()));
+                }
+                let mut bytes = Vec::new();
+                while let Some(chunk) = res.chunk().await? {
+                    if bytes.len().saturating_add(chunk.len()) > MAX_COVER_DOWNLOAD_BYTES {
+                        return Err(MetadataError::Invalid("cover image is too large".into()));
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                Ok(Some(bytes))
+            }
             StatusCode::NOT_FOUND => Ok(None),
             status => Err(MetadataError::Status(status.as_u16())),
         }
@@ -384,5 +400,38 @@ mod tests {
         assert!(!is_valid_mbid("id?foo=bar"));
         assert!(!is_valid_mbid("id#frag"));
         assert!(!is_valid_mbid(&"a".repeat(65)));
+    }
+
+    #[test]
+    fn front_cover_rejects_oversized_content_length() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 512];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    MAX_COVER_DOWNLOAD_BYTES + 1
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+
+        let client = MbClient::new(MbConfig {
+            caa_base_url: format!("http://{addr}"),
+            ..MbConfig::default()
+        })
+        .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let err = rt.block_on(client.front_cover("rg-1", 250)).unwrap_err();
+        assert!(matches!(err, MetadataError::Invalid(_)));
+        let _ = server.join();
     }
 }

@@ -38,6 +38,7 @@ pub mod tools;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(12);
 const USER_AGENT: &str = concat!("NeoModern/", env!("CARGO_PKG_VERSION"));
+const MAX_COVER_DOWNLOAD_BYTES: usize = 15 * 1024 * 1024;
 #[cfg(not(target_os = "android"))]
 const MAX_KEPT_JOBS: usize = 25;
 /// Upper bounds for one yt-dlp run; a hung process is killed after them.
@@ -226,6 +227,17 @@ pub struct OnlineService {
     tools: Option<tools::ToolsDir>,
 }
 
+/// Returns `true` when `path` points to an existing file named `yt-dlp` or `yt-dlp.exe`.
+pub fn is_valid_ytdlp_binary_path(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|name| {
+                name.eq_ignore_ascii_case("yt-dlp") || name.eq_ignore_ascii_case("yt-dlp.exe")
+            })
+}
+
 impl OnlineService {
     pub fn new(
         covers_dir: PathBuf,
@@ -374,6 +386,7 @@ impl OnlineService {
             .ytdlp_path()
             .map(|p| display_path(&p))
             .filter(|s| !s.trim().is_empty())
+            .filter(|custom| is_valid_ytdlp_binary_path(Path::new(custom)))
             .or_else(|| self.managed_ytdlp().map(|p| display_path(&p)))
             .unwrap_or_else(|| "yt-dlp".into())
     }
@@ -1805,11 +1818,23 @@ async fn ensure_cached_cover(
     if file.is_file() {
         return Some(display_path(&file));
     }
-    let resp = client.get(url).send().await.ok()?;
+    let mut resp = client.get(url).send().await.ok()?;
     if !resp.status().is_success() {
         return None;
     }
-    let bytes = resp.bytes().await.ok()?;
+    if resp
+        .content_length()
+        .is_some_and(|len| len > MAX_COVER_DOWNLOAD_BYTES as u64)
+    {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await.ok()? {
+        if bytes.len().saturating_add(chunk.len()) > MAX_COVER_DOWNLOAD_BYTES {
+            return None;
+        }
+        bytes.extend_from_slice(&chunk);
+    }
     if std::fs::create_dir_all(covers_dir).is_err() {
         return None;
     }

@@ -741,3 +741,56 @@ fn resolve_cover_bytes_rejects_paths_outside_covers_dir() {
         Some(b"jpeg-bytes".to_vec())
     );
 }
+
+#[test]
+fn is_valid_ytdlp_binary_path_accepts_ytdlp_and_rejects_others() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let ytdlp_unix = tmp.path().join("yt-dlp");
+    std::fs::write(&ytdlp_unix, b"").unwrap();
+    assert!(is_valid_ytdlp_binary_path(&ytdlp_unix));
+
+    let ytdlp_win = tmp.path().join("yt-dlp.exe");
+    std::fs::write(&ytdlp_win, b"").unwrap();
+    assert!(is_valid_ytdlp_binary_path(&ytdlp_win));
+
+    let other_exe = tmp.path().join("calc.exe");
+    std::fs::write(&other_exe, b"").unwrap();
+    assert!(!is_valid_ytdlp_binary_path(&other_exe));
+
+    let dir = tmp.path().join("yt-dlp-dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    assert!(!is_valid_ytdlp_binary_path(&dir));
+}
+
+#[test]
+fn ensure_cached_cover_rejects_oversized_content_length() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 512];
+            let _ = stream.read(&mut buf);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                MAX_COVER_DOWNLOAD_BYTES + 1
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+
+    let tmp = tempfile::tempdir().unwrap();
+    let covers_dir = tmp.path().join("covers");
+    let client = crate::net::client_builder().build().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let url = format!("http://{addr}/cover.jpg");
+    let cached = rt.block_on(ensure_cached_cover(&client, &covers_dir, &url));
+    assert_eq!(cached, None);
+    let _ = server.join();
+}

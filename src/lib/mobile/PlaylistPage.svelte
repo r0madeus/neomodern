@@ -4,6 +4,7 @@
   import PlaylistCover from '../PlaylistCover.svelte'
   import PlaylistCoverModal from '../PlaylistCoverModal.svelte'
   import ActionsMenu from '../ActionsMenu.svelte'
+  import { portal } from '../portal'
   import { underTopBar } from './titleWatch'
   import TrackItem from './TrackItem.svelte'
   import StickyPlay from './StickyPlay.svelte'
@@ -19,6 +20,13 @@
   let editingCover = $state(false)
   // The bar's title appears once the big title is under the bar.
   let titleHidden = $state(false)
+
+  // Deleting asks once more in a bottom sheet; the page then closes.
+  let confirmingDelete = $state(false)
+  async function deletePlaylist() {
+    confirmingDelete = false
+    if (await playlists.delete(id)) onBack()
+  }
 
   $effect(() => {
     void playlists.version
@@ -41,15 +49,20 @@
   <!-- Spotify-style bar over the scrolling list (the play button sticks
        to its edge): back, the name once the big title is under the bar,
        and "…" for the rest (export). -->
-  <header class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-1 px-1 transition-colors" class:bg-zinc-900={titleHidden}>
-    <button class="rounded-full p-3 text-zinc-100 active:bg-white/10" aria-label={t('Back')} onclick={onBack}>
+  <!-- pr-[22px]: the round "…" sits right above the round play button. -->
+  <header class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-2 pr-[22px] pl-2 transition-colors" class:bg-zinc-900={titleHidden}>
+    <button class="rounded-full bg-black/30 p-2.5 text-white active:bg-black/50" aria-label={t('Back')} onclick={onBack}>
       <Icon name="back" class="size-6" />
     </button>
     <h1 class={['min-w-0 flex-1 truncate text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
       {info?.name ?? ''}
     </h1>
     {#if info}
-      <ActionsMenu label={t('More actions for “{title}”', { title: info.name })}>
+      <ActionsMenu
+        label={t('More actions for “{title}”', { title: info.name })}
+        triggerClass="rounded-full bg-black/30 p-2.5 text-white outline-none active:bg-black/50"
+        iconClass="size-6"
+      >
         {#snippet children(close)}
           <button
             type="button"
@@ -74,6 +87,18 @@
           >
             <Icon name="image" class="size-5 text-zinc-500" />
             {t('Cover')}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-3 border-t border-zinc-200 px-4 py-3 text-left text-red-600 outline-none active:bg-zinc-100 dark:border-zinc-800 dark:text-red-400 dark:active:bg-zinc-800"
+            onclick={() => {
+              close()
+              confirmingDelete = true
+            }}
+          >
+            <Icon name="trash" class="size-5" />
+            {t('Delete playlist')}
           </button>
         {/snippet}
       </ActionsMenu>
@@ -151,4 +176,29 @@
 
 {#if editingCover && info}
   <PlaylistCoverModal playlist={info} onClose={() => (editingCover = false)} />
+{/if}
+
+{#if confirmingDelete && info}
+  <div use:portal class="fixed inset-0 z-[90] flex items-end bg-black/60" role="presentation" onclick={() => (confirmingDelete = false)}>
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-label={t('Delete playlist')}
+      tabindex="-1"
+      class="w-full rounded-t-2xl bg-zinc-900 px-4 pt-5 pb-[calc(1rem+var(--inset-bottom,0px))] text-zinc-100"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && (confirmingDelete = false)}
+    >
+      <p class="text-lg font-bold">{t('Delete “{name}”?', { name: info.name })}</p>
+      <p class="mt-1 text-sm text-zinc-400">{t('The songs stay in your library.')}</p>
+      <div class="mt-5 flex gap-3">
+        <button type="button" class="flex-1 rounded-full bg-zinc-800 py-3 font-semibold active:bg-zinc-700" onclick={() => (confirmingDelete = false)}>
+          {t('Cancel')}
+        </button>
+        <button type="button" class="flex-1 rounded-full bg-red-600 py-3 font-semibold text-white active:bg-red-500" onclick={() => void deletePlaylist()}>
+          {t('Delete')}
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}

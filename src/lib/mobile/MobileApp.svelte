@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { count, t } from '../i18n.svelte'
+  import { t } from '../i18n.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
   import { fly } from 'svelte/transition'
@@ -221,21 +221,7 @@
               {#if sheet.page === 'folders'}
                 <FoldersView />
               {:else}
-                <!-- Music folders used to be a row on the Library tab. -->
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-4 border-b border-zinc-800/80 px-4 py-3.5 text-left active:bg-white/5"
-                  onclick={() => openPage('folders')}
-                >
-                  <Icon name="folder" class="size-5 text-accent-400" />
-                  <span class="min-w-0 flex-1">
-                    <span class="block text-[15px]">{t('Music folders')}</span>
-                    <span class="block text-xs text-zinc-400">
-                      {count(library.stats.tracks, '{n} song', '{n} songs')} · {count(library.stats.albums, '{n} album', '{n} albums')}
-                    </span>
-                  </span>
-                  <Icon name="chevronRight" class="size-5 text-zinc-500" />
-                </button>
+                <!-- Music folders are in Settings > Library. -->
                 <SettingsView />
               {/if}
             </div>

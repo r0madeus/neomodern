@@ -532,8 +532,27 @@
           open: () => void,
           art: import('svelte').Snippet,
           pin: { pinned: boolean; toggle: () => void } | null,
+          play: () => void,
         )}
-          <div class="group flex shrink-0 items-center gap-0.5" data-key={key}>
+          <div class="group relative flex shrink-0 items-center gap-0.5" data-key={key}>
+            <!-- Spotify-style: hovering the row darkens the cover and shows
+                 a play button that plays the album or playlist. A sibling of
+                 the row button, laid over the cover (buttons cannot nest). -->
+            <button
+              type="button"
+              class={[
+                'absolute top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
+                sidebarCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-1.5',
+              ]}
+              title={t('Play “{title}”', { title })}
+              aria-label={t('Play “{title}”', { title })}
+              onclick={(e) => {
+                e.stopPropagation()
+                play()
+              }}
+            >
+              <Icon name="play" class="size-5" />
+            </button>
             <button
               type="button"
               class={[
@@ -591,6 +610,7 @@
             () => go('favorites'),
             favoritesArt,
             null,
+            () => void favorites.play(0),
           )}
           {#each pinned.entries as entry (`pin:${entry.kind}:${entry.id}`)}
             {#snippet pinnedArt()}
@@ -617,6 +637,10 @@
               () => (entry.kind === 'album' ? openAlbum(entry.id) : openPlaylist(entry.id)),
               pinnedArt,
               { pinned: true, toggle: () => void pinned.toggle(entry.kind, entry.id) },
+              () =>
+                entry.kind === 'album'
+                  ? void library.playAlbum(entry.id, 0)
+                  : void playlists.play(entry.id, 0),
             )}
           {/each}
           {#each playlists.list.filter((p) => !pinned.isPinned('playlist', p.id)) as p (p.id)}
@@ -637,6 +661,7 @@
               () => openPlaylist(p.id),
               playlistArt,
               { pinned: false, toggle: () => void pinned.toggle('playlist', p.id) },
+              () => void playlists.play(p.id, 0),
             )}
           {/each}
           {#if playlists.list.length === 0 && pinned.entries.length === 0 && !creatingPlaylist && !sidebarCollapsed}

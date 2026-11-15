@@ -739,4 +739,5 @@ const TR: Record<string, string> = {
   'Saved in': 'Kayıtlı olduğu yerler',
   'My playlist #{n}': 'Çalma listem #{n}',
   'Added to “{name}”': '“{name}” listesine eklendi',
+  'Play “{title}”': '“{title}” çal',
 }

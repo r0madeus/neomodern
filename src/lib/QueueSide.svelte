@@ -141,6 +141,10 @@
       {#if saving}
         <form
           class="flex items-center gap-1.5"
+          onfocusout={(e) => {
+            // Clicking elsewhere with no name typed closes it.
+            if (name.trim() === '' && !e.currentTarget.contains(e.relatedTarget as Node | null)) saving = false
+          }}
           onsubmit={(e) => {
             e.preventDefault()
             void save()

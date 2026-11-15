@@ -195,6 +195,7 @@
 
   function go(next: View) {
     view = next
+    libraryMenuOpen = false // going to another page closes the library "+" menu
     nowPlaying = false
     lyrics.setOpen(false)
     try {

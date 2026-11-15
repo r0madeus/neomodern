@@ -1,7 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { fade, scale } from 'svelte/transition'
-  import { appSettings } from './appSettings.svelte'
   import Icon from './Icon.svelte'
   import { t } from './i18n.svelte'
   import { motionDuration } from './motion'
@@ -94,16 +93,14 @@
         iconClass="size-10"
       />
       <div class="flex min-w-0 flex-1 flex-col gap-2">
-        {#if appSettings.platform !== 'android'}
-          <button
-            type="button"
-            disabled={saving}
-            class="rounded-lg border border-zinc-200 px-3 py-1.5 text-left text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            onclick={() => void choosePhoto()}
-          >
-            {t('Choose photo…')}
-          </button>
-        {/if}
+        <button
+          type="button"
+          disabled={saving}
+          class="rounded-lg border border-zinc-200 px-3 py-1.5 text-left text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          onclick={() => void choosePhoto()}
+        >
+          {t('Choose photo…')}
+        </button>
         <button
           type="button"
           disabled={saving || playlist.cover === null}

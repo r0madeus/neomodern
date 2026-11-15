@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { appSettings } from './appSettings.svelte'
+import { t } from './i18n.svelte'
 import { player, type PlayerSnapshot } from './player.svelte'
 
 export type Sort = 'artist' | 'title' | 'album' | 'added' | 'duration'
@@ -303,6 +304,38 @@ class LibraryStore {
       await invoke('library_rescan')
     } catch (e) {
       player.error = String(e)
+    }
+  }
+
+  async pickAlbumCoverFile(albumId: number): Promise<AlbumRow | null> {
+    try {
+      const picked =
+        appSettings.platform === 'android'
+          ? await invoke<string | null>('android_pick_file')
+          : await open({
+              multiple: false,
+              directory: false,
+              title: t('Choose album cover'),
+              filters: [{ name: t('Images'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+            })
+      if (!picked || typeof picked !== 'string') return null
+      const row = await invoke<AlbumRow>('library_set_album_cover_file', { albumId, path: picked })
+      await this.refresh()
+      return row
+    } catch (e) {
+      player.error = String(e)
+      return null
+    }
+  }
+
+  async clearAlbumCover(albumId: number): Promise<AlbumRow | null> {
+    try {
+      const row = await invoke<AlbumRow>('library_clear_album_cover', { albumId })
+      await this.refresh()
+      return row
+    } catch (e) {
+      player.error = String(e)
+      return null
     }
   }
 

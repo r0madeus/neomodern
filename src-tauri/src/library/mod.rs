@@ -37,6 +37,8 @@ pub enum LibraryError {
     Db(#[from] rusqlite::Error),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("{0} not found")]
+    NotFound(String),
     #[error("{0}")]
     Other(String),
 }
@@ -778,19 +780,7 @@ impl Library {
     }
 
     pub fn set_playlist_cover_file(&self, id: i64, image_path: &Path) -> Result<()> {
-        let img = image::ImageReader::open(image_path)?
-            .with_guessed_format()?
-            .decode()
-            .map_err(|e| LibraryError::Other(format!("invalid image: {e}")))?;
-        let rgb = img
-            .resize_to_fill(600, 600, image::imageops::FilterType::Triangle)
-            .into_rgb8();
-        let mut buf = Vec::new();
-        rgb.write_to(
-            &mut std::io::Cursor::new(&mut buf),
-            image::ImageFormat::Jpeg,
-        )
-        .map_err(|e| LibraryError::Other(format!("failed to encode cover: {e}")))?;
+        let buf = encode_cover_jpeg(image_path)?;
 
         let dir = self.playlist_covers_dir();
         std::fs::create_dir_all(&dir)?;
@@ -1090,6 +1080,77 @@ impl Library {
         Ok(())
     }
 
+    /// Encodes a user-chosen image as a 600x600 JPEG in `downloaded_album_covers_dir`
+    /// with a `custom_` prefix so scans never overwrite it.
+    pub fn set_album_cover_file(&self, album_id: i64, image_path: &Path) -> Result<AlbumRow> {
+        self.album_info(album_id)?
+            .ok_or_else(|| LibraryError::NotFound(format!("album {album_id}")))?;
+        let bytes = encode_cover_jpeg(image_path)?;
+        let dir = self.downloaded_album_covers_dir();
+        std::fs::create_dir_all(&dir)?;
+        let hash = scan::fnv1a(&bytes);
+        let dest = dir.join(format!("custom_{album_id}_{hash:016x}.jpg"));
+        scan::write_atomic(&dest, &bytes)?;
+        let dest_str = scan::display_path(&dest);
+        let prev = match db::set_album_cover(&self.conn(), album_id, &dest_str) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = std::fs::remove_file(&dest);
+                return Err(e);
+            }
+        };
+        if let Some(old) = prev
+            && old != dest_str
+            && db::is_custom_album_cover_path(&old)
+            && Path::new(&old).starts_with(&dir)
+        {
+            let _ = std::fs::remove_file(&old);
+        }
+        self.bump();
+        self.album_info(album_id)?
+            .ok_or_else(|| LibraryError::NotFound(format!("album {album_id}")))
+    }
+
+    /// Clears an album's cover, deletes any custom or cached cover file, and
+    /// immediately re-extracts embedded or folder art from the album's tracks.
+    pub fn clear_album_cover(&self, album_id: i64) -> Result<AlbumRow> {
+        let album = self
+            .album_info(album_id)?
+            .ok_or_else(|| LibraryError::NotFound(format!("album {album_id}")))?;
+        let prev = db::clear_album_cover(&self.conn(), album_id)?;
+        if let Some(old) = prev {
+            let old_path = Path::new(&old);
+            if old_path.starts_with(self.downloaded_album_covers_dir())
+                || old_path.starts_with(self.covers_dir())
+            {
+                let _ = std::fs::remove_file(old_path);
+            }
+        }
+        for ext in ["jpg", "png", "gif", "bmp", "webp"] {
+            let name = scan::cover_file_name(
+                &album.album_artist,
+                &album.title,
+                album.year.map(i64::from),
+                ext,
+            );
+            let _ = std::fs::remove_file(self.covers_dir().join(name));
+        }
+        let files: Vec<(String, i64)> = {
+            let conn = self.conn();
+            let mut st = conn.prepare(
+                "SELECT path, folder_id FROM tracks WHERE album_id = ?1 ORDER BY disc_no, track_no, id",
+            )?;
+            let rows = st.query_map([album_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if !files.is_empty() {
+            let _ = scan::rescan_files(self, &files);
+        }
+        self.bump();
+        self.album_info(album_id)?
+            .ok_or_else(|| LibraryError::NotFound(format!("album {album_id}")))
+    }
+
     /// Removes `cover` from every album that uses it (undo of an added cover).
     pub fn clear_album_cover_path(&self, cover: &str) -> Result<()> {
         let n = self
@@ -1198,6 +1259,29 @@ impl Library {
         }
         self.bump();
     }
+}
+
+fn encode_cover_jpeg(image_path: &Path) -> Result<Vec<u8>> {
+    const MAX_COVER_FILE_BYTES: u64 = 15 * 1024 * 1024;
+    if std::fs::metadata(image_path)?.len() > MAX_COVER_FILE_BYTES {
+        return Err(LibraryError::Other(
+            "cover image exceeds the 15 MB size limit".into(),
+        ));
+    }
+    let img = image::ImageReader::open(image_path)?
+        .with_guessed_format()?
+        .decode()
+        .map_err(|e| LibraryError::Other(format!("invalid image: {e}")))?;
+    let rgb = img
+        .resize_to_fill(600, 600, image::imageops::FilterType::Triangle)
+        .into_rgb8();
+    let mut buf = Vec::new();
+    rgb.write_to(
+        &mut std::io::Cursor::new(&mut buf),
+        image::ImageFormat::Jpeg,
+    )
+    .map_err(|e| LibraryError::Other(format!("failed to encode cover: {e}")))?;
+    Ok(buf)
 }
 
 fn unix_now() -> i64 {

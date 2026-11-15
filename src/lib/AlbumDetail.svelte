@@ -57,6 +57,18 @@
   const tint = $derived(tintFrom(color))
 
   let choosingPlaylist = $state(false)
+  async function changeCover() {
+    const updated = await library.pickAlbumCoverFile(albumId)
+    if (updated && data) data = { ...data, album: updated }
+    if (updated) void pinned.refresh()
+  }
+
+  async function resetCover() {
+    const updated = await library.clearAlbumCover(albumId)
+    if (updated && data) data = { ...data, album: updated }
+    if (updated) void pinned.refresh()
+  }
+
   const totalMs = $derived(data ? data.tracks.reduce((sum, tr) => sum + (tr.durationMs ?? 0), 0) : 0)
   function hoursMins(ms: number): string {
     const totalMin = Math.round(ms / 60_000)
@@ -83,7 +95,19 @@
       backLabel={t('Albums')}
     >
       {#snippet cover()}
-        <Cover cover={data!.album.cover} title={data!.album.title} class="size-52 rounded-md text-6xl shadow-2xl shadow-black/50 xl:size-56" />
+        <button
+          type="button"
+          aria-label={t('Change cover')}
+          title={t('Change cover')}
+          class="group relative block overflow-hidden rounded-md shadow-2xl shadow-black/50 outline-none focus-visible:ring-2 focus-visible:ring-white"
+          onclick={() => void changeCover()}
+        >
+          <Cover cover={data!.album.cover} title={data!.album.title} class="size-52 rounded-md text-6xl xl:size-56" />
+          <span class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+            <Icon name="upload" class="size-6" />
+            {t('Change cover')}
+          </span>
+        </button>
       {/snippet}
       {#snippet meta()}
         <span class="font-bold text-white"><ArtistLinks artist={data!.album.albumArtist} onNavigate={onBack} /></span>
@@ -171,6 +195,30 @@
             >
               <Icon name="sliders" class="size-4 text-zinc-500" />{t('Edit tags…')}
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              class={menuItem}
+              onclick={() => {
+                close()
+                void changeCover()
+              }}
+            >
+              <Icon name="image" class="size-4 text-zinc-500" />{t('Choose cover…')}
+            </button>
+            {#if data && data.album.cover !== null}
+              <button
+                type="button"
+                role="menuitem"
+                class={menuItem}
+                onclick={() => {
+                  close()
+                  void resetCover()
+                }}
+              >
+                <Icon name="refresh" class="size-4 text-zinc-500" />{t('Reset cover')}
+              </button>
+            {/if}
             <button
               type="button"
               role="menuitem"

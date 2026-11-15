@@ -341,6 +341,8 @@ pub fn run() {
             commands::library_track_by_path,
             commands::library_albums_page,
             commands::library_album,
+            commands::library_set_album_cover_file,
+            commands::library_clear_album_cover,
             commands::library_play_album,
             commands::library_play_all,
             commands::playlists_list,

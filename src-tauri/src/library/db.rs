@@ -403,7 +403,11 @@ fn apply_regroup(conn: &Connection, rows: Vec<GroupedTrack>) -> Result<()> {
     let mut upsert = conn.prepare_cached(
         "INSERT INTO albums(title, album_artist, year, cover) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(title, album_artist, COALESCE(year, -1)) DO UPDATE SET
-            cover = COALESCE(cover, excluded.cover)
+            cover = CASE
+                WHEN cover IS NOT NULL AND (cover LIKE '%/custom_%' OR cover LIKE '%\\custom_%') THEN cover
+                WHEN excluded.cover IS NOT NULL AND (excluded.cover LIKE '%/custom_%' OR excluded.cover LIKE '%\\custom_%') THEN excluded.cover
+                ELSE COALESCE(cover, excluded.cover)
+            END
          RETURNING id",
     )?;
     let mut move_track = conn.prepare_cached("UPDATE tracks SET album_id = ?1 WHERE id = ?2")?;
@@ -418,7 +422,8 @@ fn apply_regroup(conn: &Connection, rows: Vec<GroupedTrack>) -> Result<()> {
         }
         let cover = members
             .iter()
-            .filter(|m| m.album_year == year)
+            .filter(|m| m.cover.as_deref().is_some_and(is_custom_album_cover_path))
+            .chain(members.iter().filter(|m| m.album_year == year))
             .chain(members.iter())
             .find_map(|m| m.cover.clone());
         let target: i64 = upsert.query_row(
@@ -2478,12 +2483,40 @@ pub fn track_row_by_path(conn: &Connection, path: &str) -> Result<Option<TrackRo
         .optional()?)
 }
 
-pub fn set_album_cover(conn: &Connection, album_id: i64, cover: &str) -> Result<()> {
-    conn.execute(
+pub fn is_custom_album_cover_path(path: &str) -> bool {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    name.starts_with("custom_")
+}
+
+pub fn set_album_cover(conn: &Connection, album_id: i64, cover: &str) -> Result<Option<String>> {
+    let old: Option<String> = conn
+        .query_row("SELECT cover FROM albums WHERE id = ?1", [album_id], |r| {
+            r.get(0)
+        })
+        .optional()?
+        .flatten();
+    let updated = conn.execute(
         "UPDATE albums SET cover = ?1 WHERE id = ?2",
         rusqlite::params![cover, album_id],
     )?;
-    Ok(())
+    if updated == 0 {
+        return Err(super::LibraryError::NotFound(format!("album {album_id}")));
+    }
+    Ok(old)
+}
+
+pub fn clear_album_cover(conn: &Connection, album_id: i64) -> Result<Option<String>> {
+    let old: Option<String> = conn
+        .query_row("SELECT cover FROM albums WHERE id = ?1", [album_id], |r| {
+            r.get(0)
+        })
+        .optional()?
+        .flatten();
+    let updated = conn.execute("UPDATE albums SET cover = NULL WHERE id = ?1", [album_id])?;
+    if updated == 0 {
+        return Err(super::LibraryError::NotFound(format!("album {album_id}")));
+    }
+    Ok(old)
 }
 
 // ---------------------------------------------------------------------

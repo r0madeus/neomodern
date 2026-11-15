@@ -2373,3 +2373,115 @@ fn autoplay_picks_fitting_songs_and_goes_on_when_they_run_out() {
         .collect();
     assert!(picks(&all, 5).is_empty());
 }
+
+#[test]
+fn custom_album_cover_survives_rescan_and_resets_cleanly() {
+    let e = env();
+    let track_path = e.music.join("Artist/Album/01.wav");
+    let mut embedded_png = Vec::new();
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]))
+        .write_to(
+            &mut std::io::Cursor::new(&mut embedded_png),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    tagged_wav(
+        &track_path,
+        &Meta {
+            title: "Song",
+            artist: "Artist",
+            album: "Album",
+            album_artist: "Artist",
+            track: 1,
+            year: 2024,
+            picture: Some(&embedded_png),
+            ..Default::default()
+        },
+    );
+    e.scan();
+
+    let album_before = e.lib.albums_page(0, 10).unwrap().remove(0);
+    let original_cover = album_before.cover.clone().unwrap();
+    assert!(!super::db::is_custom_album_cover_path(&original_cover));
+    assert!(Path::new(&original_cover).exists());
+
+    let custom_src_1 = e._tmp.path().join("custom1.png");
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([20, 120, 220, 255]))
+        .save(&custom_src_1)
+        .unwrap();
+    let updated = e
+        .lib
+        .set_album_cover_file(album_before.id, &custom_src_1)
+        .unwrap();
+    let custom_cover_1 = updated.cover.clone().unwrap();
+    assert!(super::db::is_custom_album_cover_path(&custom_cover_1));
+    let file_name_1 = Path::new(&custom_cover_1)
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(file_name_1.starts_with("custom_"));
+    assert!(Path::new(&custom_cover_1).exists());
+
+    // Rescanning the album's track must not clobber the custom cover.
+    let track_files = vec![(
+        super::scan::display_path(&track_path),
+        e.folder_id,
+    )];
+    e.lib.rescan_files(&track_files).unwrap();
+    let after_rescan = e.lib.album_info(album_before.id).unwrap().unwrap();
+    assert_eq!(after_rescan.cover.as_deref(), Some(custom_cover_1.as_str()));
+
+    // Replacing with a second custom cover removes the old custom file.
+    let custom_src_2 = e._tmp.path().join("custom2.png");
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([40, 200, 90, 255]))
+        .save(&custom_src_2)
+        .unwrap();
+    let replaced = e
+        .lib
+        .set_album_cover_file(album_before.id, &custom_src_2)
+        .unwrap();
+    let custom_cover_2 = replaced.cover.clone().unwrap();
+    assert_ne!(custom_cover_2, custom_cover_1);
+    assert!(!Path::new(&custom_cover_1).exists());
+    assert!(Path::new(&custom_cover_2).exists());
+
+    // Resetting removes the custom cover file and restores embedded/folder art.
+    let reset = e.lib.clear_album_cover(album_before.id).unwrap();
+    assert!(!Path::new(&custom_cover_2).exists());
+    assert_eq!(reset.cover.as_deref(), Some(original_cover.as_str()));
+    assert!(Path::new(&original_cover).exists());
+
+    // An album without embedded/folder art resets cleanly back to None.
+    let bare_path = e.music.join("Artist/Bare/01.wav");
+    tagged_wav(
+        &bare_path,
+        &Meta {
+            title: "Bare Song",
+            artist: "Artist",
+            album: "Bare",
+            album_artist: "Artist",
+            track: 1,
+            year: 2024,
+            ..Default::default()
+        },
+    );
+    e.scan();
+    let bare_album = e
+        .lib
+        .albums_page(0, 10)
+        .unwrap()
+        .into_iter()
+        .find(|a| a.title == "Bare")
+        .unwrap();
+    assert_eq!(bare_album.cover, None);
+    let bare_custom = e
+        .lib
+        .set_album_cover_file(bare_album.id, &custom_src_1)
+        .unwrap();
+    let bare_cover = bare_custom.cover.unwrap();
+    assert!(Path::new(&bare_cover).exists());
+    let bare_reset = e.lib.clear_album_cover(bare_album.id).unwrap();
+    assert!(!Path::new(&bare_cover).exists());
+    assert_eq!(bare_reset.cover, None);
+}

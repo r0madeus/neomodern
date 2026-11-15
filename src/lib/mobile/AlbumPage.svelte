@@ -5,6 +5,7 @@
   import ArtistLinks from '../ArtistLinks.svelte'
   import Cover from '../Cover.svelte'
   import Icon from '../Icon.svelte'
+  import ActionsMenu from '../ActionsMenu.svelte'
   import AddToPlaylist from '../AddToPlaylist.svelte'
   import TintedBackdrop from '../TintedBackdrop.svelte'
   import TrackItem from './TrackItem.svelte'
@@ -59,6 +60,18 @@
     if (!data || data.tracks.length === 0) return
     await player.setShuffle(true)
     await library.playAlbum(albumId, Math.floor(Math.random() * data.tracks.length))
+  }
+
+  async function changeCover() {
+    const updated = await library.pickAlbumCoverFile(albumId)
+    if (updated && data) data = { ...data, album: updated }
+    if (updated) void pinned.refresh()
+  }
+
+  async function resetCover() {
+    const updated = await library.clearAlbumCover(albumId)
+    if (updated && data) data = { ...data, album: updated }
+    if (updated) void pinned.refresh()
   }
 </script>
 
@@ -115,6 +128,40 @@
             {t("Find info")}
           </button>
         {/if}
+        <ActionsMenu
+          label={t('More actions for “{title}”', { title: data.album.title })}
+          triggerClass="rounded-full p-2.5 text-zinc-300 outline-none active:bg-white/10"
+          iconClass="size-6"
+        >
+          {#snippet children(close)}
+            <button
+              type="button"
+              role="menuitem"
+              class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+              onclick={() => {
+                close()
+                void changeCover()
+              }}
+            >
+              <Icon name="image" class="size-5 text-zinc-500" />
+              {t('Choose cover…')}
+            </button>
+            {#if data?.album.cover !== null}
+              <button
+                type="button"
+                role="menuitem"
+                class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+                onclick={() => {
+                  close()
+                  void resetCover()
+                }}
+              >
+                <Icon name="refresh" class="size-5 text-zinc-500" />
+                {t('Reset cover')}
+              </button>
+            {/if}
+          {/snippet}
+        </ActionsMenu>
         <span class="flex-1"></span>
         <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t("Shuffle play")} onclick={shufflePlay}>
           <Icon name="shuffle" class="size-6" />

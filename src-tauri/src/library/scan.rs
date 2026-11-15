@@ -61,7 +61,7 @@ pub fn fnv1a(bytes: &[u8]) -> u64 {
     hash
 }
 
-pub fn cover_file_name(album_artist: &str, title: &str, year: Option<i64>, ext: &str) -> String {
+pub(crate) fn cover_file_name(album_artist: &str, title: &str, year: Option<i64>, ext: &str) -> String {
     let key = match year {
         Some(y) => format!("{album_artist}\u{1f}{title}\u{1f}{y}"),
         None => format!("{album_artist}\u{1f}{title}"),
@@ -359,7 +359,7 @@ impl Scanner<'_> {
                 let mut upsert_album = tx.prepare_cached(
                     "INSERT INTO albums(title, album_artist, year, cover) VALUES (?1, ?2, ?3, ?4)
                      ON CONFLICT(title, album_artist, COALESCE(year, -1)) DO UPDATE SET
-                        cover = COALESCE(excluded.cover, cover)
+                        cover = CASE WHEN cover IS NOT NULL AND (cover LIKE '%/custom_%' OR cover LIKE '%\\custom_%') THEN cover ELSE COALESCE(excluded.cover, cover) END
                      RETURNING id",
                 )?;
                 let mut upsert_track = tx.prepare_cached(

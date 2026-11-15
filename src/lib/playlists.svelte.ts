@@ -85,14 +85,19 @@ class PlaylistStore {
   }
 
   async setCoverFile(id: number): Promise<boolean> {
-    const picked = await open({
-      multiple: false,
-      directory: false,
-      title: t('Choose playlist cover'),
-      filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-    })
-    if (typeof picked !== 'string') return false
-    return (await this.#try(() => invoke('playlist_set_cover_file', { id, path: picked }))) !== null
+    const picked = await this.#try(() =>
+      appSettings.platform === 'android'
+        ? invoke<string | null>('android_pick_file')
+        : open({
+            multiple: false,
+            directory: false,
+            title: t('Choose playlist cover'),
+            filters: [{ name: t('Images'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+          }),
+    )
+    const path = picked?.value
+    if (!path || typeof path !== 'string') return false
+    return (await this.#try(() => invoke('playlist_set_cover_file', { id, path }))) !== null
   }
 
   async setCoverPreset(id: number, preset: string): Promise<boolean> {

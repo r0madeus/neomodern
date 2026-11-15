@@ -800,6 +800,46 @@ pub async fn library_album(lib: State<'_, Arc<Library>>, album_id: i64) -> Res<A
         .map_err(|e| e.to_string())?
 }
 
+fn emit_album_cover_changed(app: &AppHandle, lib: &Library) {
+    if let Err(e) = app.emit("library://changed", lib.version()) {
+        log::warn!("failed to emit library change event: {e}");
+    }
+    if let Err(e) = app.emit("pinned://changed", ()) {
+        log::warn!("failed to emit pinned change event: {e}");
+    }
+}
+
+#[tauri::command]
+pub async fn library_set_album_cover_file(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    album_id: i64,
+    path: String,
+) -> Res<AlbumRow> {
+    let lib_bg = Arc::clone(&lib);
+    let row = tokio::task::spawn_blocking(move || {
+        le(lib_bg.set_album_cover_file(album_id, std::path::Path::new(&path)))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    emit_album_cover_changed(&app, &lib);
+    Ok(row)
+}
+
+#[tauri::command]
+pub async fn library_clear_album_cover(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    album_id: i64,
+) -> Res<AlbumRow> {
+    let lib_bg = Arc::clone(&lib);
+    let row = tokio::task::spawn_blocking(move || le(lib_bg.clear_album_cover(album_id)))
+        .await
+        .map_err(|e| e.to_string())??;
+    emit_album_cover_changed(&app, &lib);
+    Ok(row)
+}
+
 #[tauri::command]
 pub fn library_play_album(
     lib: State<'_, Arc<Library>>,

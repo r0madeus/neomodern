@@ -65,6 +65,9 @@
     const m = totalMin % 60
     return h === 0 ? t('{m} min', { m }) : t('{h} hr {m} min', { h, m })
   }
+  // #, title, plays, save, length, "…" (header and rows share it).
+  const ROW_COLS =
+    'grid grid-cols-[2rem_minmax(0,1fr)_minmax(4rem,12rem)_2rem_3.5rem_2rem] items-center gap-x-4'
   const menuItem =
     'flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800'
 </script>
@@ -186,22 +189,33 @@
       {/snippet}
     </CollectionHeader>
     <div class="px-5">
-    <ol class="divide-y divide-zinc-100 dark:divide-zinc-800/70">
+    <!-- Columns like Spotify's album list: #, title, plays, then save,
+         length and "…". The header names them. -->
+    <div class={[ROW_COLS, 'border-b border-zinc-200 px-3 pb-2 text-xs font-medium tracking-wide text-zinc-400 uppercase dark:border-zinc-800']}>
+      <span class="text-right">#</span>
+      <span>{t('Title')}</span>
+      <span>{t('Plays')}</span>
+      <span></span>
+      <span class="text-right">{t('Time')}</span>
+      <span></span>
+    </div>
+    <ol class="mt-1">
       {#each data.tracks as track, i (track.id)}
         <li
-          class="group flex items-center gap-1"
+          class={[
+            ROW_COLS,
+            'group h-12 rounded-md px-3 text-sm',
+            selection.has(`album:${albumId}`, track.path)
+              ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
+              : track.path === currentPath
+                ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
+                : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
+          ]}
           oncontextmenu={(e) =>
             trackMenu.fromEvent(e, track, { onPlay: () => void library.playAlbum(albumId, i) })}
         >
           <button
-            class={[
-              'flex h-10 min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm',
-              selection.has(`album:${albumId}`, track.path)
-                ? 'bg-accent-500/20 text-zinc-900 dark:bg-accent-400/20 dark:text-white'
-                : track.path === currentPath
-                  ? 'bg-accent-50 text-accent-900 dark:bg-accent-950/40 dark:text-accent-100'
-                  : 'text-zinc-700 hover:bg-zinc-100/70 dark:text-zinc-300 dark:hover:bg-zinc-800/50',
-            ]}
+            class="col-span-3 grid h-full grid-cols-subgrid items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
             aria-pressed={selection.has(`album:${albumId}`, track.path)}
             onclick={(e) => {
               if (!selection.click(e, `album:${albumId}`, i, track, (j) => data?.tracks[j])) {
@@ -210,37 +224,34 @@
             }}
             onkeydown={(e) => selection.key(e, `album:${albumId}`, data?.tracks.length ?? 0, (j) => data?.tracks[j])}
           >
-            <span class="w-8 text-right text-xs tabular-nums text-zinc-400">
+            <span class="text-right text-sm tabular-nums text-zinc-400">
               {#if track.path === currentPath && player.snapshot.status === 'playing'}
-                <Equalizer class="text-accent-600 dark:text-accent-400" />
+                <Equalizer class="ml-auto text-accent-600 dark:text-accent-400" />
               {:else}
                 {track.trackNo ?? i + 1}
               {/if}
             </span>
-            <span class="flex min-w-0 flex-1 items-center">
-              <span class="truncate font-medium">{track.title}</span><ExtBadge path={track.path} />
+            <span class="flex min-w-0 items-center">
+              <span class={['truncate font-medium', track.path === currentPath && 'text-accent-600 dark:text-accent-400']}>{track.title}</span><ExtBadge path={track.path} />
             </span>
-            <span
-              class="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-500"
-              title={t('Plays')}
-            >
+            <span class="text-sm tabular-nums text-zinc-500">
               {track.plays.toLocaleString(i18n.locale)}
             </span>
-            <span class="text-xs tabular-nums text-zinc-500">
-              {formatTime(track.durationMs === null ? null : track.durationMs / 1000)}
-            </span>
           </button>
-          <span class="flex items-center gap-1">
+          <span class="flex justify-center">
             <FavoriteButton trackId={track.id} title={track.title} revealOnHover />
-            <span class="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-              <AddToPlaylist
-                trackIds={[track.id]}
-                {track}
-                editTags
-                onPlay={() => void library.playAlbum(albumId, i)}
-                label={t('More actions for “{title}”', { title: track.title })}
-              />
-            </span>
+          </span>
+          <span class="text-right text-sm tabular-nums text-zinc-500">
+            {formatTime(track.durationMs === null ? null : track.durationMs / 1000)}
+          </span>
+          <span class="flex justify-end opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+            <AddToPlaylist
+              trackIds={[track.id]}
+              {track}
+              editTags
+              onPlay={() => void library.playAlbum(albumId, i)}
+              label={t('More actions for “{title}”', { title: track.title })}
+            />
           </span>
         </li>
       {/each}

@@ -487,7 +487,7 @@ fn test_service(dir: &Path, policy: &Arc<NetPolicy>) -> OnlineService {
 fn marker_ytdlp(dir: &Path) -> (PathBuf, PathBuf) {
     use std::os::unix::fs::PermissionsExt;
     let marker = dir.join("ytdlp-started");
-    let script = dir.join("fake-ytdlp");
+    let script = dir.join("yt-dlp");
     std::fs::write(
         &script,
         format!(

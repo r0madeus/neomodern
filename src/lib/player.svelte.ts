@@ -14,6 +14,8 @@ export interface TrackInfo {
   title: string
   /** Empty when unknown (files opened directly, untagged files). */
   artist: string
+  /** Added with "Add to queue". */
+  queued?: boolean
 }
 
 export interface PlayerSnapshot {
@@ -129,6 +131,10 @@ class PlayerStore {
   }
   openFiles = (paths: string[]) => this.#run('queue_replace', { paths, startIndex: 0 })
   appendFiles = (paths: string[]) => this.#run('queue_append', { paths })
+  /** Spotify's "Add to queue": after earlier adds, before the rest. */
+  addToQueue = (paths: string[]) => this.#run('queue_add', { paths })
+  /** Removes the not yet played "Add to queue" songs. */
+  clearAdded = () => this.#run('queue_clear_added')
   playNext = (path: string) => this.#run('queue_play_next', { path })
   playIndex = (index: number) => this.#run('player_play_index', { index })
   removeIndex = (index: number) => this.#run('queue_remove', { index })

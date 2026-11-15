@@ -283,6 +283,8 @@ pub fn run() {
             commands::queue_append,
             commands::queue_play_next,
             commands::queue_play_next_many,
+            commands::queue_add,
+            commands::queue_clear_added,
             commands::queue_remove,
             commands::queue_move,
             commands::queue_page,

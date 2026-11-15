@@ -75,6 +75,8 @@ pub struct TrackInfo {
     pub title: String,
     /// Tag artist, empty when unknown.
     pub artist: String,
+    /// Added with "Add to queue".
+    pub queued: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -238,6 +240,7 @@ fn track_info(e: &crate::queue::QueueEntry) -> TrackInfo {
                     .unwrap_or_default()
             }),
         artist: e.artist.clone().unwrap_or_default(),
+        queued: e.queued,
     }
 }
 
@@ -730,6 +733,25 @@ impl Player {
     pub fn insert_next(&self, track: impl Into<Track>) -> Result<PlayerSnapshot, PlayerError> {
         self.run(|s| {
             s.queue.insert_next(track);
+            s.sync_next()
+        })
+    }
+
+    /// Removes the not yet played "Add to queue" songs (Spotify's "Clear").
+    pub fn clear_queued(&self) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| {
+            s.queue.clear_queued();
+            s.sync_next()
+        })
+    }
+
+    /// Spotify's "Add to queue" for each track, in order (see
+    /// `Queue::enqueue`).
+    pub fn enqueue(&self, tracks: Vec<Track>) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| {
+            for track in tracks {
+                s.queue.enqueue(track);
+            }
             s.sync_next()
         })
     }

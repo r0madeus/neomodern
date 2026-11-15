@@ -224,7 +224,7 @@
     const c = ctx
     if (!c) return
     close()
-    await player.appendFiles([c.track.path])
+    await player.addToQueue([c.track.path])
     playlists.flash(t('Added to queue'))
   }
 

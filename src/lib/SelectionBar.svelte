@@ -30,7 +30,7 @@
     run(async () => {
       player.applySnapshot(await invoke('queue_play_next_many', { paths }))
     }, t('Queued to play next'))
-  const queue = () => run(() => player.appendFiles(paths), t('Added to queue'))
+  const queue = () => run(() => player.addToQueue(paths), t('Added to queue'))
   const favorite = () => run(() => invoke('favorites_set_many', { trackIds: ids, favorite: true }), t('Added to favorites'))
 
   $effect(() => {

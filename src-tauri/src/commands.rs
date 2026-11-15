@@ -69,6 +69,32 @@ pub fn queue_play_next_many(
     s(player.insert_next_many(tracks))
 }
 
+/// "Add to queue" (Spotify order: after earlier adds, before the rest).
+#[tauri::command]
+pub fn queue_add(
+    lib: State<'_, Arc<Library>>,
+    player: State<'_, Arc<Player>>,
+    paths: Vec<String>,
+) -> Res<PlayerSnapshot> {
+    let tracks = paths
+        .into_iter()
+        .map(|path| match lib.track_meta(&path).ok().flatten() {
+            Some(meta) => crate::queue::Track {
+                path: PathBuf::from(&path),
+                title: Some(meta.title),
+                artist: Some(meta.artist),
+            },
+            None => crate::queue::Track::from(PathBuf::from(path)),
+        })
+        .collect();
+    s(player.enqueue(tracks))
+}
+
+#[tauri::command]
+pub fn queue_clear_added(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
+    s(player.clear_queued())
+}
+
 #[tauri::command]
 pub fn queue_remove(player: State<'_, Arc<Player>>, index: usize) -> Res<PlayerSnapshot> {
     s(player.remove(index))

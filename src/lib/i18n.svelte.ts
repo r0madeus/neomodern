@@ -224,6 +224,12 @@ const TR: Record<string, string> = {
   // Playlists
   Playlist: 'Çalma listesi',
   'New playlist': 'Yeni çalma listesi',
+  'Timer': 'Zamanlayıcı',
+  'Edit': 'Düzenle',
+  'Repeat': 'Tekrarla',
+  'More actions': 'Diğer işlemler',
+  'Add files to the queue': 'Sıraya dosya ekle',
+  'Drag to reorder': 'Sürükleyip sırala',
   'Date added': 'Eklenme tarihi',
   'Remove from this playlist': 'Bu çalma listesinden çıkar',
   'Go to queue': 'Sıraya git',
@@ -734,6 +740,7 @@ const TR: Record<string, string> = {
   'Selected songs': 'Seçili şarkılar',
   'Playing {n}': '{n} çalınıyor',
   'Added to favorites': 'Favorilere eklendi',
+  'Removed from favorites': 'Favorilerden çıkarıldı',
   Favorite: 'Favori',
   Experimental: 'Deneysel',
   'Fades the end of a song into the start of the next one. Experimental: a short skip can be heard at the change, and gapless playback is not used while it is on.':

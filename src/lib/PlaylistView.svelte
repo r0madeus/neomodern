@@ -365,7 +365,7 @@
 
   async function queueSelected() {
     if (selectedEntries.length === 0) return
-    await player.appendFiles(selectedEntries.map((e) => e.track.path))
+    await player.addToQueue(selectedEntries.map((e) => e.track.path))
     if (!player.error) playlists.flash(t('Added to queue'))
   }
 

@@ -7,6 +7,9 @@
   import { player } from '../player.svelte'
   import { nowCover } from '../nowCover.svelte'
   import { tintFrom } from '../tint'
+  import { trackCovers } from '../trackCovers.svelte'
+  import { TrackSwipe } from '../trackSwipe.svelte'
+  import type { TrackInfo } from '../player.svelte'
 
   // Floating bar above the tabs; tapping it opens the full player.
   let { onOpen }: { onOpen: () => void } = $props()
@@ -21,9 +24,9 @@
       !snap.current.path.startsWith('https://'),
   )
 
-  // Horizontal swipe gesture for next / previous track.
-  let swipeX = $state(0)
-  let axis = $state<'none' | 'x' | 'y'>('none')
+  // Swipe left / right for the next / previous song (see trackSwipe).
+  const swipe = new TrackSwipe()
+  let axis: 'none' | 'x' | 'y' = 'none'
   let startX = 0
   let startY = 0
   let swipedUntil = 0
@@ -33,52 +36,44 @@
     startX = e.touches[0].clientX
     startY = e.touches[0].clientY
     axis = 'none'
-    swipeX = 0
   }
 
   function onTouchMove(e: TouchEvent) {
     if (e.touches.length !== 1) return
     const dx = e.touches[0].clientX - startX
     const dy = e.touches[0].clientY - startY
-
     if (axis === 'none') {
-      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-        axis = 'x'
-      } else if (Math.abs(dy) > 8) {
-        axis = 'y'
-        return
-      } else {
-        return
-      }
+      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) axis = 'x'
+      else if (Math.abs(dy) > 8) axis = 'y'
+      else return
     }
-
-    if (axis === 'x') {
-      swipeX = Math.max(-110, Math.min(110, dx))
-    }
+    if (axis === 'x') swipe.drag(dx)
   }
 
   function onTouchEnd() {
     if (axis === 'x') {
-      swipedUntil = Date.now() + 260
-      if (swipeX <= -52) {
-        void player.next()
-      } else if (swipeX >= 52) {
-        void player.previous()
-      }
+      swipedUntil = Date.now() + 300
+      swipe.release()
     }
     axis = 'none'
-    swipeX = 0
   }
 
   function onTouchCancel() {
+    if (axis === 'x') swipe.cancel()
     axis = 'none'
-    swipeX = 0
   }
 
   function handleOpen() {
     if (Date.now() < swipedUntil) return
     onOpen()
   }
+
+  function coverOf(track: TrackInfo): string | null {
+    if (nowCover.path === track.path && nowCover.cover) return nowCover.cover
+    return trackCovers.get(track.path) ?? null
+  }
+
+  const panels = $derived([snap.previousTrack, snap.current, snap.nextTrack])
 </script>
 
 {#if snap.current}
@@ -94,23 +89,31 @@
   >
     <TintedBackdrop background={tintFrom(nowCover.color).surface} duration={500} />
     <div class="flex h-14 items-center gap-1 pr-1 pl-2">
-      <div class="min-w-0 flex-1 overflow-hidden">
-        <button
-          class={[
-            'flex w-full min-w-0 items-center gap-3 text-left',
-            axis === 'x' ? '' : 'transition-transform duration-200 ease-out',
-          ]}
-          style:transform={swipeX ? `translateX(${swipeX}px)` : undefined}
-          style:opacity={swipeX ? Math.max(0.45, 1 - Math.abs(swipeX) / 140) : undefined}
-          onclick={handleOpen}
-          aria-label={t('Open player')}
+      <div class="min-w-0 flex-1 overflow-hidden" bind:clientWidth={swipe.width}>
+        <div
+          class="flex w-[300%] will-change-transform"
+          style:transform={swipe.transform}
+          style:transition={swipe.transition}
         >
-          <Cover cover={nowCover.cover} title={snap.current.title} class="size-10 shrink-0 rounded text-xs" />
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-sm font-semibold text-zinc-50">{snap.current.title}</span>
-            <span class="block truncate text-xs text-zinc-400">{snap.current.artist || t('Unknown artist')}</span>
-          </span>
-        </button>
+          {#each panels as track, i (i)}
+            <div class="w-1/3 min-w-0 shrink-0" aria-hidden={i !== 1}>
+              {#if track}
+                <button
+                  class="flex w-full min-w-0 items-center gap-3 text-left"
+                  tabindex={i === 1 ? 0 : -1}
+                  onclick={handleOpen}
+                  aria-label={t('Open player')}
+                >
+                  <Cover cover={coverOf(track)} title={track.title} class="size-10 shrink-0 rounded text-xs" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-semibold text-zinc-50">{track.title}</span>
+                    <span class="block truncate text-xs text-zinc-400">{track.artist || t('Unknown artist')}</span>
+                  </span>
+                </button>
+              {/if}
+            </div>
+          {/each}
+        </div>
       </div>
       {#if isLocal}
         <FavoriteButton path={snap.current.path} title={snap.current.title} size="size-5" light />

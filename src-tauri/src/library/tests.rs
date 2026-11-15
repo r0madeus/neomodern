@@ -2163,3 +2163,117 @@ fn favorites_can_be_set_for_many_tracks() {
     assert_eq!(e.lib.set_favorites(&ids[..2], false).unwrap(), 2);
     assert_eq!(e.lib.favorites().unwrap().len(), 1);
 }
+
+#[test]
+fn track_rows_count_plays_like_the_stats() {
+    let e = env();
+    scanned_tracks(&e, &["Alpha", "Beta"]);
+    let tracks = e.lib.tracks_page(0, 10, SortOrder::Title).unwrap();
+    let alpha = &tracks[0];
+    assert_eq!(alpha.plays, 0);
+    let listen = |listened_ms: u64, completed: bool| super::NewListenEvent {
+        path: alpha.path.clone(),
+        title: alpha.title.clone(),
+        artist: alpha.artist.clone(),
+        duration_ms: alpha.duration_ms,
+        started_at: 1_700_000_000,
+        ended_at: 1_700_000_200,
+        listened_ms,
+        completed,
+        skipped: !completed,
+    };
+    // Finished, long enough, and a 5 s skip that does not count.
+    e.lib.record_listen_event(listen(180_000, true)).unwrap();
+    e.lib.record_listen_event(listen(20_000, false)).unwrap();
+    e.lib.record_listen_event(listen(5_000, false)).unwrap();
+
+    let rows = e.lib.tracks_page(0, 10, SortOrder::Title).unwrap();
+    assert_eq!(rows[0].plays, 2);
+    assert_eq!(rows[1].plays, 0);
+    let album = e.lib.album(rows[0].album_id.unwrap()).unwrap();
+    assert_eq!(album.tracks.iter().map(|t| t.plays).sum::<u32>(), 2);
+    let pl = e.lib.create_playlist("P", &[rows[0].id]).unwrap();
+    assert_eq!(e.lib.playlist_tracks(pl.id, 0, 10).unwrap()[0].plays, 2);
+}
+
+#[test]
+fn playlists_know_which_contain_a_track_and_drop_it() {
+    let e = env();
+    let ids = scanned_tracks(&e, &["Alpha", "Beta"]);
+    let a = e
+        .lib
+        .create_playlist("A", &[ids[0], ids[1], ids[0]])
+        .unwrap()
+        .id;
+    let b = e.lib.create_playlist("B", &[ids[1]]).unwrap().id;
+    assert_eq!(e.lib.playlists_with_track(ids[0]).unwrap(), [a]);
+    assert_eq!(e.lib.playlists_with_track(ids[1]).unwrap(), [a, b]);
+    // Both copies go; the rest keeps its order.
+    e.lib.playlist_remove_track(a, ids[0]).unwrap();
+    let left: Vec<i64> = e
+        .lib
+        .playlist_tracks(a, 0, 10)
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    assert_eq!(left, [ids[1]]);
+    assert!(e.lib.playlists_with_track(ids[0]).unwrap().is_empty());
+}
+
+#[test]
+fn downloaded_covers_and_artist_pictures_move_out_of_the_cache() {
+    let e = env();
+    scanned_tracks(&e, &["Alpha"]);
+    let album = e.lib.albums_page(0, 10).unwrap()[0].id;
+    let covers = e._tmp.path().join("cache/covers");
+    // An older version saved "Find info" covers and artist pictures in the cache.
+    let found = covers.join("found.jpg");
+    let artist_pic = covers.join("online/0123.jpg");
+    std::fs::create_dir_all(artist_pic.parent().unwrap()).unwrap();
+    std::fs::write(&found, b"cover").unwrap();
+    std::fs::write(&artist_pic, b"artist").unwrap();
+    let found_s = found.to_string_lossy().into_owned();
+    e.lib.set_album_cover(album, &found_s).unwrap();
+    e.lib
+        .save_tag_history(7, None, &found_s, super::ADDED_COVER_MARK)
+        .unwrap();
+    e.lib
+        .save_artist_meta("Someone", Some(&artist_pic.to_string_lossy()), Some("bio"))
+        .unwrap();
+
+    let images = e._tmp.path().join("data/images");
+    let lib = Library::open(
+        &e._tmp.path().join("data/library.sqlite3"),
+        &covers,
+        Hooks::none(),
+    )
+    .unwrap()
+    .with_user_images_dir(images.clone());
+
+    let cover = lib.albums_page(0, 10).unwrap()[0].cover.clone().unwrap();
+    assert!(Path::new(&cover).starts_with(images.join("albums")));
+    assert_eq!(std::fs::read(&cover).unwrap(), b"cover");
+    assert!(!found.exists(), "moved, not copied");
+    // Its undo record follows, so undoing still removes the right file.
+    assert_eq!(lib.tag_history_batch(7).unwrap()[0].path, cover);
+
+    let pic = lib.artist_meta("Someone").unwrap().unwrap().image.unwrap();
+    assert!(Path::new(&pic).starts_with(images.join("artists")));
+    assert_eq!(std::fs::read(&pic).unwrap(), b"artist");
+
+    // Covers made from the music files stay in the cache: they can be made
+    // again. And a second start has nothing left to move.
+    drop(lib);
+    let lib = Library::open(
+        &e._tmp.path().join("data/library.sqlite3"),
+        &covers,
+        Hooks::none(),
+    )
+    .unwrap()
+    .with_user_images_dir(images.clone());
+    assert_eq!(
+        lib.albums_page(0, 10).unwrap()[0].cover.as_deref(),
+        Some(cover.as_str())
+    );
+}

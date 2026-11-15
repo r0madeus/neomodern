@@ -13,6 +13,7 @@
   import type { Rgb } from '../nowCover.svelte'
   import { player, formatTime } from '../player.svelte'
   import { tintFrom } from '../tint'
+  import { pinned } from '../pinned.svelte'
 
   let { albumId, onBack }: { albumId: number; onBack: () => void } = $props()
 
@@ -93,6 +94,14 @@
       </div>
       <div class="flex items-center gap-2 px-4 pb-2">
         <AddToPlaylist {albumId} label="Add album to playlist" class="p-2.5 text-zinc-300" />
+        <button
+          class={['rounded-full p-2.5 active:bg-white/10', pinned.isPinned('album', albumId) ? 'text-accent-400' : 'text-zinc-300']}
+          aria-label={t(pinned.isPinned('album', albumId) ? 'Unpin' : 'Pin')}
+          aria-pressed={pinned.isPinned('album', albumId)}
+          onclick={() => void pinned.toggle('album', albumId)}
+        >
+          <Icon name="pin" class="size-6" />
+        </button>
         {#if appSettings.allowMetadata}
           <button
             class="rounded-full px-3 py-2 text-sm font-medium text-zinc-300 active:bg-white/10"

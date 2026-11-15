@@ -1,7 +1,13 @@
 <script lang="ts">
+  // Spotify-style save: a "+" circle adds the song to Favorites; once saved
+  // (a filled check), a click opens "Add to playlist" (SaveToMenu), where
+  // it can also be removed from Favorites.
+  import { invoke } from '@tauri-apps/api/core'
   import Icon from './Icon.svelte'
+  import SaveToMenu from './SaveToMenu.svelte'
   import { favorites } from './favorites.svelte'
   import { t } from './i18n.svelte'
+  import type { TrackRow } from './library.svelte'
 
   let {
     trackId = null,
@@ -25,23 +31,42 @@
   )
   const label = $derived(
     active
-      ? t('Remove “{title}” from favorites', { title })
+      ? t('Add “{title}” to a playlist', { title })
       : t('Add “{title}” to favorites', { title }),
   )
+
+  let menu = $state<{ trackId: number; anchor: DOMRect } | null>(null)
 
   let popping = $state(false)
   let popTimer: ReturnType<typeof setTimeout> | undefined
 
+  async function openMenu(button: HTMLElement) {
+    let id = trackId
+    if (id === null && path) {
+      // Now playing and similar places only know the path.
+      const row = await invoke<TrackRow | null>('library_track_by_path', { path }).catch(() => null)
+      id = row?.id ?? null
+    }
+    if (id === null) {
+      // Not in the library (a stream): no playlists, just unsave it.
+      if (path) void favorites.toggleByPath(path)
+      return
+    }
+    menu = { trackId: id, anchor: button.getBoundingClientRect() }
+  }
+
   function toggle(e: MouseEvent) {
     e.stopPropagation()
-    if (!active) {
-      popping = false
-      clearTimeout(popTimer)
-      queueMicrotask(() => {
-        popping = true
-        popTimer = setTimeout(() => (popping = false), 300)
-      })
+    if (active) {
+      void openMenu(e.currentTarget as HTMLElement)
+      return
     }
+    popping = false
+    clearTimeout(popTimer)
+    queueMicrotask(() => {
+      popping = true
+      popTimer = setTimeout(() => (popping = false), 300)
+    })
     if (trackId !== null) void favorites.toggle(trackId)
     else if (path) void favorites.toggleByPath(path)
   }
@@ -69,5 +94,8 @@
   ondblclick={(e) => e.stopPropagation()}
   onkeydown={(e) => e.stopPropagation()}
 >
-  <Icon name={active ? 'star' : 'starOutline'} class={popping ? `${size} animate-star-pop` : size} />
+  <Icon name={active ? 'checkCircle' : 'plusCircle'} class={popping ? `${size} animate-star-pop` : size} />
 </button>
+{#if menu}
+  <SaveToMenu trackId={menu.trackId} {title} anchor={menu.anchor} onClose={() => (menu = null)} />
+{/if}

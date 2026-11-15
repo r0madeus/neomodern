@@ -56,6 +56,7 @@
       durationMs: null,
       path: cur.path,
       cover: nowCover.cover,
+    plays: 0,
     }}
     <div class={['grid min-h-0 flex-1 gap-10 px-10 pt-4 pb-6', hasLyrics ? 'grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : 'grid-cols-1 place-items-center']}>
       <div class="flex min-h-0 flex-col justify-center">

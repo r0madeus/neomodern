@@ -330,61 +330,10 @@
         </section>
       {/if}
 
-      <!-- Recently Played Tracks & Favorites Preview -->
-      {#if feed && (feed.recentlyPlayedTracks.length > 0 || feed.favoriteTracks.length > 0)}
+      <!-- Favorites preview. Recent tracks are not listed here: the
+           "Recently played" covers above already show them. -->
+      {#if feed && feed.favoriteTracks.length > 0}
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {#if feed.recentlyPlayedTracks.length > 0}
-            <section aria-labelledby="home-recent-tracks-heading" class="rounded-2xl border border-zinc-200/80 bg-white/60 p-4 dark:border-zinc-800/80 dark:bg-zinc-900/50">
-              <h2 id="home-recent-tracks-heading" class="mb-3 text-base font-bold text-zinc-900 dark:text-zinc-50">
-                {t('Recently played tracks')}
-              </h2>
-              <div class="flex flex-col divide-y divide-zinc-200/60 dark:divide-zinc-800/60">
-                {#each feed.recentlyPlayedTracks as item (item.track.id)}
-                  {@const track = item.track}
-                  <div
-                    role="group"
-                    aria-label={track.title}
-                    class="group flex items-center gap-3 py-2"
-                    oncontextmenu={(e) =>
-                      trackMenu.fromEvent(e, track, { onPlay: () => void player.openFiles([track.path]) })}
-                  >
-                    <div
-                      role="button"
-                      tabindex="0"
-                      class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
-                      onclick={() => void player.openFiles([track.path])}
-                      onkeydown={(e) => e.target === e.currentTarget && e.key === 'Enter' && void player.openFiles([track.path])}
-                    >
-                      <Cover cover={track.cover} title={track.title} class="size-10 shrink-0 rounded text-xs" />
-                      <span class="min-w-0 flex-1">
-                        <span class={['flex items-center gap-1.5 truncate text-sm font-medium', track.path === currentPath ? 'text-accent-600 dark:text-accent-400' : 'text-zinc-900 dark:text-zinc-100']}>
-                          {#if track.path === currentPath && player.snapshot.status === 'playing'}
-                            <Equalizer class="shrink-0 text-accent-600 dark:text-accent-400" />
-                          {/if}
-                          <span class="truncate">{track.title}</span>
-                        </span>
-                        <span class="block truncate text-xs text-zinc-500">
-                          <ArtistLinks artist={track.artist} />{#if track.album} · <AlbumLink album={track.album} albumId={track.albumId} />{/if}
-                        </span>
-                      </span>
-                    </div>
-                    <span class="hidden text-xs tabular-nums text-zinc-400 sm:inline">
-                      {formatTime(track.durationMs === null ? null : track.durationMs / 1000)}
-                    </span>
-                    <FavoriteButton trackId={track.id} title={track.title} />
-                    <AddToPlaylist
-                      trackIds={[track.id]}
-                      {track}
-                      editTags
-                      onPlay={() => void player.openFiles([track.path])}
-                      label={t('More actions for “{title}”', { title: track.title })}
-                    />
-                  </div>
-                {/each}
-              </div>
-            </section>
-          {/if}
-
           {#if feed.favoriteTracks.length > 0}
             <section aria-labelledby="home-favorites-heading" class="rounded-2xl border border-zinc-200/80 bg-white/60 p-4 dark:border-zinc-800/80 dark:bg-zinc-900/50">
               <div class="mb-3 flex items-center justify-between gap-2">

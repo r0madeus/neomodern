@@ -100,6 +100,13 @@ pub struct PlayerSnapshot {
     pub sleep_ends_at: Option<i64>,
     /// Sleep timer set to "end of this track".
     pub sleep_end_of_track: bool,
+    /// What "previous" and "next" would play (shuffle and repeat applied),
+    /// so a swipe can show the neighbouring track before it plays.
+    pub previous_track: Option<TrackInfo>,
+    pub next_track: Option<TrackInfo>,
+    /// What the queue was started from ("album:3", "playlist:7",
+    /// "favorites"), so the library can mark it; `None` for anything else.
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +122,9 @@ pub struct ListenRecord {
     pub skipped: bool,
 }
 
+// One event at a time goes to the observer; a boxed snapshot would only add
+// an allocation per state change.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlayerEvent {
     State(PlayerSnapshot),
@@ -195,6 +205,8 @@ struct Inner {
     listen: Option<ListenSession>,
     /// Completed listening sessions queued for delivery outside the lock.
     pending_listens: Vec<ListenRecord>,
+    /// See `PlayerSnapshot::context`; set by `replace_queue_from`.
+    context: Option<String>,
 }
 
 pub struct Player {
@@ -258,6 +270,23 @@ impl Inner {
                 _ => None,
             },
             sleep_end_of_track: matches!(self.sleep, Some(Sleep::EndOfTrack)),
+            previous_track: self
+                .queue
+                .current_index()
+                .and(self.queue.previous_index())
+                .and_then(|i| self.queue.get(i))
+                .map(track_info),
+            next_track: self
+                .queue
+                .current_index()
+                .and(self.queue.next_manual_index())
+                .and_then(|i| self.queue.get(i))
+                .map(track_info),
+            context: if self.queue.is_empty() {
+                None
+            } else {
+                self.context.clone()
+            },
         }
     }
 
@@ -478,6 +507,7 @@ impl Player {
                 resume_position: None,
                 pending_load_seek: None,
                 event_seq: 0,
+                context: None,
                 listen: None,
                 pending_listens: Vec::new(),
             }),
@@ -663,10 +693,22 @@ impl Player {
         paths: Vec<impl Into<Track>>,
         start_index: usize,
     ) -> Result<PlayerSnapshot, PlayerError> {
+        self.replace_queue_from(paths, start_index, None)
+    }
+
+    /// `replace_queue`, remembering what the tracks came from (see
+    /// `PlayerSnapshot::context`).
+    pub fn replace_queue_from(
+        &self,
+        paths: Vec<impl Into<Track>>,
+        start_index: usize,
+        context: Option<String>,
+    ) -> Result<PlayerSnapshot, PlayerError> {
         if !paths.is_empty() && start_index >= paths.len() {
             return Err(PlayerError::InvalidIndex(start_index));
         }
         self.run(|s| {
+            s.context = context;
             let empty = paths.is_empty();
             s.queue.replace(paths, (!empty).then_some(start_index));
             if empty {
@@ -856,6 +898,15 @@ impl Player {
                     Ok(())
                 }
             }
+        })
+    }
+
+    /// The previous entry whatever the position (a swipe), unlike
+    /// [`Self::previous`], which restarts a track that has played > 3 s.
+    pub fn previous_track(&self) -> Result<PlayerSnapshot, PlayerError> {
+        self.run(|s| match s.queue.previous_index() {
+            Some(prev) if s.queue.current_index().is_some() => s.start_index(prev),
+            _ => Ok(()),
         })
     }
 
@@ -2238,5 +2289,40 @@ mod bulk_tests {
         assert_eq!(snap.queue_length, 5);
         let order: Vec<String> = p.queue_page(0, 10).into_iter().map(|t| t.path).collect();
         assert_eq!(order, ["a", "x", "y", "z", "b"]);
+    }
+
+    #[test]
+    fn snapshot_names_the_neighbours_and_swipe_back_ignores_the_restart_rule() {
+        let p = Player::new(Box::new(Silent), Box::new(|_| {}));
+        let paths = |v: &[&str]| v.iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+        let snap = p.replace_queue(paths(&["a", "b", "c"]), 1).unwrap();
+        assert_eq!(snap.previous_track.unwrap().path, "a");
+        assert_eq!(snap.next_track.unwrap().path, "c");
+        // 10 s in: the button restarts the track, the swipe goes back.
+        p.handle_engine_event(EngineEvent::Position { seconds: 10.0 });
+        assert_eq!(p.previous().unwrap().current_index, Some(1));
+        let snap = p.previous_track().unwrap();
+        assert_eq!(snap.current_index, Some(0));
+        assert!(snap.previous_track.is_none());
+        assert_eq!(snap.next_track.unwrap().path, "b");
+    }
+
+    #[test]
+    fn the_context_follows_the_last_replaced_queue() {
+        let p = Player::new(Box::new(Silent), Box::new(|_| {}));
+        let paths = |v: &[&str]| v.iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+        let snap = p
+            .replace_queue_from(paths(&["a", "b"]), 0, Some("playlist:7".into()))
+            .unwrap();
+        assert_eq!(snap.context.as_deref(), Some("playlist:7"));
+        // Adding to the queue keeps it, like Spotify.
+        let snap = p.append(paths(&["c"])).unwrap();
+        assert_eq!(snap.context.as_deref(), Some("playlist:7"));
+        // Anything else that replaces the queue forgets it.
+        assert!(p.replace_queue(paths(&["d"]), 0).unwrap().context.is_none());
+        p.replace_queue_from(paths(&["a"]), 0, Some("favorites".into()))
+            .unwrap();
+        let empty: Vec<std::path::PathBuf> = Vec::new();
+        assert!(p.replace_queue(empty, 0).unwrap().context.is_none());
     }
 }

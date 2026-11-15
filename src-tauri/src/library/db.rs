@@ -558,8 +558,13 @@ pub fn counts(conn: &Connection) -> Result<(u64, u64)> {
     Ok((tracks as u64, albums as u64))
 }
 
+/// Track columns, then `plays`: listens that count as a play (finished or
+/// at least 15 s, same rule as `PLAY_EXPR`), matched by track id or path.
 const TRACK_SELECT: &str = "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
-        t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover
+        t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover,
+        (SELECT COUNT(*) FROM listen_events le
+          WHERE (le.track_id = t.id OR le.path = t.path)
+            AND (le.completed = 1 OR le.listened_ms >= 15000)) AS plays
      FROM tracks t LEFT JOIN albums a ON a.id = t.album_id";
 
 fn opt_u32(v: Option<i64>) -> Option<u32> {
@@ -583,6 +588,14 @@ fn track_row(r: &Row<'_>) -> rusqlite::Result<TrackRow> {
             .and_then(|n| u64::try_from(n).ok()),
         path: r.get(9)?,
         cover: r.get(10)?,
+        // Only queries that select a `plays` column have it.
+        plays: r
+            .as_ref()
+            .column_index("plays")
+            .ok()
+            .and_then(|i| r.get::<_, Option<i64>>(i).ok().flatten())
+            .and_then(|n| u32::try_from(n).ok())
+            .unwrap_or(0),
     })
 }
 
@@ -1097,6 +1110,29 @@ fn rewrite(conn: &Connection, id: i64, ids: &[i64]) -> Result<()> {
 
 /// Removes the entries at the given indexes (duplicates and out-of-range
 /// indexes are ignored) and closes the gaps.
+/// Ids of the playlists that contain `track_id`.
+pub fn playlists_with_track(conn: &Connection, track_id: i64) -> Result<Vec<i64>> {
+    let mut st = conn.prepare_cached(
+        "SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1 ORDER BY playlist_id",
+    )?;
+    Ok(st
+        .query_map([track_id], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?)
+}
+
+/// Removes every entry of `track_id` from playlist `id`.
+pub fn playlist_remove_track(conn: &mut Connection, id: i64, track_id: i64) -> Result<()> {
+    let tx = conn.transaction()?;
+    ensure_playlist(&tx, id)?;
+    let kept: Vec<i64> = order(&tx, id)?
+        .into_iter()
+        .filter(|t| *t != track_id)
+        .collect();
+    rewrite(&tx, id, &kept)?;
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn playlist_remove(conn: &mut Connection, id: i64, indexes: &[usize]) -> Result<()> {
     let tx = conn.transaction()?;
     ensure_playlist(&tx, id)?;

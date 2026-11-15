@@ -13,12 +13,14 @@
     mode,
     onClose,
     onExpand,
+    onOpenQueue,
     onOpenFiles,
     onSaved,
   }: {
     mode: RightPanelMode
     onClose: () => void
     onExpand: () => void
+    onOpenQueue: () => void
     onOpenFiles: (append: boolean) => void
     onSaved?: (id: number) => void
   } = $props()
@@ -57,7 +59,7 @@
   />
 
   {#if mode === 'nowPlaying'}
-    <NowPlayingSide {onClose} {onExpand} />
+    <NowPlayingSide {onClose} {onExpand} {onOpenQueue} />
   {:else}
     <QueueSide {onClose} {onOpenFiles} {onSaved} />
   {/if}

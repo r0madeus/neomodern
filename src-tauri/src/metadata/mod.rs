@@ -720,8 +720,14 @@ impl MetadataService {
         let lib = Arc::clone(lib);
         blocking(move || {
             let mut first = None;
+            // Kept with the user's data: downloaded once, never again.
+            let dir = lib.downloaded_album_covers_dir();
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                log::warn!("cannot create {}: {e}", dir.display());
+                return None;
+            }
             for a in missing {
-                let dest = lib.covers_dir().join(cover_file_name(
+                let dest = dir.join(cover_file_name(
                     &a.album_artist,
                     &a.title,
                     a.year.map(i64::from),
@@ -771,7 +777,7 @@ impl MetadataService {
 
 /// `tag_history` marker for a cover file added by an apply (its path is the
 /// row's path); undo removes it.
-const ADDED_COVER: &str = r#"{"addedCover":true}"#;
+use crate::library::ADDED_COVER_MARK as ADDED_COVER;
 
 fn scan_display(p: &Path) -> String {
     crate::library::scan::display_path(p)

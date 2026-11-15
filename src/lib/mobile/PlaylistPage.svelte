@@ -7,6 +7,7 @@
   import TrackItem from './TrackItem.svelte'
   import { playlists } from '../playlists.svelte'
   import { player } from '../player.svelte'
+  import { pinned } from '../pinned.svelte'
   import type { TrackRow } from '../library.svelte'
 
   let { id, onBack }: { id: number; onBack: () => void } = $props()
@@ -69,7 +70,16 @@
         </p>
       </div>
       {#if tracks.length > 0}
-        <div class="flex items-center justify-end gap-2 px-4 pb-2">
+        <div class="flex items-center gap-2 px-4 pb-2">
+          <button
+            class={['rounded-full p-2.5 active:bg-white/10', pinned.isPinned('playlist', id) ? 'text-accent-400' : 'text-zinc-300']}
+            aria-label={t(pinned.isPinned('playlist', id) ? 'Unpin' : 'Pin')}
+            aria-pressed={pinned.isPinned('playlist', id)}
+            onclick={() => void pinned.toggle('playlist', id)}
+          >
+            <Icon name="pin" class="size-6" />
+          </button>
+          <span class="flex-1"></span>
           <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t("Shuffle play")} onclick={shufflePlay}>
             <Icon name="shuffle" class="size-6" />
           </button>

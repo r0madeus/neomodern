@@ -1,6 +1,6 @@
 [package]
 name = "neomodern"
-version = "0.9.0"
+version = "0.9.1"
 description = "A fast, modern music player"
 authors = ["r0madeus"]
 license = ""

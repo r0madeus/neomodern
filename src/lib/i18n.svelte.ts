@@ -123,7 +123,7 @@ const TR: Record<string, string> = {
   'Save lyrics': 'Sözleri kaydet',
   'Next to the song (.lrc file)': 'Şarkının yanına (.lrc dosyası)',
   'Inside the song file (tag)': 'Şarkı dosyasının içine (etiket)',
-  "Only in the app's cache": 'Yalnız uygulamanın önbelleğinde',
+  'Only in the app': 'Yalnız uygulamada',
   "Lyrics found online are also saved permanently, so they work offline and in other players. An existing .lrc file or lyrics tag is never replaced. Lyrics in a song's tag are written once the song is no longer the one playing.":
     'Çevrimiçi bulunan sözler kalıcı olarak da kaydedilir; böylece çevrimdışı ve başka oynatıcılarda da çalışır. Var olan bir .lrc dosyası ya da söz etiketi asla değiştirilmez. Etikete yazma, şarkı çalan şarkı olmaktan çıkınca yapılır.',
   'NetEase Cloud Music': 'NetEase Cloud Music',
@@ -224,6 +224,9 @@ const TR: Record<string, string> = {
   // Playlists
   Playlist: 'Çalma listesi',
   'New playlist': 'Yeni çalma listesi',
+  'Next in queue': 'Sıradaki',
+  'Open queue': 'Kuyruğu aç',
+  'Build a playlist with songs': 'Şarkılarla bir çalma listesi oluştur',
   'New playlist…': 'Yeni çalma listesi…',
   'New playlist name': 'Yeni çalma listesinin adı',
   'Playlist name': 'Çalma listesi adı',
@@ -732,4 +735,12 @@ const TR: Record<string, string> = {
   Experimental: 'Deneysel',
   'Fades the end of a song into the start of the next one. Experimental: a short skip can be heard at the change, and gapless playback is not used while it is on.':
     'Bir şarkının sonunu bir sonrakinin başıyla iç içe geçirir. Deneysel: geçiş anında kısa bir atlama duyulabilir ve açıkken boşluksuz (gapless) çalma kullanılmaz.',
+
+  // Save menu
+  'Add “{title}” to a playlist': '“{title}” şarkısını bir listeye ekle',
+  'Find a playlist': 'Liste ara',
+  'Saved in': 'Kayıtlı olduğu yerler',
+  'My playlist #{n}': 'Çalma listem #{n}',
+  'Added to “{name}”': '“{name}” listesine eklendi',
+  'Play “{title}”': '“{title}” çal',
 }

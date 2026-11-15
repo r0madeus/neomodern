@@ -16,6 +16,9 @@
   import LyricsShare from '../LyricsShare.svelte'
   import { nowCover } from '../nowCover.svelte'
   import { tintFrom } from '../tint'
+  import { trackCovers } from '../trackCovers.svelte'
+  import { TrackSwipe } from '../trackSwipe.svelte'
+  import type { TrackInfo } from '../player.svelte'
 
   // Full-screen player tinted with the cover's colour. Scrolling down shows
   // the lyrics card; swipe down at the top (or back) closes it.
@@ -23,7 +26,8 @@
 
   let dragging = $state<number | null>(null)
   let pull = $state(0)
-  let swipeX = $state(0)
+  // Swipe the cover left / right for the next / previous song.
+  const swipe = new TrackSwipe()
   let axis = $state<'none' | 'x' | 'y'>('none')
   let gestureActive = false
   let canPull = false
@@ -53,7 +57,6 @@
     startX = e.touches[0].clientX
     startY = e.touches[0].clientY
     pull = 0
-    swipeX = 0
   }
   function onTouchMove(e: TouchEvent) {
     if (!gestureActive || e.touches.length !== 1) return
@@ -78,36 +81,35 @@
     }
 
     if (axis === 'x') {
-      swipeX = Math.max(-180, Math.min(180, dx))
+      swipe.drag(dx)
     } else if (axis === 'y') {
       pull = Math.max(0.001, dy)
     }
   }
   function onTouchEnd() {
     if (axis === 'x') {
-      if (swipeX <= -64) {
-        void player.next()
-      } else if (swipeX >= 64) {
-        void player.previous()
-      }
+      swipe.release()
     } else if (axis === 'y' && pull > 120) {
       gestureActive = false
       axis = 'none'
-      swipeX = 0
       onClose()
       return
     }
     gestureActive = false
     axis = 'none'
-    swipeX = 0
     pull = 0
   }
   function onTouchCancel() {
+    if (axis === 'x') swipe.cancel()
     gestureActive = false
     axis = 'none'
-    swipeX = 0
     pull = 0
   }
+  function coverOf(track: TrackInfo): string | null {
+    if (nowCover.path === track.path && nowCover.cover) return nowCover.cover
+    return trackCovers.get(track.path) ?? null
+  }
+  const panels = $derived([snap.previousTrack, snap.current, snap.nextTrack])
   function commitSeek() {
     if (dragging !== null) void player.seek(dragging)
     dragging = null
@@ -150,15 +152,26 @@
       </header>
 
       {#if snap.current}
-        <div
-          class={[
-            'flex min-h-0 flex-1 items-center justify-center pt-3',
-            axis === 'x' ? '' : 'transition-[transform,opacity] duration-200 ease-out',
-          ]}
-          style:transform={swipeX ? `translateX(${swipeX}px)` : undefined}
-          style:opacity={swipeX ? Math.max(0.35, 1 - Math.abs(swipeX) / 220) : undefined}
-        >
-          <Cover cover={nowCover.cover} title={snap.current.title} class="aspect-square max-h-full w-full rounded-lg text-7xl shadow-2xl shadow-black/50" />
+        <!-- The strip is wider than the page by one gutter per side, so the
+             neighbouring covers come in from the screen edge, not the margin. -->
+        <div class="-mx-6 flex min-h-0 flex-1 items-center overflow-hidden pt-3" bind:clientWidth={swipe.width}>
+          <div
+            class="flex h-full w-[300%] will-change-transform"
+            style:transform={swipe.transform}
+            style:transition={swipe.transition}
+          >
+            {#each panels as track, i (i)}
+              <div class="flex h-full w-1/3 shrink-0 items-center justify-center px-6" aria-hidden={i !== 1}>
+                {#if track}
+                  <Cover
+                    cover={coverOf(track)}
+                    title={track.title}
+                    class="aspect-square max-h-full w-full rounded-lg text-7xl shadow-2xl shadow-black/50"
+                  />
+                {/if}
+              </div>
+            {/each}
+          </div>
         </div>
 
         <div class="shrink-0">
@@ -279,7 +292,20 @@
         {#if lyrics.error}
           <p class="px-4 pb-1 text-sm text-red-200">{lyrics.error}</p>
         {/if}
-        <LyricLines dim={tint.dim} class={hasLyrics ? 'h-[420px] px-4' : 'px-4'} />
+        {#if hasLyrics}
+          <!-- Preview like Spotify: a short card that follows the song by
+               itself; tap it for the full-screen lyrics. -->
+          <button
+            type="button"
+            class="block w-full text-left"
+            aria-label={t('Full-screen lyrics')}
+            onclick={onLyrics}
+          >
+            <LyricLines preview dim={tint.dim} class="h-[240px] px-4" />
+          </button>
+        {:else}
+          <LyricLines dim={tint.dim} class="px-4" />
+        {/if}
         <LyricsShare class="px-4 pt-2 pb-3" />
       </div>
     </section>

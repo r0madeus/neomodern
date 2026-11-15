@@ -18,7 +18,7 @@
 
   let menu = $state<HTMLDivElement | null>(null)
   let submenuEl = $state<HTMLDivElement | null>(null)
-  let sub = $state<'playlists' | 'artists' | null>(null)
+  let sub = $state<'playlists' | 'artists' | 'sleep' | null>(null)
   let creating = $state(false)
   let playlistName = $state('')
   let pos = $state({ left: 0, top: 0 })
@@ -75,7 +75,7 @@
     })
   })
 
-  function openSub(kind: 'playlists' | 'artists', rowEl?: HTMLElement | null) {
+  function openSub(kind: 'playlists' | 'artists' | 'sleep', rowEl?: HTMLElement | null) {
     sub = kind
     creating = false
     const menuRect = menu?.getBoundingClientRect()
@@ -250,6 +250,15 @@
     }
   }
 
+  // Sleep timer, like Spotify's track menu; the player bar only shows it
+  // while it runs.
+  const SLEEP_MINUTES = [5, 10, 15, 30, 45, 60]
+  const sleepActive = $derived(player.snapshot.sleepEndsAt !== null || player.snapshot.sleepEndOfTrack)
+  function setSleep(minutes: number | null, endOfTrack = false) {
+    close()
+    void player.setSleepTimer(minutes, endOfTrack)
+  }
+
   const itemCls =
     'flex w-full items-center gap-2.5 px-3 py-1.5 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800'
 </script>
@@ -286,7 +295,7 @@
 
     <button type="button" role="menuitem" class={itemCls} onclick={() => void doToggleFavorite()}>
       <Icon
-        name={starred ? 'star' : 'starOutline'}
+        name={starred ? 'checkCircle' : 'plusCircle'}
         class={['size-4 shrink-0', starred ? 'text-accent-500' : 'text-zinc-500'].join(' ')}
       />
       <span class="truncate">
@@ -311,6 +320,22 @@
         <Icon name="chevronRight" class="size-4 shrink-0 text-zinc-400" />
       </button>
     {/if}
+
+    <button
+      type="button"
+      role="menuitem"
+      aria-haspopup="menu"
+      aria-expanded={sub === 'sleep'}
+      class={[itemCls, 'justify-between', sub === 'sleep' ? 'bg-zinc-100 dark:bg-zinc-800' : '']}
+      onmouseenter={(e) => openSub('sleep', e.currentTarget)}
+      onclick={(e) => openSub('sleep', e.currentTarget)}
+    >
+      <span class="flex min-w-0 items-center gap-2.5">
+        <Icon name="moon" class={sleepActive ? 'size-4 shrink-0 text-accent-500' : 'size-4 shrink-0 text-zinc-500'} />
+        <span class="truncate">{t('Sleep timer')}</span>
+      </span>
+      <Icon name="chevronRight" class="size-4 shrink-0 text-zinc-400" />
+    </button>
 
     {#if ctx.onRemoveFromPlaylist}
       <button
@@ -471,6 +496,35 @@
           onclick={() => void startCreate()}
         >
           <Icon name="plus" class="size-4" /> {t('New playlist…')}
+        </button>
+      {/if}
+    </div>
+  {:else if sub === 'sleep'}
+    <div
+      use:portal
+      bind:this={submenuEl}
+      tabindex="-1"
+      onkeydown={onSubKey}
+      role="menu"
+      aria-label={t('Sleep timer')}
+      class="fixed z-50 flex flex-col rounded-xl border border-zinc-200 bg-white py-1 text-sm text-zinc-800 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+      style:left="{subPos.left}px"
+      style:top="{subPos.top}px"
+      style:width="{SUB_WIDTH}px"
+    >
+      {#each SLEEP_MINUTES as m (m)}
+        <button type="button" role="menuitem" class={itemCls} onclick={() => setSleep(m)}>
+          {m === 60 ? t('1 hour') : t('{n} minutes', { n: m })}
+        </button>
+      {/each}
+      <button type="button" role="menuitem" class={[itemCls, 'justify-between']} onclick={() => setSleep(null, true)}>
+        <span>{t('End of this song')}</span>
+        {#if player.snapshot.sleepEndOfTrack}<Icon name="check" class="size-4 text-accent-600 dark:text-accent-400" />{/if}
+      </button>
+      {#if sleepActive}
+        <div class="my-1 border-t border-zinc-100 dark:border-zinc-800" role="separator"></div>
+        <button type="button" role="menuitem" class={[itemCls, 'text-red-600 dark:text-red-400']} onclick={() => setSleep(null)}>
+          {t('Turn off timer')}
         </button>
       {/if}
     </div>

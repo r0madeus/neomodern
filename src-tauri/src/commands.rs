@@ -184,6 +184,12 @@ pub fn player_set_sleep_timer(
     s(player.set_sleep_timer(minutes, end_of_track))
 }
 
+/// Previous queue entry regardless of the position (swipe gesture).
+#[tauri::command]
+pub fn player_previous_track(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
+    s(player.previous_track())
+}
+
 #[tauri::command]
 pub fn player_snapshot(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     Ok(player.snapshot())
@@ -547,22 +553,28 @@ pub async fn app_window_insets(app: tauri::AppHandle) -> Res<WindowInsets> {
     }
 }
 
-/// Dominant colour of a cached cover (phone UI tint). Only files in the
-/// cover cache are read.
+/// Dominant colour of a cover (page tints). Only files in the cover cache
+/// or among the user's kept images are read.
 #[tauri::command]
-pub async fn library_cover_color(app: tauri::AppHandle, cover: String) -> Res<Option<[u8; 3]>> {
+pub async fn library_cover_color(
+    app: tauri::AppHandle,
+    lib: State<'_, Arc<Library>>,
+    cover: String,
+) -> Res<Option<[u8; 3]>> {
     use tauri::Manager;
     let covers = app
         .path()
         .app_cache_dir()
         .map_err(|e| e.to_string())?
         .join("covers");
+    let kept = lib.user_images_dir().to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
         let path = std::path::Path::new(&cover);
-        let inside = match (path.canonicalize(), covers.canonicalize()) {
-            (Ok(p), Ok(dir)) => p.starts_with(dir),
-            _ => false,
-        };
+        let inside = path.canonicalize().is_ok_and(|p| {
+            [&covers, &kept]
+                .iter()
+                .any(|dir| dir.canonicalize().is_ok_and(|d| p.starts_with(d)))
+        });
         if !inside {
             return Ok(None);
         }
@@ -765,7 +777,7 @@ pub fn library_play_album(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let paths = le(lib.album_tracks(album_id))?;
-    s(player.replace_queue(paths, start_index))
+    s(player.replace_queue_from(paths, start_index, Some(format!("album:{album_id}"))))
 }
 
 #[tauri::command]
@@ -910,6 +922,25 @@ pub fn playlist_remove(
     Ok(())
 }
 
+/// Playlists that contain the track (for the "Saved in" list).
+#[tauri::command]
+pub fn playlists_with_track(lib: State<'_, Arc<Library>>, track_id: i64) -> Res<Vec<i64>> {
+    le(lib.playlists_with_track(track_id))
+}
+
+/// Takes every entry of the track out of the playlist.
+#[tauri::command]
+pub fn playlist_remove_track(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    id: i64,
+    track_id: i64,
+) -> Res<()> {
+    le(lib.playlist_remove_track(id, track_id))?;
+    playlists_changed(&app);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn playlist_move(
     app: AppHandle,
@@ -931,7 +962,7 @@ pub fn playlist_play(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let tracks = le(lib.playlist_queue_tracks(id))?;
-    s(player.replace_queue(tracks, start_index))
+    s(player.replace_queue_from(tracks, start_index, Some(format!("playlist:{id}"))))
 }
 
 /// Saves the current queue as a playlist. Queue entries that are not in the
@@ -1805,7 +1836,7 @@ pub fn favorites_play(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let tracks = le(lib.favorites_queue_tracks())?;
-    s(player.replace_queue(tracks, start_index))
+    s(player.replace_queue_from(tracks, start_index, Some("favorites".into())))
 }
 
 // ---------------------------------------------------------------------

@@ -210,6 +210,7 @@ mod tests {
             duration_ms: Some(234_400),
             path: "/m/Buray/01.flac".into(),
             cover: None,
+            plays: 0,
         }];
         let e = parse(&render(&rows));
         assert_eq!(

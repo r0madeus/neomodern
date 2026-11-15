@@ -57,8 +57,11 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- z-10 + isolate: the page covers the sticky header of whatever is under
+     it (Home's chips, an artist header) and keeps its own headers inside;
+     the bottom bar (z-20) and notices (z-30) stay on top. -->
 <div
-  class="absolute inset-0 bg-zinc-950 shadow-2xl shadow-black/50"
+  class="absolute inset-0 isolate z-10 bg-zinc-950 shadow-2xl shadow-black/50"
   style:transform={pullX > 0 ? `translateX(${pullX}px)` : undefined}
   style:transition={pullX > 0 ? 'none' : 'transform 200ms ease-out'}
   in:fly={{ x: viewportWidth(), duration: motionDuration(230), opacity: 1, easing: cubicOut }}

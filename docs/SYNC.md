@@ -80,6 +80,7 @@ local tables). No existing code path has to change.
 | `sync_playlist_map` | local playlist id ↔ uuid | local only |
 | `sync_peers` | device_id | local only: name, secret, last seq sent/received, last sync |
 | `sync_meta` | key/value | local only: device_id, hlc state, `applying` flag |
+| `sync_present` | track id | local only: tracks present at the last capture (a song that re-appears gets its synced state back instead of being read as "unfavourited") |
 
 Every replicated row has `seq INTEGER` – a local, strictly increasing
 sequence set whenever the row is inserted or changed locally *or by a
@@ -138,7 +139,10 @@ Both sides have independent playlists. A remote playlist and a local one
 with the same name (case-insensitive) **and the same resolved song list**
 are unified (one uuid, the smaller wins). Same name but different songs →
 both kept; the incoming one is shown as "Name (Device name)". Favourites and
-history are unions. Nothing is deleted on a first sync.
+history are unions. Nothing is deleted on a first sync. A playlist with a
+song the receiving device cannot resolve is never unified. Playlists with a
+new uuid wait (local-only `reconciled = 0`, not shown) until the last page
+of a sync, so the comparison sees all their entries.
 
 ## Data health
 

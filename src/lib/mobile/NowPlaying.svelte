@@ -156,7 +156,7 @@
              neighbouring covers come in from the screen edge, not the margin. -->
         <div class="-mx-6 flex min-h-0 flex-1 items-center overflow-hidden pt-3" bind:clientWidth={swipe.width}>
           <div
-            class="flex h-full w-[300%] will-change-transform"
+            class="flex h-full w-[300%] shrink-0 will-change-transform"
             style:transform={swipe.transform}
             style:transition={swipe.transition}
           >

@@ -15,7 +15,6 @@
   import { count, t } from './i18n.svelte'
   import { library, type AlbumRow, type GenreRow, type TrackRow } from './library.svelte'
   import {
-    downloadProgress,
     isAlbumInLibrary,
     isTrackInLibrary,
     online,
@@ -494,94 +493,5 @@
     </div>
   {/if}
 
-  {#if online.downloads.length > 0}
-    <section
-      aria-label={t('Downloads')}
-      class="shrink-0 border-t border-zinc-200 bg-zinc-50/90 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/80"
-    >
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-          <Icon name="download" class="size-4 text-accent-600 dark:text-accent-400" />
-          <span>{t('Downloads')}</span>
-          {#if online.activeDownloadCount > 0}
-            <span class="rounded-full bg-accent-500/15 px-2 py-0.5 text-[11px] font-medium text-accent-700 normal-case dark:text-accent-300">
-              {count(online.activeDownloadCount, '{n} active', '{n} active')}
-            </span>
-          {/if}
-        </div>
-        {#if online.hasFinishedDownloads}
-          <button
-            type="button"
-            class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-            onclick={() => void online.clearFinished()}
-          >
-            {t('Clear finished')}
-          </button>
-        {/if}
-      </div>
-
-      <ul class="flex max-h-36 flex-col gap-2 overflow-y-auto">
-        {#each online.downloads as job (job.id)}
-          <li class="flex flex-col gap-1 rounded-lg bg-white px-3 py-2 text-xs shadow-xs dark:bg-zinc-950/60">
-            <div class="flex items-center justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <span class="truncate font-medium">{job.title}</span>
-                {#if job.artist}
-                  <span class="text-zinc-500"> · {job.artist}</span>
-                {/if}
-                {#if job.currentTrack && job.state === 'downloading'}
-                  <p class="truncate text-[11px] text-zinc-500">{job.currentTrack}</p>
-                {:else if job.error && job.state === 'failed'}
-                  <p class="truncate text-[11px] text-red-500">{job.error}</p>
-                {/if}
-              </div>
-
-              <span
-                class={[
-                  'shrink-0 font-medium tabular-nums',
-                  job.state === 'done'
-                    ? 'text-accent-600 dark:text-accent-400'
-                    : job.state === 'failed'
-                      ? 'text-red-500'
-                      : 'text-zinc-500',
-                ]}
-              >
-                {#if job.state === 'done'}
-                  {t('Done')} ({job.doneTracks}/{job.totalTracks})
-                {:else if job.state === 'failed'}
-                  {t('Failed')}
-                {:else if job.state === 'cancelled'}
-                  {t('Cancelled')}
-                {:else if job.state === 'queued'}
-                  {t('Queued')}
-                {:else}
-                  {job.doneTracks}/{job.totalTracks}
-                {/if}
-              </span>
-              {#if job.state === 'downloading' || job.state === 'queued'}
-                <button
-                  type="button"
-                  class="shrink-0 rounded-full p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                  title={t('Cancel download')}
-                  aria-label={t('Cancel download')}
-                  onclick={() => void online.cancelDownload(job.id)}
-                >
-                  <Icon name="close" class="size-3.5" />
-                </button>
-              {/if}
-            </div>
-
-            {#if job.state === 'downloading' || job.state === 'queued'}
-              <div class="h-1 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                <div
-                  class="h-full w-full origin-left bg-accent-500 transition-transform duration-300 ease-out"
-                  style:transform="scaleX({downloadProgress(job) / 100})"
-                ></div>
-              </div>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </section>
-  {/if}
+  <!-- Downloads show in the sidebar only (SidebarDownloads). -->
 </div>

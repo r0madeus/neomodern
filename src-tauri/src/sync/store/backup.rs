@@ -41,7 +41,12 @@ fn rotate(dir: &Path) -> Result<()> {
     let mut all = backups(dir)?;
     all.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
     for (_, path) in all.into_iter().skip(BACKUPS_KEPT) {
-        std::fs::remove_file(path)?;
+        // The fresh backup is already written, so a failed delete (on
+        // Windows a file another program holds open, e.g. an antivirus
+        // scan) must not fail the sync; the next rotation tries again.
+        if let Err(e) = std::fs::remove_file(&path) {
+            log::warn!("could not remove old sync backup {}: {e}", path.display());
+        }
     }
     Ok(())
 }

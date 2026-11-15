@@ -1534,6 +1534,9 @@ fn backups_are_rate_limited_and_rotated() {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
     assert_eq!(v, 13);
+    // Close it: Windows cannot delete a file that is still open, and the
+    // rotation below removes this oldest backup.
+    drop(copy);
     assert!(backup_if_due(&conn, &dir, t0 + 5 * hour).unwrap().is_none());
     for i in 1..=7 {
         assert!(

@@ -302,7 +302,9 @@ mod tests {
                 continue;
             }
             // Strip the unit-test module of the file, if inline.
-            let text = std::fs::read_to_string(f).unwrap();
+            // Windows checkouts may have CRLF line endings; normalise so the
+            // test-module split below also works there.
+            let text = std::fs::read_to_string(f).unwrap().replace("\r\n", "\n");
             let text = text.split("#[cfg(test)]\nmod tests {").next().unwrap();
             for needle in [
                 "client_builder()",

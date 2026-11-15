@@ -9,7 +9,7 @@
   import ExtBadge from './ExtBadge.svelte'
   import Cover from './Cover.svelte'
   import Equalizer from './Equalizer.svelte'
-  import TintedBackdrop from './TintedBackdrop.svelte'
+  import CollectionHeader from './CollectionHeader.svelte'
   import PlaylistCover from './PlaylistCover.svelte'
   import AlbumLink from './AlbumLink.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
@@ -165,15 +165,24 @@
     }
   })
 
-  const heroBg = $derived.by(() => {
-    if (!info) return ''
+  const heroColors = $derived.by(() => {
+    if (!info) return { top: 'transparent', surface: 'transparent' }
     if (heroImage) {
       const tint = tintFrom(heroColor)
-      return `linear-gradient(135deg, ${tint.top} 0%, ${tint.surface} 100%)`
+      return { top: tint.top, surface: tint.surface }
     }
     const preset = parseCoverPreset(info.cover)?.palette ?? fallbackPalette(info.name)
-    return `linear-gradient(135deg, ${preset.heroTop} 0%, ${preset.heroSurface} 100%)`
+    return { top: preset.heroTop, surface: preset.heroSurface }
   })
+
+  const totalMs = $derived(tracks.reduce((sum, tr) => sum + (tr.durationMs ?? 0), 0))
+  function hoursMins(ms: number): string {
+    const totalMin = Math.round(ms / 60_000)
+    if (totalMin < 1) return t('< 1 min')
+    const h = Math.floor(totalMin / 60)
+    const m = totalMin % 60
+    return h === 0 ? t('{m} min', { m }) : t('{h} hr {m} min', { h, m })
+  }
 
   const ACTIONS_WIDTH = 192
   let actionsOpen = $state(false)
@@ -405,34 +414,31 @@
   <div class="flex h-full items-center justify-center text-sm text-zinc-500">{t("Playlist not found.")}</div>
 {:else}
   <div class="flex h-full flex-col">
-    <div
-      class="relative isolate mx-5 mb-5 flex flex-wrap items-end gap-6 overflow-hidden rounded-2xl p-6 text-white"
-    >
-      <TintedBackdrop background={heroBg} />
-      <button
-        type="button"
-        aria-label={t('Change cover')}
-        class="group relative shrink-0 overflow-hidden rounded-xl shadow-2xl shadow-black/40 outline-none focus-visible:ring-2 focus-visible:ring-white"
-        onclick={() => (editingCover = true)}
-      >
-        <PlaylistCover
-          cover={info.cover}
-          albumCovers={info.albumCovers}
-          name={info.name}
-          class="size-40 rounded-xl sm:size-44"
-          iconClass="size-16"
-        />
-        <span class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
-          <Icon name="upload" class="size-6" />
-          {t('Change cover')}
-        </span>
-      </button>
-
-      <div class="min-w-0 flex-1">
-        <p class="text-xs font-semibold tracking-widest text-white/70 uppercase">{t('Playlist')}</p>
+    <CollectionHeader top={heroColors.top} surface={heroColors.surface} label={t('Playlist')} titleText={info.name}>
+      {#snippet cover()}
+        <button
+          type="button"
+          aria-label={t('Change cover')}
+          class="group relative block overflow-hidden rounded-md shadow-2xl shadow-black/50 outline-none focus-visible:ring-2 focus-visible:ring-white"
+          onclick={() => (editingCover = true)}
+        >
+          <PlaylistCover
+            cover={info!.cover}
+            albumCovers={info!.albumCovers}
+            name={info!.name}
+            class="size-44 rounded-md xl:size-52"
+            iconClass="size-16"
+          />
+          <span class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+            <Icon name="upload" class="size-6" />
+            {t('Change cover')}
+          </span>
+        </button>
+      {/snippet}
+      {#snippet title()}
         {#if renaming}
           <form
-            class="mt-1"
+            class="mt-1 pb-2"
             onsubmit={(e) => {
               e.preventDefault()
               void commitRename()
@@ -442,78 +448,93 @@
               bind:this={nameInput}
               bind:value={draft}
               aria-label={t('Playlist name')}
-              class="w-80 max-w-full rounded-lg border border-white/25 bg-black/35 px-3 py-1.5 text-2xl font-bold tracking-tight text-white outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
+              class="w-[32rem] max-w-full rounded-lg border border-white/25 bg-black/35 px-3 py-1.5 text-4xl font-black tracking-tight text-white outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
               onkeydown={(e) => e.key === 'Escape' && (renaming = false)}
               onblur={() => renaming && void commitRename()}
             />
           </form>
         {:else}
-          <h2 class="mt-1 truncate pb-1 text-4xl leading-tight font-bold tracking-tight">{info.name}</h2>
-        {/if}
-        <p class="mt-2 text-sm text-white/70">
-          {count(info.trackCount, '{n} track', '{n} tracks')}
-        </p>
-
-        <div class="mt-4 flex flex-wrap items-center gap-2">
-          {#if confirmingDelete}
-            <span class="text-sm text-white/90" role="alert">{t('Delete this playlist?')}</span>
-            <button
-              type="button"
-              class="rounded-full bg-red-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-red-500"
-              onclick={remove}
-            >
-              {t('Delete')}
-            </button>
-            <button
-              type="button"
-              class="rounded-full bg-white/10 px-3.5 py-1.5 text-sm text-white hover:bg-white/20"
-              onclick={() => (confirmingDelete = false)}
-            >
-              {t('Cancel')}
-            </button>
-          {:else}
-            <button
-              type="button"
-              disabled={info.trackCount === 0}
-              class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 transition hover:scale-[1.03] hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-              onclick={() => void playlists.play(id, 0, false)}
-            >
-              <Icon name="play" class="size-5" /> {t('Play')}
-            </button>
-            <ShuffleButton
-              disabled={info.trackCount === 0}
-              onClick={() => void playlists.play(id, randomTrackIndex(info!.trackCount), true)}
-            />
-            <button
-              type="button"
-              aria-pressed={pinned.isPinned('playlist', id)}
+          <!-- Click the name to rename it, like Spotify's "Name & details". -->
+          <button
+            type="button"
+            class="mt-1 block max-w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            title={t('Rename')}
+            onclick={() => void startRename()}
+          >
+            <h2
               class={[
-                'flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm transition',
-                pinned.isPinned('playlist', id)
-                  ? 'bg-accent-400/20 font-medium text-accent-200 hover:bg-accent-400/30'
-                  : 'bg-white/10 text-white/90 hover:bg-white/20',
+                'line-clamp-2 pb-2 leading-[1.05] font-black tracking-tight break-words',
+                info!.name.length <= 18 ? 'text-6xl xl:text-7xl' : info!.name.length <= 32 ? 'text-5xl xl:text-6xl' : 'text-4xl',
               ]}
-              onclick={() => void pinned.toggle('playlist', id)}
             >
-              <Icon name="pin" class="size-4" />
-              {pinned.isPinned('playlist', id) ? t('Pinned') : t('Pin')}
-            </button>
-            <button
-              bind:this={actionsTrigger}
-              type="button"
-              aria-label={t('More actions for “{title}”', { title: info.name })}
-              title={t('More actions for “{title}”', { title: info.name })}
-              aria-haspopup="menu"
-              aria-expanded={actionsOpen}
-              class="flex items-center justify-center rounded-full bg-white/10 p-1.5 text-white/90 transition outline-none hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-accent-400"
-              onclick={() => (actionsOpen ? closeActions() : void openActions())}
-            >
-              <Icon name="more" class="size-5" />
-            </button>
-          {/if}
-        </div>
-      </div>
-    </div>
+              {info!.name}
+            </h2>
+          </button>
+        {/if}
+      {/snippet}
+      {#snippet meta()}
+        <span>{count(info!.trackCount, '{n} song', '{n} songs')}{totalMs > 0 ? `, ${hoursMins(totalMs)}` : ''}</span>
+      {/snippet}
+      {#snippet actions()}
+        {#if confirmingDelete}
+          <span class="text-sm text-white/90" role="alert">{t('Delete this playlist?')}</span>
+          <button
+            type="button"
+            class="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+            onclick={remove}
+          >
+            {t('Delete')}
+          </button>
+          <button
+            type="button"
+            class="rounded-full bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/20"
+            onclick={() => (confirmingDelete = false)}
+          >
+            {t('Cancel')}
+          </button>
+        {:else}
+          <button
+            type="button"
+            disabled={info!.trackCount === 0}
+            aria-label={t('Play')}
+            title={t('Play')}
+            class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg shadow-black/30 outline-none transition hover:scale-105 hover:bg-accent-400 focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+            onclick={() => void playlists.play(id, 0, false)}
+          >
+            <Icon name="play" class="size-7" />
+          </button>
+          <ShuffleButton
+            disabled={info!.trackCount === 0}
+            onClick={() => void playlists.play(id, randomTrackIndex(info!.trackCount), true)}
+          />
+          <button
+            type="button"
+            aria-pressed={pinned.isPinned('playlist', id)}
+            aria-label={t(pinned.isPinned('playlist', id) ? 'Unpin' : 'Pin')}
+            title={t(pinned.isPinned('playlist', id) ? 'Unpin' : 'Pin')}
+            class={[
+              'rounded-full p-2 outline-none transition focus-visible:ring-2 focus-visible:ring-white/70',
+              pinned.isPinned('playlist', id) ? 'text-accent-400 hover:text-accent-300' : 'text-white/70 hover:text-white',
+            ]}
+            onclick={() => void pinned.toggle('playlist', id)}
+          >
+            <Icon name="pin" class="size-6" />
+          </button>
+          <button
+            bind:this={actionsTrigger}
+            type="button"
+            aria-label={t('More actions for “{title}”', { title: info!.name })}
+            title={t('More actions for “{title}”', { title: info!.name })}
+            aria-haspopup="menu"
+            aria-expanded={actionsOpen}
+            class="rounded-full p-1.5 text-white/70 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
+            onclick={() => (actionsOpen ? closeActions() : void openActions())}
+          >
+            <Icon name="more" class="size-7" />
+          </button>
+        {/if}
+      {/snippet}
+    </CollectionHeader>
 
     {#if actionsOpen}
       <div

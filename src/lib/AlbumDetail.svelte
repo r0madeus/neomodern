@@ -7,7 +7,9 @@
   import Equalizer from './Equalizer.svelte'
   import Icon from './Icon.svelte'
   import ShuffleButton from './ShuffleButton.svelte'
-  import TintedBackdrop from './TintedBackdrop.svelte'
+  import ActionsMenu from './ActionsMenu.svelte'
+  import CollectionHeader from './CollectionHeader.svelte'
+  import { playlists } from './playlists.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
   import ExtBadge from './ExtBadge.svelte'
@@ -53,72 +55,137 @@
     return () => (stale = true)
   })
   const tint = $derived(tintFrom(color))
+
+  let choosingPlaylist = $state(false)
+  const totalMs = $derived(data ? data.tracks.reduce((sum, tr) => sum + (tr.durationMs ?? 0), 0) : 0)
+  function hoursMins(ms: number): string {
+    const totalMin = Math.round(ms / 60_000)
+    if (totalMin < 1) return t('< 1 min')
+    const h = Math.floor(totalMin / 60)
+    const m = totalMin % 60
+    return h === 0 ? t('{m} min', { m }) : t('{h} hr {m} min', { h, m })
+  }
+  const menuItem =
+    'flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800'
 </script>
 
-<div class="h-full overflow-y-auto px-5 pb-6">
-  <button class="mb-4 rounded-lg px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800" onclick={onBack}>
-    {t("← Albums")}
-  </button>
+<div class="h-full overflow-y-auto pb-6">
   {#if data}
-    <div
-      class="relative isolate mb-6 flex items-end gap-6 overflow-hidden rounded-2xl p-6 text-white"
+    <CollectionHeader
+      top={tint.top}
+      surface={tint.surface}
+      label={t('Album')}
+      titleText={data.album.title}
+      {onBack}
+      backLabel={t('Albums')}
     >
-      <TintedBackdrop background="linear-gradient(135deg, {tint.top}, {tint.surface})" />
-      <Cover cover={data.album.cover} title={data.album.title} class="size-48 shrink-0 rounded-lg text-6xl shadow-2xl shadow-black/40" />
-      <div class="min-w-0">
-        <p class="text-xs font-semibold tracking-widest text-white/70 uppercase">{t("Album")}</p>
-        <h2 class="mt-1 truncate pb-1 text-4xl leading-tight font-bold tracking-tight">{data.album.title}</h2>
-        <p class="mt-2 truncate font-medium text-white/90">
-          <ArtistLinks artist={data.album.albumArtist} onNavigate={onBack} />
-        </p>
-        <p class="mt-1 text-sm text-white/60">
-          {data.album.year ? `${data.album.year} · ` : ''}{count(data.album.trackCount, '{n} track', '{n} tracks')}
-        </p>
-        <div class="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            class="flex items-center gap-2 rounded-full bg-accent-500 py-2 pr-5 pl-4 text-sm font-semibold text-zinc-950 hover:scale-[1.03] hover:bg-accent-400"
-            onclick={() => void library.playAlbum(albumId, 0, false)}
-          >
-            <Icon name="play" class="size-5" /> {t("Play")}
-          </button>
-          <ShuffleButton
-            disabled={data.tracks.length === 0}
-            onClick={() => void library.playAlbum(albumId, randomTrackIndex(data!.tracks.length), true)}
-          />
-          <button
-            type="button"
-            aria-pressed={pinned.isPinned('album', albumId)}
-            class={[
-              'flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium whitespace-nowrap transition',
-              pinned.isPinned('album', albumId)
-                ? 'border-accent-400/60 bg-accent-500/20 text-accent-200 hover:bg-accent-500/30'
-                : 'border-white/20 bg-white/10 text-white/90 hover:bg-white/20',
-            ]}
-            onclick={() => void pinned.toggle('album', albumId)}
-          >
-            <Icon name="pin" class="size-4" />
-            {pinned.isPinned('album', albumId) ? t('Pinned') : t('Pin')}
-          </button>
-          <AddToPlaylist {albumId} label="Add to playlist" text class="whitespace-nowrap text-white! hover:bg-white/10!" />
-          <button
-            type="button"
-            class="rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap text-white/90 outline-none hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60"
-            onclick={() => tagEditor.open(data!.tracks.map((track) => track.id), t('Edit album tags'))}
-          >
-            {t("Edit tags…")}
-          </button>
-          <button
-            type="button"
-            class="rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap text-white/90 outline-none hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60"
-            disabled={!appSettings.allowMetadata}
-            title={appSettings.allowMetadata ? undefined : t('Turned off in Settings')}
-            onclick={() => metadataMatch.openAlbum(albumId)}
-          >
-            {t("Find info")}
-          </button>
-        </div>
-      </div>
-    </div>
+      {#snippet cover()}
+        <Cover cover={data!.album.cover} title={data!.album.title} class="size-52 rounded-md text-6xl shadow-2xl shadow-black/50 xl:size-56" />
+      {/snippet}
+      {#snippet meta()}
+        <span class="font-bold text-white"><ArtistLinks artist={data!.album.albumArtist} onNavigate={onBack} /></span>
+        {#if data!.album.year}<span aria-hidden="true">•</span><span>{data!.album.year}</span>{/if}
+        <span aria-hidden="true">•</span>
+        <span>{count(data!.album.trackCount, '{n} song', '{n} songs')}{totalMs > 0 ? `, ${hoursMins(totalMs)}` : ''}</span>
+      {/snippet}
+      {#snippet actions()}
+        <button
+          type="button"
+          class="flex size-14 items-center justify-center rounded-full bg-accent-500 text-zinc-950 shadow-lg shadow-black/30 outline-none transition hover:scale-105 hover:bg-accent-400 focus-visible:ring-2 focus-visible:ring-white/80 disabled:opacity-50"
+          aria-label={t('Play')}
+          title={t('Play')}
+          disabled={data!.tracks.length === 0}
+          onclick={() => void library.playAlbum(albumId, 0, false)}
+        >
+          <Icon name="play" class="size-7" />
+        </button>
+        <ShuffleButton
+          disabled={data!.tracks.length === 0}
+          onClick={() => void library.playAlbum(albumId, randomTrackIndex(data!.tracks.length), true)}
+        />
+        <button
+          type="button"
+          aria-pressed={pinned.isPinned('album', albumId)}
+          aria-label={t(pinned.isPinned('album', albumId) ? 'Unpin' : 'Pin')}
+          title={t(pinned.isPinned('album', albumId) ? 'Unpin' : 'Pin')}
+          class={[
+            'rounded-full p-2 outline-none transition focus-visible:ring-2 focus-visible:ring-white/70',
+            pinned.isPinned('album', albumId) ? 'text-accent-400 hover:text-accent-300' : 'text-white/70 hover:text-white',
+          ]}
+          onclick={() => void pinned.toggle('album', albumId)}
+        >
+          <Icon name="pin" class="size-6" />
+        </button>
+        <ActionsMenu label={t('More actions for “{title}”', { title: data!.album.title })}>
+          {#snippet children(close)}
+            <button
+              type="button"
+              role="menuitem"
+              aria-expanded={choosingPlaylist}
+              class={[menuItem, 'justify-between']}
+              onclick={() => (choosingPlaylist = !choosingPlaylist)}
+            >
+              <span class="flex items-center gap-2.5"><Icon name="plus" class="size-4 text-zinc-500" />{t('Add to playlist')}</span>
+              <Icon name="chevronRight" class={['size-4 text-zinc-400 transition-transform', choosingPlaylist && 'rotate-90'].filter(Boolean).join(' ')} />
+            </button>
+            {#if choosingPlaylist}
+              <div class="mx-2 mb-1 max-h-48 overflow-y-auto rounded-lg bg-zinc-100/70 py-1 dark:bg-zinc-800/60">
+                <button
+                  type="button"
+                  role="menuitem"
+                  class={[menuItem, 'text-accent-700 dark:text-accent-300']}
+                  onclick={async () => {
+                    close()
+                    const made = await playlists.create(t('My playlist #{n}', { n: playlists.list.length + 1 }))
+                    if (made) await playlists.addAlbum(made, albumId)
+                  }}
+                >
+                  <Icon name="plus" class="size-4" />{t('New playlist')}
+                </button>
+                {#each playlists.list as p (p.id)}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class={menuItem}
+                    onclick={() => {
+                      close()
+                      void playlists.addAlbum(p, albumId)
+                    }}
+                  >
+                    <span class="truncate">{p.name}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            <button
+              type="button"
+              role="menuitem"
+              class={menuItem}
+              onclick={() => {
+                close()
+                tagEditor.open(data!.tracks.map((track) => track.id), t('Edit album tags'))
+              }}
+            >
+              <Icon name="sliders" class="size-4 text-zinc-500" />{t('Edit tags…')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class={[menuItem, 'disabled:opacity-50']}
+              disabled={!appSettings.allowMetadata}
+              title={appSettings.allowMetadata ? undefined : t('Turned off in Settings')}
+              onclick={() => {
+                close()
+                metadataMatch.openAlbum(albumId)
+              }}
+            >
+              <Icon name="search" class="size-4 text-zinc-500" />{t('Find info')}
+            </button>
+          {/snippet}
+        </ActionsMenu>
+      {/snippet}
+    </CollectionHeader>
+    <div class="px-5">
     <ol class="divide-y divide-zinc-100 dark:divide-zinc-800/70">
       {#each data.tracks as track, i (track.id)}
         <li
@@ -178,7 +245,8 @@
         </li>
       {/each}
     </ol>
+    </div>
   {:else}
-    <p class="text-zinc-500">{t("Loading…")}</p>
+    <p class="p-5 text-zinc-500">{t("Loading…")}</p>
   {/if}
 </div>

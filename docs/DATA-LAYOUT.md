@@ -6,7 +6,7 @@ folder to another computer is enough to move a library.
 
 | Folder (Tauri name) | Windows | What | Safe to delete? |
 |---|---|---|---|
-| `app_data_dir` | `%APPDATA%\io.github.r0madeus.neomodern` | `library.sqlite3` (folders, playlists, favourites, listening history, tag undo history, artist bios, scan index), `session.json` (queue, settings), `images/playlists` (covers the user picked), `images/albums` (covers downloaded with "Find info"), `images/artists` (artist pictures), `lyrics` (lyrics found online) | No: this is the user's data |
+| `app_data_dir` | `%APPDATA%\io.github.r0madeus.neomodern` | `library.sqlite3` (folders, playlists, favourites, listening history, tag undo history, artist bios, scan index), `session.json` (queue, settings), `images/playlists` (covers the user picked), `images/albums` (covers downloaded with "Find info"), `images/artists` (artist pictures), `lyrics` (lyrics found online), `sync-backups` (database copies taken before phone sync changes data, see below) | No: this is the user's data |
 | `app_cache_dir` | `%LOCALAPPDATA%\io.github.r0madeus.neomodern` | `covers` (album covers copied from tags/folders), `covers/online` (search and online-album covers), `covers/musicbrainz` (Find info previews), `updates` (downloaded installers) | Yes: everything is made again |
 | `app_local_data_dir/tools` | `%LOCALAPPDATA%\io.github.r0madeus.neomodern\tools` | yt-dlp and ffmpeg downloaded by the app | Yes: "Set up automatically" downloads them again |
 
@@ -27,6 +27,13 @@ Kept as data, so they are not downloaded again:
 - **Lyrics** found online (and "not found" answers, which expire after 7
   days) live in `lyrics`. Lyrics the user attaches are saved as a `.lrc` next
   to the song.
+
+- **Sync backups**: before the first PC <-> phone sync that changes data, at
+  most once every 6 hours, the database is copied to
+  `sync-backups/library-<utc>.sqlite3` (`VACUUM INTO`); the 5 newest are
+  kept (docs/SYNC.md, "Data health"). Paired devices, their pairing secrets
+  and the phone's computer address live in `library.sqlite3` (`sync_peers`,
+  `sync_meta`); "Allow phone connections" is in `session.json`.
 
 Older versions kept downloaded covers, artist pictures and lyrics in the
 cache; start-up moves them over (`Library::with_user_images_dir`, `lib.rs`).

@@ -27,8 +27,12 @@ streaming PC files to the phone, mDNS discovery, more than ~5 paired devices.
   - `sync/store/` – the replicated data model, capture, merge, materialise
     (pure SQLite, no networking, fully unit-tested).
   - `sync/link/` – pairing, encryption, framing (no SQLite).
-  - `sync/mod.rs` – the service: server on desktop, client on the phone,
-    remote-control dispatch, Tauri events.
+  - `sync/protocol.rs` – the session messages; `sync/conn.rs` – one
+    session's event loop (handshake, sync rounds both ways, remote,
+    keep-alive); `sync/remote.rs` – remote commands and the state the phone
+    sees; `sync/service.rs` – the service (server on desktop, client on the
+    phone, pairing, status, Tauri events through an `EventSink`);
+    `sync/commands.rs` – the Tauri commands.
 - Sockets are opened only from `sync/link/`; `net.rs`'s guard test lists
   them. Nothing listens unless the user switched "Allow phone connections"
   on (desktop). Offline mode does **not** block LAN sync (no internet).
@@ -79,7 +83,7 @@ local tables). No existing code path has to change.
 | `sync_listens` | uuid | append-only union (immutable rows) |
 | `sync_playlist_map` | local playlist id ↔ uuid | local only |
 | `sync_peers` | device_id | local only: name, secret, last seq sent/received, last sync |
-| `sync_meta` | key/value | local only: device_id, hlc state, `applying` flag |
+| `sync_meta` | key/value | local only: device_id, device name, hlc state, seq; `peer_address:<device_id>` = the paired computer's `ip:port` (phone side) |
 | `sync_present` | track id | local only: tracks present at the last capture (a song that re-appears gets its synced state back instead of being read as "unfavourited") |
 
 Every replicated row has `seq INTEGER` – a local, strictly increasing
@@ -205,9 +209,72 @@ the home network, a stolen phone.
 
 Frame = `u32` big-endian length + Noise ciphertext (≤ 65 535 bytes per
 Noise message; a logical message larger than that is split into numbered
-chunks and reassembled, total ≤ 1 MiB). The plaintext is JSON of
-`enum Msg { Hello, Welcome, SyncOffer, SyncBatch, SyncAck, SyncDone,
-Remote(RemoteCmd), State(RemoteState), Position, Ping, Pong, Error }`.
+chunks and reassembled, total ≤ 1 MiB). The plaintext is one JSON object
+per message, tagged by `type` (camelCase), unknown types and fields
+refused (`sync/protocol.rs`):
+
+| `type` | Direction | Fields / meaning |
+|---|---|---|
+| `hello` | phone → PC, first | `syncVersion`, `appVersion`, `deviceName` |
+| `welcome` | PC → phone | same; a different `syncVersion` → `error{code:"version"}` and close |
+| `syncOffer` | phone → PC: a round starts. PC → phone: please start one (after "Apply") | – |
+| `syncBatch` | both | `batch` (a store `Batch` page, validated before apply) |
+| `syncAck` | both | `uptoSeq`: page applied, the sender moves its watermark |
+| `syncDone` | both | the sender has no more pages this round |
+| `remote` | phone → PC | `id`, `cmd` (`RemoteCmd`, tagged by `kind`) |
+| `remoteDone` | PC → phone | `id`, `error: {code, message} \| null` |
+| `queue` | PC → phone | `id`, `page` (answer to `queuePage`) |
+| `state` | PC → phone | `state` (`RemoteState`), on connect and every player change |
+| `position` | PC → phone | `seconds`, `duration`; at most 4/s |
+| `ping` / `pong` | both | keep-alive every 20 s; a peer silent for 60 s is dropped |
+| `error` | both | `code` (`version`, `mass_delete`, `invalid`, `integrity`, `failed`), `message`, `summary` (mass delete only) |
+
+A sync round, always started by the phone (on connect, every 10 min while
+connected, "Sync now", or when the PC sends `syncOffer`):
+
+1. Phone: `syncOffer`, then capture and its pages: `syncBatch` from
+   `changes_since(last_seq_sent[PC])`, 2 000 records per page, halved until
+   the serialised message is ≤ 960 KiB. Stop-and-wait: the next page goes
+   after the `syncAck`.
+2. The PC applies each page (`allow_mass_delete` only after "Apply") and
+   answers `syncAck`, or `error`: `mass_delete` (the PC records a pending
+   decision for that phone and asks "Apply / Skip"; nothing applied, the
+   phone's watermark stays), `invalid`, `integrity` (quick_check failed:
+   the PC stops syncing with that phone until the app restarts), `failed`.
+   An error ends that direction.
+3. Phone: `syncDone`. The PC captures and sends its pages the same way;
+   then `syncDone` ends the round on both sides.
+
+"Apply" sets an allow-once flag (used up when that peer's direction has
+been applied) and asks the phone for a new round; "Skip" clears the
+question without touching the watermark, so the next sync asks again.
+
+Remote commands (`RemoteCmd`, closed enum, `kind` tag): `togglePause`,
+`play`, `pause`, `next`, `previous`, `seek{seconds}`, `setVolume{percent}`
+(0–100), `setShuffle{on}`, `setRepeat{mode}`, `playIndex{index,
+queueVersion}` (refused with `stale_queue` when the version is old),
+`queuePage{offset, limit ≤ 100}`. Each calls the same `Player` method as the
+PC's own Tauri command. 20 commands/s per session; more are answered with
+`rate_limited`. `RemoteState` = status, current {title, artist, album,
+duration, key}, currentIndex, queueLength, queueVersion, volume, shuffle,
+repeat, position. Queue entries carry title, artist and key; the phone
+shows its own cover for a key (`sync_cover_for_key`).
+
+## Service
+
+- Desktop: "Allow phone connections" is persisted in `session.json`
+  (`allowPhoneConnections`, off by default). On: listen on port 47321 (all
+  interfaces, LAN sources only). Off: the listener, the pairing window and
+  every phone session close.
+- Phone: one paired computer. Pairing stores it in `sync_peers` plus its
+  address in `sync_meta`; pairing with another computer forgets the old
+  one. While the app runs the phone keeps a session to it, reconnecting
+  with backoff 2 s → 60 s.
+- Local changes are also captured 5 s after the library last changed (not
+  during a scan, only with paired devices), so stamps are timely.
+- Status (`sync://status`) is a small object: role, device, listening port
+  and LAN addresses, pairing code and remaining seconds, peers (kind,
+  connected, syncing, last sync, last error, pending guard, last result).
 
 ## UI
 
@@ -226,9 +293,14 @@ Remote(RemoteCmd), State(RemoteState), Position, Ping, Pong, Error }`.
   mass-delete guard, validation, backup rotation.
 - Link: pairing (right code, wrong code, expired code), sessions (wrong
   PSK, unknown device, oversized frame, chunking), all over loopback.
-- Service: an end-to-end loopback test: two libraries on temp dirs pair,
-  sync, edit on both sides, sync again, converge; a remote `toggle_pause`
-  reaches a `Player` with a silent engine.
+- Service (`sync/service_tests.rs`): end-to-end over loopback with port 0:
+  two libraries on temp dirs pair (wrong code refused), sync, edit on both
+  sides, sync again, converge; the mass-delete guard waits for "Skip" /
+  "Apply"; remote commands reach a `Player` with a silent engine, a stale
+  `playIndex` is refused, the rate limit holds; turning phone connections
+  off closes sessions and the port; removing a phone locks it out; a
+  different sync version is refused; pages shrink to fit the size limit;
+  the message set is closed.
 - Real devices (owner): Windows PC + Android phone on home Wi-Fi; Windows
   firewall prompt on first enable; Android local-network permission on
   newer Android versions.

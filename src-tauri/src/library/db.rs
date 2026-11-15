@@ -291,6 +291,11 @@ pub fn init(conn: &Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 12)?;
         tx.commit()?;
     }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_listen_events_artist_nocase ON listen_events(artist COLLATE NOCASE);
+         CREATE INDEX IF NOT EXISTS idx_tracks_genre_norm ON tracks(LOWER(TRIM(genre)));
+         CREATE INDEX IF NOT EXISTS idx_tracks_album_added ON tracks(album_id, added_at DESC);",
+    )?;
     Ok(())
 }
 
@@ -827,14 +832,18 @@ pub fn search_albums_page(
 
 const ALBUM_TRACK_ORDER: &str = "t.disc_no, t.track_no, t.title, t.id";
 
-pub fn album_detail(conn: &Connection, album_id: i64) -> Result<AlbumDetail> {
-    let album = conn
+pub fn album_info(conn: &Connection, album_id: i64) -> Result<Option<AlbumRow>> {
+    Ok(conn
         .query_row(
             &format!("{ALBUM_SELECT} WHERE a.id = ?1"),
             [album_id],
             album_row,
         )
-        .optional()?
+        .optional()?)
+}
+
+pub fn album_detail(conn: &Connection, album_id: i64) -> Result<AlbumDetail> {
+    let album = album_info(conn, album_id)?
         .ok_or_else(|| super::LibraryError::Other(format!("album {album_id} not found")))?;
     let mut st = conn.prepare(&format!(
         "{TRACK_SELECT} WHERE t.album_id = ?1 ORDER BY {ALBUM_TRACK_ORDER}"
@@ -2249,16 +2258,9 @@ pub fn genres(conn: &Connection) -> Result<Vec<GenreRow>> {
     let mut st = conn.prepare(
         "SELECT MIN(TRIM(t.genre)) AS name,
                 COUNT(*) AS track_count,
-                (
-                    SELECT a.cover
-                    FROM tracks t2
-                    JOIN albums a ON a.id = t2.album_id
-                    WHERE LOWER(TRIM(COALESCE(t2.genre, ''))) = LOWER(TRIM(t.genre))
-                      AND a.cover IS NOT NULL AND a.cover != ''
-                    ORDER BY COALESCE(t2.year, 0) DESC, a.title COLLATE NOCASE, t2.id
-                    LIMIT 1
-                ) AS cover
+                MAX(CASE WHEN a.cover IS NOT NULL AND a.cover != '' THEN a.cover END) AS cover
          FROM tracks t
+         LEFT JOIN albums a ON a.id = t.album_id
          WHERE TRIM(COALESCE(t.genre, '')) != ''
          GROUP BY LOWER(TRIM(t.genre))
          ORDER BY track_count DESC, name COLLATE NOCASE",

@@ -23,7 +23,7 @@ pub mod tags;
 use crate::queue::Track;
 use rusqlite::Connection;
 use serde::Serialize;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -406,6 +406,7 @@ pub struct Library {
     version: AtomicU64,
     scanning: AtomicBool,
     queue: Mutex<VecDeque<(i64, PathBuf)>>,
+    cover_colors: Mutex<HashMap<String, Option<[u8; 3]>>>,
     hooks: Hooks,
 }
 
@@ -428,6 +429,7 @@ impl Library {
             version: AtomicU64::new(1),
             scanning: AtomicBool::new(false),
             queue: Mutex::new(VecDeque::new()),
+            cover_colors: Mutex::new(HashMap::new()),
             hooks,
         }
     }
@@ -572,15 +574,19 @@ impl Library {
             return Ok(Vec::new());
         }
         let mut folder_ids = std::collections::BTreeSet::new();
-        for id in &missing {
-            conn.execute("UPDATE albums SET cover = NULL WHERE id = ?1", [id])?;
-            // mtime -1 never matches a file, so the scan parses these again.
-            conn.execute("UPDATE tracks SET mtime = -1 WHERE album_id = ?1", [id])?;
-            let mut st =
-                conn.prepare("SELECT DISTINCT folder_id FROM tracks WHERE album_id = ?1")?;
-            for f in st.query_map([id], |r| r.get::<_, i64>(0))? {
-                folder_ids.insert(f?);
+        {
+            let tx = conn.unchecked_transaction()?;
+            for id in &missing {
+                tx.execute("UPDATE albums SET cover = NULL WHERE id = ?1", [id])?;
+                // mtime -1 never matches a file, so the scan parses these again.
+                tx.execute("UPDATE tracks SET mtime = -1 WHERE album_id = ?1", [id])?;
+                let mut st =
+                    tx.prepare("SELECT DISTINCT folder_id FROM tracks WHERE album_id = ?1")?;
+                for f in st.query_map([id], |r| r.get::<_, i64>(0))? {
+                    folder_ids.insert(f?);
+                }
             }
+            tx.commit()?;
         }
         log::info!(
             "{} album covers are missing; rescanning to restore them",
@@ -695,6 +701,39 @@ impl Library {
         query: &str,
     ) -> Result<Page<AlbumRow>> {
         db::search_albums_page(&self.conn(), offset, limit.min(1000), query)
+    }
+
+    pub fn album_info(&self, album_id: i64) -> Result<Option<AlbumRow>> {
+        db::album_info(&self.conn(), album_id)
+    }
+
+    pub fn cached_cover_color(&self, cover: &str) -> Result<Option<[u8; 3]>> {
+        {
+            let cache = self.cover_colors.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(&color) = cache.get(cover) {
+                return Ok(color);
+            }
+        }
+        let path = Path::new(cover);
+        let inside = std::fs::canonicalize(path).is_ok_and(|p| {
+            [
+                self.covers_dir(),
+                self.user_images_dir(),
+                &self.playlist_covers_dir(),
+            ]
+            .iter()
+            .any(|dir| std::fs::canonicalize(dir).is_ok_and(|d| p.starts_with(d)))
+        });
+        if !inside {
+            return Ok(None);
+        }
+        let color = cover_color::cover_color(path).ok();
+        let mut cache = self.cover_colors.lock().unwrap_or_else(|p| p.into_inner());
+        if cache.len() >= 512 {
+            cache.clear();
+        }
+        cache.insert(cover.to_string(), color);
+        Ok(color)
     }
 
     pub fn album(&self, album_id: i64) -> Result<AlbumDetail> {

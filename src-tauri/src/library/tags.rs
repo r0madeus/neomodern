@@ -455,21 +455,21 @@ pub fn read_for_tracks(
 }
 
 /// Writes `changes` to the files of the given library tracks, skipping (and
-/// reporting) the file in `current`, then re-reads every file that was
-/// written into the library. A file whose write fails is left as it was and
-/// its database row is not touched.
-pub fn write_for_tracks(
+/// reporting) the file in `current`, without re-reading the written files into
+/// the library. Returns the outcome and the `(path, folder_id)` pairs that were
+/// written so callers can batch [`super::Library::rescan_files`].
+pub fn write_for_tracks_no_rescan(
     lib: &super::Library,
     ids: &[i64],
     changes: &TagChanges,
     current: Option<&str>,
-) -> super::Result<WriteOutcome> {
+) -> super::Result<(WriteOutcome, Vec<(String, i64)>)> {
     let changes = changes
         .validated()
         .map_err(|e| super::LibraryError::Other(e.to_string()))?;
     let mut out = WriteOutcome::default();
     if changes.is_empty() {
-        return Ok(out);
+        return Ok((out, Vec::new()));
     }
     let mut written: Vec<(String, i64)> = Vec::new();
     for (_, path, folder_id) in lib.track_files(ids)? {
@@ -479,16 +479,32 @@ pub fn write_for_tracks(
             write_tags(Path::new(&path), &changes)
         };
         match result {
-            Ok(()) => written.push((path, folder_id)),
+            Ok(()) => {
+                out.updated.push(path.clone());
+                written.push((path, folder_id));
+            }
             Err(e) => out.failed.push(TagFailure {
                 path,
                 error: e.to_string(),
             }),
         }
     }
+    Ok((out, written))
+}
+
+/// Writes `changes` to the files of the given library tracks, skipping (and
+/// reporting) the file in `current`, then re-reads every file that was
+/// written into the library. A file whose write fails is left as it was and
+/// its database row is not touched.
+pub fn write_for_tracks(
+    lib: &super::Library,
+    ids: &[i64],
+    changes: &TagChanges,
+    current: Option<&str>,
+) -> super::Result<WriteOutcome> {
+    let (out, written) = write_for_tracks_no_rescan(lib, ids, changes, current)?;
     if !written.is_empty() {
         lib.rescan_files(&written)?;
-        out.updated = written.into_iter().map(|(p, _)| p).collect();
     }
     Ok(out)
 }

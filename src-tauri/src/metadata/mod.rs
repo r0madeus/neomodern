@@ -463,7 +463,12 @@ impl MetadataService {
     /// cache and returns its path. Missing covers and download errors give
     /// `None`: a preview is never worth failing a search for.
     async fn preview(&self, lib: &Library, release_group_id: &str) -> Option<String> {
-        if release_group_id.is_empty() {
+        if release_group_id.is_empty()
+            || release_group_id.len() > 64
+            || !release_group_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
             return None;
         }
         let dir = lib.covers_dir().join("musicbrainz");
@@ -800,6 +805,7 @@ fn apply_tags(
     let batch_id = lib.next_tag_batch_id()?;
     let mut out = ApplyOutcome::default();
     let mut written_ids = Vec::new();
+    let mut rescanned = Vec::new();
     for tp in proposal.tracks.iter().filter(|t| !t.is_empty()) {
         let Some((_, path, _)) = lib.track_files(&[tp.track_id])?.into_iter().next() else {
             out.failed.push((
@@ -821,14 +827,19 @@ fn apply_tags(
         };
         let json = serde_json::to_string(&old)?;
         let history_id = lib.save_tag_history(batch_id, Some(tp.track_id), &path, &json)?;
-        let res = tags::write_for_tracks(lib, &[tp.track_id], &tp.to_changes(), current)?;
+        let (res, written) =
+            tags::write_for_tracks_no_rescan(lib, &[tp.track_id], &tp.to_changes(), current)?;
         if let Some(f) = res.failed.into_iter().next() {
             lib.delete_tag_history_row(history_id)?;
             out.failed.push((f.path, f.error));
         } else {
             written_ids.push(tp.track_id);
             out.updated_paths.extend(res.updated);
+            rescanned.extend(written);
         }
+    }
+    if !rescanned.is_empty() {
+        lib.rescan_files(&rescanned)?;
     }
     out.updated = written_ids.len();
     out.batch_id = if written_ids.is_empty() { 0 } else { batch_id };
@@ -849,6 +860,7 @@ fn undo_batch(lib: &Library, batch_id: i64, current: Option<&str>) -> Result<App
     let (covers, rows): (Vec<_>, Vec<_>) = rows
         .into_iter()
         .partition(|r| r.track_id.is_none() && r.old_json == ADDED_COVER);
+    let mut rescanned = Vec::new();
     for row in rows {
         // The track id can have changed if the file was re-added: go by path.
         let id = lib.track_id_by_path(&row.path)?.or(row.track_id);
@@ -863,15 +875,20 @@ fn undo_batch(lib: &Library, batch_id: i64, current: Option<&str>) -> Result<App
             out.failed.push((row.path, "not in the library".into()));
             continue;
         };
-        let res = tags::write_for_tracks(lib, &[id], &old.restore_changes(), current)?;
+        let (res, written) =
+            tags::write_for_tracks_no_rescan(lib, &[id], &old.restore_changes(), current)?;
         match res.failed.into_iter().next() {
             Some(f) => out.failed.push((f.path, f.error)),
             None => {
                 lib.delete_tag_history_row(row.id)?;
                 out.updated_paths.extend(res.updated);
                 out.updated += 1;
+                rescanned.extend(written);
             }
         }
+    }
+    if !rescanned.is_empty() {
+        lib.rescan_files(&rescanned)?;
     }
     // Added covers go last, after the tags put the albums back.
     for row in covers {

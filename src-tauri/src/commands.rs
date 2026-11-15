@@ -411,6 +411,13 @@ pub async fn app_diagnostics(app: tauri::AppHandle) -> Res<String> {
 /// Writes the problem report to `path` (chosen in a save dialog).
 #[tauri::command]
 pub async fn app_save_diagnostics(app: tauri::AppHandle, path: String) -> Res<()> {
+    let valid_ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("txt") || e.eq_ignore_ascii_case("log"));
+    if !valid_ext {
+        return Err("diagnostics file must have a .txt or .log extension".into());
+    }
     tokio::task::spawn_blocking(move || {
         std::fs::write(&path, diagnostics_text(&app)).map_err(|e| e.to_string())
     })
@@ -541,7 +548,10 @@ pub fn app_reveal_file(app: tauri::AppHandle, path: String) -> Res<()> {
     #[cfg(not(target_os = "android"))]
     {
         use tauri_plugin_opener::OpenerExt;
-        if path.starts_with("http://") || path.starts_with("https://") {
+        if crate::session::is_stream_url(std::path::Path::new(&path))
+            || path.starts_with("\\\\")
+            || path.starts_with("//")
+        {
             return Err("cannot reveal an online stream".into());
         }
         app.opener()
@@ -583,31 +593,13 @@ pub async fn app_window_insets(app: tauri::AppHandle) -> Res<WindowInsets> {
 /// or among the user's kept images are read.
 #[tauri::command]
 pub async fn library_cover_color(
-    app: tauri::AppHandle,
     lib: State<'_, Arc<Library>>,
     cover: String,
 ) -> Res<Option<[u8; 3]>> {
-    use tauri::Manager;
-    let covers = app
-        .path()
-        .app_cache_dir()
+    let lib = Arc::clone(&lib);
+    tauri::async_runtime::spawn_blocking(move || le(lib.cached_cover_color(&cover)))
+        .await
         .map_err(|e| e.to_string())?
-        .join("covers");
-    let kept = lib.user_images_dir().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        let path = std::path::Path::new(&cover);
-        let inside = path.canonicalize().is_ok_and(|p| {
-            [&covers, &kept]
-                .iter()
-                .any(|dir| dir.canonicalize().is_ok_and(|d| p.starts_with(d)))
-        });
-        if !inside {
-            return Ok(None);
-        }
-        Ok(crate::library::cover_color::cover_color(path).ok())
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 // ---------------------------------------------------------------------
@@ -759,7 +751,7 @@ pub fn library_stats(lib: State<'_, Arc<Library>>) -> Res<LibraryStats> {
 }
 
 #[tauri::command]
-pub fn library_tracks_page(
+pub async fn library_tracks_page(
     lib: State<'_, Arc<Library>>,
     offset: u64,
     limit: u64,
@@ -767,12 +759,17 @@ pub fn library_tracks_page(
     dir: Option<String>,
     query: Option<String>,
 ) -> Res<Page<TrackRow>> {
-    le(lib.search_tracks_page(
-        offset,
-        limit,
-        SortSpec::parse(&sort, dir.as_deref()),
-        query.as_deref().unwrap_or(""),
-    ))
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || {
+        le(lib.search_tracks_page(
+            offset,
+            limit,
+            SortSpec::parse(&sort, dir.as_deref()),
+            query.as_deref().unwrap_or(""),
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -781,18 +778,26 @@ pub fn library_track_by_path(lib: State<'_, Arc<Library>>, path: String) -> Res<
 }
 
 #[tauri::command]
-pub fn library_albums_page(
+pub async fn library_albums_page(
     lib: State<'_, Arc<Library>>,
     offset: u64,
     limit: u64,
     query: Option<String>,
 ) -> Res<Page<AlbumRow>> {
-    le(lib.search_albums_page(offset, limit, query.as_deref().unwrap_or("")))
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || {
+        le(lib.search_albums_page(offset, limit, query.as_deref().unwrap_or("")))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn library_album(lib: State<'_, Arc<Library>>, album_id: i64) -> Res<AlbumDetail> {
-    le(lib.album(album_id))
+pub async fn library_album(lib: State<'_, Arc<Library>>, album_id: i64) -> Res<AlbumDetail> {
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || le(lib.album(album_id)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -872,13 +877,18 @@ pub fn playlist_delete(app: AppHandle, lib: State<'_, Arc<Library>>, id: i64) ->
 }
 
 #[tauri::command]
-pub fn playlist_set_cover_file(
+pub async fn playlist_set_cover_file(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
     id: i64,
     path: String,
 ) -> Res<()> {
-    le(lib.set_playlist_cover_file(id, std::path::Path::new(&path)))?;
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || {
+        le(lib.set_playlist_cover_file(id, std::path::Path::new(&path)))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     playlists_changed(&app);
     Ok(())
 }
@@ -1002,6 +1012,13 @@ pub fn playlist_export_m3u(lib: State<'_, Arc<Library>>, id: i64) -> Res<String>
 /// Writes the playlist as an M3U file (desktop, path from a save dialog).
 #[tauri::command]
 pub fn playlist_export_m3u_file(lib: State<'_, Arc<Library>>, id: i64, path: String) -> Res<()> {
+    let valid_ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("m3u") || e.eq_ignore_ascii_case("m3u8"));
+    if !valid_ext {
+        return Err("playlist file must have an .m3u or .m3u8 extension".into());
+    }
     let text = le(lib.export_m3u(id))?;
     std::fs::write(&path, text).map_err(|e| format!("could not write {path}: {e}"))
 }
@@ -1477,16 +1494,24 @@ pub fn lyrics_share_cancel(lyrics: State<'_, Arc<LyricsService>>) {
 }
 
 #[tauri::command]
-pub async fn lyrics_attach_file(audio_path: String, lrc_path: String) -> Res<LyricsResult> {
+pub async fn lyrics_attach_file(
+    lib: State<'_, Arc<Library>>,
+    audio_path: String,
+    lrc_path: String,
+) -> Res<LyricsResult> {
+    let lib = Arc::clone(&lib);
     tokio::task::spawn_blocking(move || {
+        if le(lib.track_id_by_path(&audio_path))?.is_none() {
+            return Err("track is not in library".into());
+        }
         attach_local_lrc(
             std::path::Path::new(&audio_path),
             std::path::Path::new(&lrc_path),
         )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------
@@ -1754,15 +1779,15 @@ fn resolve_pinned(store: &SessionStore, lib: &Library) -> Res<Vec<PinnedEntry>> 
     for item in refs {
         match item.kind {
             PinnedKind::Album => {
-                if let Ok(detail) = lib.album(item.id) {
+                if let Ok(Some(album)) = lib.album_info(item.id) {
                     out.push(PinnedEntry {
                         kind: PinnedKind::Album,
-                        id: detail.album.id,
-                        title: detail.album.title,
-                        subtitle: detail.album.album_artist,
-                        cover: detail.album.cover,
+                        id: album.id,
+                        title: album.title,
+                        subtitle: album.album_artist,
+                        cover: album.cover,
                         album_covers: Vec::new(),
-                        track_count: detail.album.track_count,
+                        track_count: album.track_count,
                     });
                 }
             }
@@ -1885,12 +1910,15 @@ pub fn favorites_play(
 // ---------------------------------------------------------------------
 
 #[tauri::command]
-pub fn history_stats(
+pub async fn history_stats(
     lib: State<'_, Arc<Library>>,
     from: Option<i64>,
     to: Option<i64>,
 ) -> Res<crate::library::ListeningStats> {
-    le(lib.listening_stats(from, to))
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || le(lib.listening_stats(from, to)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1905,21 +1933,29 @@ pub fn history_clear(app: AppHandle, lib: State<'_, Arc<Library>>) -> Res<u64> {
 // ---------------------------------------------------------------------
 
 #[tauri::command]
-pub fn library_artists_page(
+pub async fn library_artists_page(
     lib: State<'_, Arc<Library>>,
     offset: u64,
     limit: u64,
     query: Option<String>,
 ) -> Res<Page<crate::library::ArtistRow>> {
-    le(lib.search_artists_page(offset, limit, query.as_deref().unwrap_or("")))
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || {
+        le(lib.search_artists_page(offset, limit, query.as_deref().unwrap_or("")))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn library_artist_profile(
+pub async fn library_artist_profile(
     lib: State<'_, Arc<Library>>,
     name: String,
 ) -> Res<crate::library::ArtistProfile> {
-    le(lib.artist_profile(&name))
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || le(lib.artist_profile(&name)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1935,16 +1971,22 @@ pub fn library_play_artist(
 }
 
 #[tauri::command]
-pub fn library_genres(lib: State<'_, Arc<Library>>) -> Res<Vec<crate::library::GenreRow>> {
-    le(lib.genres())
+pub async fn library_genres(lib: State<'_, Arc<Library>>) -> Res<Vec<crate::library::GenreRow>> {
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || le(lib.genres()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn library_genre_detail(
+pub async fn library_genre_detail(
     lib: State<'_, Arc<Library>>,
     name: String,
 ) -> Res<crate::library::GenreDetail> {
-    le(lib.genre_detail(&name))
+    let lib = Arc::clone(&lib);
+    tokio::task::spawn_blocking(move || le(lib.genre_detail(&name)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

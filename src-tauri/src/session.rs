@@ -125,6 +125,11 @@ pub struct SessionState {
     /// Crossfade length in seconds; 0 = off.
     #[serde(default)]
     pub crossfade_seconds: f64,
+    /// PC <-> phone sync (docs/SYNC.md): the desktop listens for paired
+    /// phones only while this is on. Off by default. Owned by
+    /// [`SessionStore`].
+    #[serde(default)]
+    pub allow_phone_connections: bool,
 }
 
 impl Default for SessionState {
@@ -155,6 +160,7 @@ impl Default for SessionState {
             equalizer: crate::audio::Equalizer::default(),
             crossfade_seconds: 0.0,
             net_updates: true,
+            allow_phone_connections: false,
         }
     }
 }
@@ -290,6 +296,7 @@ pub struct SessionStore {
     lyrics_netease: AtomicBool,
     autoplay: AtomicBool,
     welcome_done: AtomicBool,
+    allow_phone_connections: AtomicBool,
     net: Arc<NetPolicy>,
 }
 
@@ -306,6 +313,7 @@ impl SessionStore {
             lyrics_netease: AtomicBool::new(default_lyrics_netease()),
             autoplay: AtomicBool::new(default_autoplay()),
             welcome_done: AtomicBool::new(false),
+            allow_phone_connections: AtomicBool::new(false),
             net: Arc::new(NetPolicy::default()),
         }
     }
@@ -337,6 +345,8 @@ impl SessionStore {
         self.autoplay.store(state.autoplay, Ordering::SeqCst);
         self.welcome_done
             .store(state.welcome_done, Ordering::SeqCst);
+        self.allow_phone_connections
+            .store(state.allow_phone_connections, Ordering::SeqCst);
         self.net.set_offline(state.offline_mode);
         self.net.set_feature(Feature::Lyrics, state.net_lyrics);
         self.net.set_feature(Feature::Online, state.net_online);
@@ -361,6 +371,15 @@ impl SessionStore {
 
     pub fn set_autoplay(&self, enabled: bool) {
         self.autoplay.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn allow_phone_connections(&self) -> bool {
+        self.allow_phone_connections.load(Ordering::SeqCst)
+    }
+
+    pub fn set_allow_phone_connections(&self, enabled: bool) {
+        self.allow_phone_connections
+            .store(enabled, Ordering::SeqCst);
     }
 
     pub fn lyrics_netease(&self) -> bool {
@@ -453,6 +472,7 @@ impl SessionStore {
         state.lyrics_netease = self.lyrics_netease();
         state.autoplay = self.autoplay();
         state.welcome_done = self.welcome_done();
+        state.allow_phone_connections = self.allow_phone_connections();
         state.offline_mode = self.net.offline();
         state.net_lyrics = self.net.feature_enabled(Feature::Lyrics);
         state.net_online = self.net.feature_enabled(Feature::Online);
@@ -620,6 +640,7 @@ mod tests {
                 gains_db: [3.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
             },
             crossfade_seconds: 6.0,
+            allow_phone_connections: true,
         };
         save(&file, &state).unwrap();
         assert_eq!(load(&file), state);
@@ -710,6 +731,22 @@ mod tests {
         let again = SessionStore::new(file);
         again.load();
         assert!(!again.autoplay());
+    }
+
+    #[test]
+    fn phone_connections_are_off_by_default_and_persist() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("session.json");
+        std::fs::write(&file, r#"{"volume":55.0}"#).unwrap();
+        assert!(!load(&file).allow_phone_connections);
+        let store = SessionStore::new(file.clone());
+        store.load();
+        assert!(!store.allow_phone_connections());
+        store.set_allow_phone_connections(true);
+        store.save_now(&SessionState::default());
+        let again = SessionStore::new(file);
+        again.load();
+        assert!(again.allow_phone_connections());
     }
 
     #[test]

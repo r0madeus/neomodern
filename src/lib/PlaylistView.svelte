@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { count, i18n, t } from './i18n.svelte'
   import { tick } from 'svelte'
@@ -779,7 +780,7 @@
                 <Cover cover={track.cover} title={track.title} class="size-10 shrink-0 rounded text-[10px]" />
                 <span class="min-w-0">
                   <span class="flex min-w-0 items-center">
-                    <span class={['truncate font-medium', track.path === currentPath ? 'text-accent-600 dark:text-accent-400' : 'text-zinc-900 dark:text-zinc-100']}>{track.title}</span><ExtBadge path={track.path} />
+                    <TitleLink title={track.title} albumId={track.albumId} class={['font-medium', track.path === currentPath ? 'text-accent-600 dark:text-accent-400' : 'text-zinc-900 dark:text-zinc-100'].join(' ')} /><ExtBadge path={track.path} />
                   </span>
                   <span class="block truncate text-[13px] text-zinc-500"><ArtistLinks artist={track.artist} /></span>
                 </span>

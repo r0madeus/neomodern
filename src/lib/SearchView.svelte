@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import AlbumLink from './AlbumLink.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
@@ -331,7 +332,7 @@
                         />
                         <div class="min-w-0 flex-1">
                           <p class="flex items-center truncate font-medium">
-                            <span class="truncate">{track.title}</span>
+                            <TitleLink title={track.title} albumId={track.albumId} />
                             <ExtBadge path={track.path} />
                           </p>
                           <p class="truncate text-xs text-zinc-500">

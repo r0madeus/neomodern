@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import AddToPlaylist from './AddToPlaylist.svelte'
   import AlbumLink from './AlbumLink.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
@@ -370,7 +371,7 @@
                           {#if track.path === currentPath && player.snapshot.status === 'playing'}
                             <Equalizer class="shrink-0 text-accent-600 dark:text-accent-400" />
                           {/if}
-                          <span class="truncate">{track.title}</span>
+                          <TitleLink title={track.title} albumId={track.albumId} />
                         </span>
                         <span class="block truncate text-xs text-zinc-500">
                           <ArtistLinks artist={track.artist} />{#if track.album} · <AlbumLink album={track.album} albumId={track.albumId} />{/if}

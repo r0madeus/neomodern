@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from './TitleLink.svelte'
   import { count, t } from './i18n.svelte'
   import ArtistLinks from './ArtistLinks.svelte'
   import Cover from './Cover.svelte'
@@ -132,7 +133,7 @@
     >
       <div class="min-w-0 flex-1">
         <h3 class="truncate text-lg leading-snug font-bold text-zinc-900 dark:text-zinc-50" title={cur.title}>
-          {cur.title}
+          <TitleLink title={cur.title} path={cur.path} />
         </h3>
         <p class="truncate text-sm text-zinc-500 dark:text-zinc-400">
           {#if cur.artist}

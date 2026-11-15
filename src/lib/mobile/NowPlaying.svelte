@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TitleLink from '../TitleLink.svelte'
   import SleepTimerButton from '../SleepTimerButton.svelte'
   import { t } from '../i18n.svelte'
   import { fly } from 'svelte/transition'
@@ -178,7 +179,7 @@
           <CurrentLine />
           <div class="mt-1 flex items-center gap-3">
             <div class="min-w-0 flex-1">
-              <h2 class="truncate text-[22px] leading-tight font-bold">{snap.current.title}</h2>
+              <h2 class="truncate text-[22px] leading-tight font-bold"><TitleLink title={snap.current.title} path={snap.current.path} linkClass="active:underline" /></h2>
               <p class="mt-0.5 truncate text-base text-white/70">
                 {#if snap.current.artist}
                   <ArtistLinks artist={snap.current.artist} linkClass="hover:text-accent-400 active:underline" />

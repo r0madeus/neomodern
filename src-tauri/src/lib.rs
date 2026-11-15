@@ -12,6 +12,10 @@ pub mod online;
 pub mod player;
 pub mod queue;
 pub mod session;
+// PC <-> phone sync (docs/SYNC.md). Not wired into the app yet: the
+// service that uses it lands later, hence the allowances.
+#[allow(dead_code, unused_imports)]
+mod sync;
 pub mod tray;
 pub mod update;
 

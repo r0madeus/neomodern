@@ -247,8 +247,8 @@ mod tests {
         }
     }
 
-    /// Guard: every place that builds an HTTP client or starts an external
-    /// program must be a known, gated one. When this fails after adding a
+    /// Guard: every place that builds an HTTP client, opens a socket or
+    /// starts an external program must be a known, gated one. When this fails after adding a
     /// network feature, route it through `NetPolicy` (see the other tests),
     /// then add it here.
     #[test]
@@ -279,6 +279,17 @@ mod tests {
             ("online/tools.rs", "client_builder()", 1),
             // Update check: update::check_at() requires Feature::Updates.
             ("update.rs", "client_builder()", 1),
+            // PC <-> phone sync (docs/SYNC.md): LAN only, never the
+            // internet. The listener (IPv4 + best-effort IPv6) drops
+            // non-private sources and is off by default: the sync service
+            // binds only while the user's "Allow phone connections" switch
+            // is on. The dialer refuses non-private targets and is only
+            // used for an explicit pairing or for a PC paired before.
+            ("sync/link/server.rs", "TcpListener::bind(", 2),
+            ("sync/link/server.rs", "TcpStream::connect(", 1),
+            // Local route lookup for showing the PC's LAN address; a UDP
+            // connect sends no packet.
+            ("sync/link/server.rs", "UdpSocket::bind(", 1),
         ];
         let mut seen = std::collections::HashMap::new();
         for f in &files {
@@ -291,7 +302,9 @@ mod tests {
                 continue;
             }
             // Strip the unit-test module of the file, if inline.
-            let text = std::fs::read_to_string(f).unwrap();
+            // Windows checkouts may have CRLF line endings; normalise so the
+            // test-module split below also works there.
+            let text = std::fs::read_to_string(f).unwrap().replace("\r\n", "\n");
             let text = text.split("#[cfg(test)]\nmod tests {").next().unwrap();
             for needle in [
                 "client_builder()",
@@ -300,6 +313,10 @@ mod tests {
                 "reqwest::get(",
                 "Command::new(",
                 "Command::new (",
+                "TcpListener::bind(",
+                "TcpStream::connect(",
+                "UdpSocket::bind(",
+                "TcpSocket::new",
             ] {
                 let n = count(text, needle);
                 if n > 0 {
@@ -313,7 +330,8 @@ mod tests {
             .collect();
         assert_eq!(
             seen, want,
-            "a new HTTP client or external program appeared: gate it with NetPolicy"
+            "a new HTTP client, socket or external program appeared: gate it \
+             (NetPolicy, or the sync switch for LAN sockets) and list it here"
         );
 
         // Each gated client is only reachable through its gate method: the

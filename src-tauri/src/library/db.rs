@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 12;
+const SCHEMA_VERSION: i64 = 13;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -170,6 +170,92 @@ CREATE TABLE IF NOT EXISTS tag_history (
 CREATE INDEX IF NOT EXISTS tag_history_batch ON tag_history(batch_id);
 ";
 
+/// PC <-> phone sync (docs/SYNC.md): the replicated record of favourites,
+/// playlists and listening history, plus local-only bookkeeping. Sync rows
+/// store track *keys*, never `tracks.id`, so they have no foreign keys into
+/// the library: a song missing on this device must not cascade them away.
+const SCHEMA_V13: &str = "
+CREATE TABLE IF NOT EXISTS sync_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync_favorites (
+    key         TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    artist      TEXT NOT NULL,
+    album       TEXT NOT NULL,
+    duration_ms INTEGER,
+    is_on       INTEGER NOT NULL,
+    hlc         TEXT NOT NULL,
+    seq         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sync_favorites_seq ON sync_favorites(seq);
+CREATE TABLE IF NOT EXISTS sync_playlists (
+    uuid         TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    name_hlc     TEXT NOT NULL,
+    cover_preset TEXT,
+    cover_hlc    TEXT NOT NULL,
+    deleted      INTEGER NOT NULL,
+    deleted_hlc  TEXT NOT NULL,
+    created_at   INTEGER NOT NULL,
+    reconciled   INTEGER NOT NULL DEFAULT 1,
+    seq          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sync_playlists_seq ON sync_playlists(seq);
+CREATE TABLE IF NOT EXISTS sync_playlist_entries (
+    uuid          TEXT PRIMARY KEY,
+    playlist_uuid TEXT NOT NULL,
+    key           TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    artist        TEXT NOT NULL,
+    album         TEXT NOT NULL,
+    duration_ms   INTEGER,
+    added_at      INTEGER NOT NULL,
+    pos           TEXT NOT NULL,
+    pos_hlc       TEXT NOT NULL,
+    deleted       INTEGER NOT NULL,
+    deleted_hlc   TEXT NOT NULL,
+    seq           INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sync_playlist_entries_list
+    ON sync_playlist_entries(playlist_uuid, pos, uuid);
+CREATE INDEX IF NOT EXISTS sync_playlist_entries_seq ON sync_playlist_entries(seq);
+CREATE TABLE IF NOT EXISTS sync_listens (
+    uid         TEXT PRIMARY KEY,
+    key         TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    artist      TEXT NOT NULL,
+    album       TEXT NOT NULL,
+    genre       TEXT NOT NULL,
+    duration_ms INTEGER,
+    path        TEXT NOT NULL,
+    started_at  INTEGER NOT NULL,
+    ended_at    INTEGER NOT NULL,
+    listened_ms INTEGER NOT NULL,
+    completed   INTEGER NOT NULL,
+    skipped     INTEGER NOT NULL,
+    seq         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sync_listens_seq ON sync_listens(seq);
+CREATE TABLE IF NOT EXISTS sync_playlist_map (
+    playlist_id INTEGER PRIMARY KEY,
+    uuid        TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS sync_peers (
+    device_id         TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    secret            BLOB NOT NULL,
+    last_seq_sent     INTEGER NOT NULL DEFAULT 0,
+    last_seq_received INTEGER NOT NULL DEFAULT 0,
+    last_sync_at      INTEGER
+);
+CREATE TABLE IF NOT EXISTS sync_present (
+    track_id INTEGER PRIMARY KEY,
+    key      TEXT NOT NULL
+);
+";
+
 /// Opens-time setup: pragmas and migrations.
 pub fn init(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -289,6 +375,31 @@ pub fn init(conn: &Connection) -> Result<()> {
             [],
         )?;
         tx.pragma_update(None, "user_version", 12)?;
+        tx.commit()?;
+    }
+    if version < 13 {
+        // Sync tables, and a stable identity for every listening-history
+        // row. Written so a half-applied or repeated run is harmless.
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V13)?;
+        let has_uid: bool = tx.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('listen_events') WHERE name = 'uid'",
+            [],
+            |r| r.get(0),
+        )?;
+        if !has_uid {
+            tx.execute_batch("ALTER TABLE listen_events ADD COLUMN uid TEXT;")?;
+        }
+        // SQLite's randomblob() draws from its own CSPRNG seeded by the OS,
+        // so no extra crate is needed for 128-bit ids.
+        tx.execute(
+            "UPDATE listen_events SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL",
+            [],
+        )?;
+        tx.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS listen_events_uid ON listen_events(uid);",
+        )?;
+        tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
     conn.execute_batch(

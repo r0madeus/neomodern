@@ -28,6 +28,8 @@
   import { selection } from '../trackSelection.svelte'
   import NowPlaying from './NowPlaying.svelte'
   import QueueSheet from './QueueSheet.svelte'
+  import RemoteScreen from './RemoteScreen.svelte'
+  import { sync } from '../sync.svelte'
   import UpdateBanner from '../UpdateBanner.svelte'
   import { updates } from '../updates.svelte'
   import { pushLayer, popLayer, clearLayers, replaceTopLayers } from './layers'
@@ -74,6 +76,7 @@
   let playerOpen = $state(false)
   let queueOpen = $state(false)
   let lyricsOpen = $state(false)
+  let remoteOpen = $state(false)
 
   function selectTab(next: Tab) {
     clearLayers()
@@ -123,14 +126,16 @@
   const openPlayer = () => open(playerOpen, () => (playerOpen = true), () => (playerOpen = false))
   const openQueue = () => open(queueOpen, () => (queueOpen = true), () => (queueOpen = false))
   const openLyrics = () => open(lyricsOpen, () => (lyricsOpen = true), () => (lyricsOpen = false))
+  const openRemote = () => open(remoteOpen, () => (remoteOpen = true), () => (remoteOpen = false))
 
   function navigateFromOverlays(sheet: Sheet) {
-    const overlayCount = Number(playerOpen) + Number(queueOpen) + Number(lyricsOpen)
+    const overlayCount = Number(playerOpen) + Number(queueOpen) + Number(lyricsOpen) + Number(remoteOpen)
     if (overlayCount === 0) {
       pushSheet(sheet)
       return
     }
     if (tooSoon()) return
+    remoteOpen = false
     lyricsOpen = false
     queueOpen = false
     playerOpen = false
@@ -144,6 +149,7 @@
     artists.registerNavigator((name) => navigateFromOverlays({ type: 'artist', name }))
     library.registerAlbumNavigator((id) => navigateFromOverlays({ type: 'album', id }))
     trackMenu.registerQueueOpener(openQueue)
+    sync.registerRemoteOpener(openRemote)
   })
 
   // A deleted playlist closes its page when it is on top.
@@ -201,6 +207,7 @@
             onOpenAlbums={openAlbums}
             onOpenSongs={openSongs}
             onOpenStats={openStats}
+            onOpenRemote={openRemote}
           />
         {:else if tab === 'search'}
           <SearchTab onOpenAlbum={openAlbum} onOpenOnlineAlbum={openOnlineAlbum} />
@@ -308,5 +315,8 @@
   {/if}
   {#if lyricsOpen}
     <LyricsScreen onClose={popLayer} />
+  {/if}
+  {#if remoteOpen}
+    <RemoteScreen onClose={popLayer} />
   {/if}
 </div>

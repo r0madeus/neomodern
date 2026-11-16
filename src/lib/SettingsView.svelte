@@ -18,17 +18,26 @@
   import { online } from './online.svelte'
   import { updates } from './updates.svelte'
   import { theme, type ThemeChoice } from './theme.svelte'
+  import SyncSettings from './SyncSettings.svelte'
+  import { sync } from './sync.svelte'
 
-  type Category = 'all' | 'general' | 'playback' | 'library' | 'internet' | 'about'
+  type Category = 'all' | 'general' | 'playback' | 'library' | 'devices' | 'internet' | 'about'
 
-  const CATEGORIES: { id: Category; label: string; icon: IconName }[] = [
+  // "Phone" on the computer, "Computer" on the phone (sync, docs/SYNC.md).
+  const devicesLabel = $derived(
+    (sync.status?.role ?? (appSettings.platform === 'android' ? 'phone' : 'desktop')) === 'phone'
+      ? 'Computer'
+      : 'Phone',
+  )
+  const CATEGORIES = $derived<{ id: Category; label: string; icon: IconName }[]>([
     { id: 'all', label: 'All', icon: 'sliders' },
     { id: 'general', label: 'General', icon: 'settings' },
     { id: 'playback', label: 'Playback', icon: 'music' },
     { id: 'library', label: 'Library', icon: 'library' },
+    { id: 'devices', label: devicesLabel, icon: devicesLabel === 'Phone' ? 'phone' : 'computer' },
     { id: 'internet', label: 'Internet', icon: 'globe' },
     { id: 'about', label: 'About', icon: 'info' },
-  ]
+  ])
 
   let category = $state<Category>('all')
   const show = (c: Exclude<Category, 'all'>) => category === 'all' || category === c
@@ -524,6 +533,15 @@
             </div>
           {/if}
         </div>
+      </section>
+    {/if}
+
+    {#if show('devices')}
+      <section aria-labelledby="set-devices" class="flex flex-col gap-2.5">
+        <h3 id="set-devices" class="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          {t(devicesLabel)}
+        </h3>
+        <SyncSettings {cardClass} {actionBtn} />
       </section>
     {/if}
 

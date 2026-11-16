@@ -195,6 +195,19 @@ contributors and agents.
 - **Data**: downloaded album covers, artist pictures and lyrics are kept
   in the data folder (docs/DATA-LAYOUT.md), not lost with the cache.
 
+### PC ↔ phone sync and remote control (K21, experimental, in review)
+
+- Same Wi-Fi only, off by default (desktop Settings › Phone). Pair once
+  with a 6-digit code (SPAKE2), then Noise-encrypted sessions per device.
+- Syncs favourites, playlists (order, date added) and listening history;
+  songs are matched by artist/album/title, missing songs are kept until
+  they appear. Per-field last-writer-wins on hybrid logical clocks,
+  validation, one transaction per page, backups, mass-delete question.
+- The phone controls the PC: play/pause, seek, volume, shuffle/repeat,
+  "Up next". Design and limits: `docs/SYNC.md`.
+- Not yet tried on real devices (Windows firewall prompt, Android
+  local-network access).
+
 ## Next
 
 1. **Try metadata matching on real albums** (desktop and phone): the

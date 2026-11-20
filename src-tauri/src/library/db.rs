@@ -14,7 +14,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 16;
+const SCHEMA_VERSION: i64 = 17;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -389,6 +389,22 @@ fn migrate_v15(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Schema v17: indexes in A to Z order (`neoalpha`) for the song list sorted
+/// by title or artist, so a page of a big library does not sort every track.
+/// The collation's order is frozen because these indexes depend on it.
+fn migrate_v17(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        "CREATE INDEX IF NOT EXISTS tracks_title_alpha
+             ON tracks(title COLLATE neoalpha, artist COLLATE neoalpha, id);
+         CREATE INDEX IF NOT EXISTS tracks_artist_alpha
+             ON tracks(artist COLLATE neoalpha, title COLLATE neoalpha);",
+    )?;
+    tx.pragma_update(None, "user_version", 17)?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Schema v16: an optional PIN per profile (K25), stored salted and hashed
 /// (see `library::profiles`). Repeating it is harmless.
 fn migrate_v16(conn: &Connection) -> Result<()> {
@@ -407,9 +423,18 @@ pub fn init(conn: &Connection) -> Result<()> {
     init_with_first_profile(conn, DEFAULT_FIRST_PROFILE_NAME)
 }
 
+/// Album, artist and song lists sort A to Z with the Turkish letters in their
+/// places (`library::alpha`), and indexes are built with that collation, so
+/// every connection registers it before it reads the file.
+pub fn register_collation(conn: &Connection) -> Result<()> {
+    conn.create_collation(super::alpha::COLLATION, super::alpha::compare)?;
+    Ok(())
+}
+
 /// Like [`init`]; `first_profile_name` names profile 1 when the v14
 /// migration creates it.
 pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> Result<()> {
+    register_collation(conn)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -568,6 +593,9 @@ pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> R
     }
     if version < 16 {
         migrate_v16(conn)?;
+    }
+    if version < 17 {
+        migrate_v17(conn)?;
     }
     // Indexes of the profile-scoped queries lead with `profile_id`.
     conn.execute_batch(
@@ -789,28 +817,33 @@ impl SortSpec {
     }
 
     fn order_by(self) -> &'static str {
+        // Text columns sort A to Z (`neoalpha`, see `library::alpha`).
         match (self.order, self.dir) {
             (SortOrder::Artist, SortDir::Asc) => {
-                "t.artist, a.title, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+                "t.artist COLLATE neoalpha, a.title COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Artist, SortDir::Desc) => {
-                "t.artist DESC, a.title, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+                "t.artist COLLATE neoalpha DESC, a.title COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
-            (SortOrder::Title, SortDir::Asc) => "t.title, t.artist, t.id",
-            (SortOrder::Title, SortDir::Desc) => "t.title DESC, t.artist, t.id",
+            (SortOrder::Title, SortDir::Asc) => {
+                "t.title COLLATE neoalpha, t.artist COLLATE neoalpha, t.id"
+            }
+            (SortOrder::Title, SortDir::Desc) => {
+                "t.title COLLATE neoalpha DESC, t.artist COLLATE neoalpha, t.id"
+            }
             (SortOrder::Album, SortDir::Asc) => {
-                "a.title, a.album_artist, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+                "a.title COLLATE neoalpha, a.album_artist COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Album, SortDir::Desc) => {
-                "a.title DESC, a.album_artist DESC, a.year DESC, a.id DESC, t.disc_no, t.track_no, t.title, t.id"
+                "a.title COLLATE neoalpha DESC, a.album_artist COLLATE neoalpha DESC, a.year DESC, a.id DESC, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Added, SortDir::Asc) => "t.added_at ASC, t.id ASC",
             (SortOrder::Added, SortDir::Desc) => "t.added_at DESC, t.id",
             (SortOrder::Duration, SortDir::Asc) => {
-                "t.duration_ms IS NULL, t.duration_ms ASC, t.title, t.id"
+                "t.duration_ms IS NULL, t.duration_ms ASC, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Duration, SortDir::Desc) => {
-                "t.duration_ms IS NULL, t.duration_ms DESC, t.title, t.id"
+                "t.duration_ms IS NULL, t.duration_ms DESC, t.title COLLATE neoalpha, t.id"
             }
         }
     }
@@ -1107,7 +1140,9 @@ fn deep_artist_page(
     };
     let Some(boundary): Option<String> = conn
         .query_row(
-            &format!("SELECT artist FROM tracks ORDER BY artist{dir_sql} LIMIT 1 OFFSET ?1"),
+            &format!(
+                "SELECT artist FROM tracks ORDER BY artist COLLATE neoalpha{dir_sql} LIMIT 1 OFFSET ?1"
+            ),
             [offset as i64],
             |r| r.get(0),
         )
@@ -1117,7 +1152,7 @@ fn deep_artist_page(
     };
     let before_cmp = if dir == SortDir::Asc { "<" } else { ">" };
     let before: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM tracks WHERE artist {before_cmp} ?1"),
+        &format!("SELECT COUNT(*) FROM tracks WHERE artist COLLATE neoalpha {before_cmp} ?1"),
         [&boundary],
         |r| r.get(0),
     )?;
@@ -1127,7 +1162,7 @@ fn deep_artist_page(
         "{cols}
          FROM (SELECT t.id AS id
                FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
-               WHERE t.artist {cmp} ?1 ORDER BY {order} LIMIT ?2 OFFSET ?3) p
+               WHERE t.artist COLLATE neoalpha {cmp} ?1 ORDER BY {order} LIMIT ?2 OFFSET ?3) p
          JOIN tracks t ON t.id = p.id
          LEFT JOIN albums a ON a.id = t.album_id
          ORDER BY {order}"
@@ -1202,7 +1237,7 @@ pub fn search_albums_page(
     let n = f.params.len();
     let count_sql = format!("SELECT COUNT(*) FROM albums a {}", f.where_sql);
     let page_sql = format!(
-        "{ALBUM_SELECT} {} ORDER BY a.album_artist, a.title, a.year, a.id LIMIT ?{} OFFSET ?{}",
+        "{ALBUM_SELECT} {} ORDER BY a.title COLLATE neoalpha, a.album_artist, a.year, a.id LIMIT ?{} OFFSET ?{}",
         f.where_sql,
         n + 1,
         n + 2
@@ -2691,7 +2726,7 @@ pub fn search_artists_page(
         "WITH page(name) AS MATERIALIZED (
              SELECT MIN(ta.artist) FROM track_artists ta {}
              GROUP BY ta.artist
-             ORDER BY MIN(ta.artist) COLLATE NOCASE
+             ORDER BY MIN(ta.artist) COLLATE neoalpha
              LIMIT ?{} OFFSET ?{}
          )
          SELECT MIN(ta.artist),
@@ -2712,7 +2747,7 @@ pub fn search_artists_page(
          LEFT JOIN artists_meta am ON am.name_key = ta.artist
          WHERE ta.artist IN (SELECT name FROM page)
          GROUP BY ta.artist
-         ORDER BY MIN(ta.artist) COLLATE NOCASE",
+         ORDER BY MIN(ta.artist) COLLATE neoalpha",
         f.where_sql,
         n + 1,
         n + 2
@@ -2729,13 +2764,13 @@ pub fn search_artists_page(
     })
 }
 
-/// Distinct artist names in the library, sorted case-insensitively.
+/// Distinct artist names in the library, sorted A to Z.
 pub fn all_artist_names(conn: &Connection) -> Result<Vec<String>> {
     let mut st = conn.prepare(
         "SELECT MIN(ta.artist)
          FROM track_artists ta
          GROUP BY ta.artist
-         ORDER BY MIN(ta.artist) COLLATE NOCASE",
+         ORDER BY MIN(ta.artist) COLLATE neoalpha",
     )?;
     let rows = st.query_map([], |r| r.get(0))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -3191,6 +3226,7 @@ fn build_mix_meta(
         kind: kind.to_string(),
         title_key: title_key.to_string(),
         subject,
+        subject_kind: None,
         subtitle_key: subtitle_key.to_string(),
         track_count: u32::try_from(tracks.len()).unwrap_or(u32::MAX),
         album_covers: mix_album_covers(tracks),
@@ -3510,7 +3546,7 @@ fn focus_mix_data(
     conn: &Connection,
     profile: ProfileId,
     now: i64,
-) -> Result<Option<(String, Vec<TrackRow>)>> {
+) -> Result<Option<(String, &'static str, Vec<TrackRow>)>> {
     let since = now.saturating_sub(14 * SECS_PER_DAY);
     let pr = profile.0;
     let top_artist: Option<String> = conn
@@ -3556,7 +3592,7 @@ fn focus_mix_data(
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let tracks = tracks_by_ids_in_order(conn, profile, &ids)?;
         if tracks.len() >= MIN_MIX_TRACKS {
-            return Ok(Some((artist, tracks)));
+            return Ok(Some((artist, "artist", tracks)));
         }
     }
 
@@ -3603,7 +3639,7 @@ fn focus_mix_data(
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let tracks = tracks_by_ids_in_order(conn, profile, &ids)?;
         if tracks.len() >= MIN_MIX_TRACKS {
-            return Ok(Some((genre, tracks)));
+            return Ok(Some((genre, "genre", tracks)));
         }
     }
 
@@ -3663,10 +3699,10 @@ fn mix_detail_for_id(
             Ok(Some(HomeMixDetail { mix, tracks }))
         }
         MIX_FOCUS => {
-            let Some((subject, tracks)) = focus_mix_data(conn, profile, now)? else {
+            let Some((subject, subject_kind, tracks)) = focus_mix_data(conn, profile, now)? else {
                 return Ok(None);
             };
-            let mix = build_mix_meta(
+            let mut mix = build_mix_meta(
                 MIX_FOCUS,
                 MIX_FOCUS,
                 "{name} Mix",
@@ -3674,6 +3710,7 @@ fn mix_detail_for_id(
                 "Inspired by what you played most lately",
                 &tracks,
             );
+            mix.subject_kind = Some(subject_kind.to_owned());
             Ok(Some(HomeMixDetail { mix, tracks }))
         }
         _ => Ok(None),

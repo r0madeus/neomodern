@@ -2072,7 +2072,10 @@ pub fn library_play_genre(
     start_index: usize,
 ) -> Res<PlayerSnapshot> {
     let tracks = le(lib.genre_tracks(&name))?;
-    s(player.replace_queue(tracks, start_index))
+    // Remembered like an album's or an artist's, so the genre page's play
+    // button can show pause while it is the one playing.
+    let context = Some(format!("genre:{}", name.to_lowercase()));
+    s(player.replace_queue_from(tracks, start_index, context))
 }
 
 #[tauri::command]

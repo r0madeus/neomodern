@@ -8,6 +8,7 @@
   import ExtBadge from './ExtBadge.svelte'
   import FavoriteButton from './FavoriteButton.svelte'
   import Icon from './Icon.svelte'
+  import MixCover from './MixCover.svelte'
   import PlaylistCover from './PlaylistCover.svelte'
   import VirtualList from './VirtualList.svelte'
   import { count, t } from './i18n.svelte'
@@ -115,13 +116,7 @@
         mixAccent(detail.mix.kind),
       ]}
     >
-      <PlaylistCover
-        cover={null}
-        albumCovers={detail.mix.albumCovers}
-        name={title}
-        class="size-40 shrink-0 rounded-xl shadow-2xl shadow-black/40 sm:size-44"
-        iconClass="size-16"
-      />
+      <MixCover mix={detail.mix} class="size-40 shrink-0 rounded-xl shadow-2xl shadow-black/40 sm:size-44" />
       <div class="min-w-0 flex-1">
         <p class="text-xs font-semibold tracking-widest text-white/75 uppercase">
           {t('Dynamic mix')}

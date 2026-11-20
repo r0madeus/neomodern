@@ -450,6 +450,17 @@ pub fn discovery_targets(port: u16) -> Vec<SocketAddr> {
     out
 }
 
+/// One probe to every target.
+async fn send_probe(socket: &UdpSocket, probe: &[u8], targets: &[SocketAddr]) {
+    for target in targets {
+        // A target that cannot be reached (no route, no such interface) is
+        // just skipped.
+        if let Err(e) = socket.send_to(probe, target).await {
+            log::debug!("sync: discovery probe to {target}: {e}");
+        }
+    }
+}
+
 /// Sends the probe to every `targets` address and collects answers for
 /// `timeout`. Only well-formed answers from LAN addresses count; one entry
 /// per device id (the first answer wins). The targets are not checked
@@ -460,19 +471,27 @@ pub async fn discover(targets: &[SocketAddr], timeout: Duration) -> LinkResult<V
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
     socket.set_broadcast(true)?;
     let probe = discovery::probe();
-    for target in targets {
-        // A target that cannot be reached (no route, no such interface) is
-        // just skipped.
-        if let Err(e) = socket.send_to(&probe, target).await {
-            log::debug!("sync: discovery probe to {target}: {e}");
-        }
-    }
+    // UDP can lose the probe (a busy machine, Wi-Fi power saving), so it is
+    // sent twice: now and once more part-way through the wait. Replies to
+    // both are the same device and de-duplicated below. Two probes stay
+    // inside the responder's per-source rate limit.
+    send_probe(&socket, &probe, targets).await;
+    let resend_at = tokio::time::Instant::now() + timeout / 2;
+    let mut resent = false;
     let deadline = tokio::time::Instant::now() + timeout;
     let mut found: Vec<FoundComputer> = Vec::new();
     let mut buf = [0u8; 1024];
     while found.len() < MAX_FOUND {
-        let received = tokio::time::timeout_at(deadline, socket.recv_from(&mut buf)).await;
-        let Ok(received) = received else { break };
+        let wake = if resent { deadline } else { resend_at };
+        let received = tokio::time::timeout_at(wake, socket.recv_from(&mut buf)).await;
+        let Ok(received) = received else {
+            if resent {
+                break;
+            }
+            resent = true;
+            send_probe(&socket, &probe, targets).await;
+            continue;
+        };
         let Ok((n, from)) = received else { continue };
         if !is_lan_address(from.ip()) {
             continue;

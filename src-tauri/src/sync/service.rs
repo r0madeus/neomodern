@@ -25,6 +25,10 @@ use std::time::Duration;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 /// Reconnect backoff of the phone: 2 s doubling to 60 s.
+/// The first retries of a new connection: right after pairing the computer
+/// may not have stored the pairing yet when the phone dials, so the second
+/// try comes quickly instead of after `BACKOFF_MIN`.
+const BACKOFF_FIRST: Duration = Duration::from_millis(250);
 const BACKOFF_MIN: Duration = Duration::from_secs(2);
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
 /// Local changes are captured this long after the library last changed.
@@ -880,6 +884,12 @@ impl SyncService {
         let mut local = self.sh.local_device().await?;
         let profile = self.sh.lib.active_profile();
         local.id = db(&self.sh, move |c| store::link_device_id(c, profile)).await?;
+        // A phone whose profiles pair with the same computer would be listed
+        // there twice under one name: say which profile each pairing is.
+        let profiles = self.sh.lib.profiles().map_err(|e| e.to_string())?;
+        if let Some(p) = profiles.iter().find(|p| p.id == profile) {
+            local.name = pairing_display_name(&local.name, &p.name, profiles.len());
+        }
         Ok((local, profile))
     }
 
@@ -1182,7 +1192,7 @@ async fn client_loop(
     mut stop: watch::Receiver<bool>,
     wake: Arc<Notify>,
 ) {
-    let mut backoff = BACKOFF_MIN;
+    let mut backoff = BACKOFF_FIRST;
     loop {
         if *stop.borrow() || sh.closed.load(Ordering::SeqCst) {
             return;
@@ -1405,4 +1415,16 @@ async fn build_status(sh: &Arc<Shared>) -> Result<SyncStatus, String> {
         peers,
         last_result: st.last_result.clone(),
     })
+}
+/// The name a computer lists a paired phone under: the device name, plus the
+/// phone profile when the phone has more than one ("Pixel · Zeynep"). Kept
+/// within the name limit of the link.
+pub(super) fn pairing_display_name(device: &str, profile: &str, profile_count: usize) -> String {
+    if profile_count < 2 {
+        return device.to_owned();
+    }
+    let profile: String = profile.chars().take(40).collect();
+    let room = 150usize.saturating_sub(profile.chars().count());
+    let device: String = device.chars().take(room).collect();
+    format!("{device} \u{b7} {profile}")
 }

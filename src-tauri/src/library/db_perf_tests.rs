@@ -226,7 +226,7 @@ fn artists_page_reference(
          LEFT JOIN artists_meta am ON am.name_key = ta.artist
          {}
          GROUP BY ta.artist
-         ORDER BY MIN(ta.artist) COLLATE NOCASE
+         ORDER BY MIN(ta.artist) COLLATE neoalpha
          LIMIT ?{} OFFSET ?{}",
         f.where_sql,
         n + 1,
@@ -441,8 +441,8 @@ fn focus_mix_matches_the_per_track_score_query() {
             .unwrap()
             .collect::<rusqlite::Result<Vec<_>>>()
             .unwrap();
-        assert_eq!(ids(&got.1), ids(&want), "{profile:?} {}", got.0);
-        assert_eq!(got.1, want);
+        assert_eq!(ids(&got.2), ids(&want), "{profile:?} {}", got.0);
+        assert_eq!(got.2, want);
     }
 }
 

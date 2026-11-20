@@ -137,7 +137,7 @@ fn migrating_a_v13_database_puts_everything_in_profile_1_and_keeps_a_copy() {
         count("SELECT COUNT(*) FROM listen_events WHERE profile_id = 1"),
         2
     );
-    assert_eq!(count("PRAGMA user_version"), 16);
+    assert_eq!(count("PRAGMA user_version"), 17);
     assert_eq!(
         count("SELECT COUNT(*) FROM pragma_foreign_key_list('favorites')"),
         2

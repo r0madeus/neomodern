@@ -137,7 +137,7 @@ fn schema_version_is_set() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 16);
+    assert_eq!(v, 17);
 }
 
 #[test]
@@ -692,7 +692,7 @@ fn migrates_a_v1_database_to_latest() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 16);
+    assert_eq!(v, 17);
     let tracks = lib.tracks_page(0, 10, SortOrder::Title).unwrap();
     assert_eq!(tracks.len(), 1, "existing data survives the migration");
     let pl = lib.create_playlist("Mix", &[tracks[0].id]).unwrap();
@@ -733,7 +733,7 @@ fn migrates_a_v2_database_and_keeps_a_folder_album_whole() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 16);
+        assert_eq!(v, 17);
         let fk_issues = conn
             .prepare("PRAGMA foreign_key_check")
             .unwrap()
@@ -1769,7 +1769,7 @@ fn migrating_to_v8_merges_year_split_albums_and_resplits_artists() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 16);
+    assert_eq!(v, 17);
     let albums = lib.albums_page(0, 10).unwrap();
     assert_eq!(albums.len(), 1);
     assert_eq!((albums[0].year, albums[0].track_count), (Some(1994), 4));
@@ -1812,7 +1812,7 @@ fn migrating_a_v8_database_adds_tag_history() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 16);
+    assert_eq!(v, 17);
     assert_eq!(lib.folders().unwrap().len(), 1);
     let cols: Vec<String> = lib
         .conn()
@@ -2492,4 +2492,161 @@ fn custom_album_cover_survives_rescan_and_resets_cleanly() {
     let bare_reset = e.lib.clear_album_cover(bare_album.id).unwrap();
     assert!(!Path::new(&bare_cover).exists());
     assert_eq!(bare_reset.cover, None);
+}
+
+#[test]
+fn albums_sort_by_title_and_artists_a_to_z_with_the_turkish_letters_in_place() {
+    use rusqlite::params;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lib = Library::open(
+        &tmp.path().join("l.sqlite3"),
+        &tmp.path().join("c"),
+        Hooks::none(),
+    )
+    .unwrap();
+    // (album title, album artist): the artists run against the titles'
+    // alphabet, so a sort by artist would give a different list.
+    let albums = [
+        ("Zamanın Ötesi", "Ajda Pekkan"),
+        ("çaresiz", "Mazhar"),
+        ("Cennet", "Zeki Müren"),
+        ("Özgürlük", "Barış Manço"),
+        ("ay", "Sezen Aksu"),
+        ("Şarkılar", "Çigdem"),
+        ("Human After All", "Daft Punk"),
+        ("Ödül", "Ümit Besen"),
+        ("Ocak", "Ufuk"),
+        ("Çile", "Cem"),
+    ];
+    {
+        let conn = lib.conn();
+        conn.execute("INSERT INTO folders(id, path) VALUES (1, '/m')", [])
+            .unwrap();
+        for (i, (title, artist)) in albums.iter().enumerate() {
+            let id = i as i64 + 1;
+            conn.execute(
+                "INSERT INTO albums(id, title, album_artist, year) VALUES (?1, ?2, ?3, 2000)",
+                params![id, title, artist],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO tracks(id, folder_id, path, mtime, size, title, artist, album_id,
+                                    track_no, disc_no, year, duration_ms, genre, added_at)
+                 VALUES (?1, 1, ?2, 1, 1, 'Song', ?3, ?1, 1, 1, 2000, 1000, '', 1)",
+                params![id, format!("/m/{id}.flac"), artist],
+            )
+            .unwrap();
+            super::db::sync_track_artists(&conn, id, artist).unwrap();
+        }
+    }
+    let titles: Vec<String> = lib
+        .albums_page(0, 50)
+        .unwrap()
+        .into_iter()
+        .map(|a| a.title)
+        .collect();
+    assert_eq!(
+        titles,
+        [
+            "ay",
+            "Cennet",
+            "çaresiz",
+            "Çile",
+            "Human After All",
+            "Ocak",
+            "Ödül",
+            "Özgürlük",
+            "Şarkılar",
+            "Zamanın Ötesi",
+        ]
+    );
+
+    let artists: Vec<String> = lib
+        .search_artists_page(0, 50, "")
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(
+        artists,
+        [
+            "Ajda Pekkan",
+            "Barış Manço",
+            "Cem",
+            "Çigdem",
+            "Daft Punk",
+            "Mazhar",
+            "Sezen Aksu",
+            "Ufuk",
+            "Ümit Besen",
+            "Zeki Müren",
+        ]
+    );
+    // Paging keeps the order.
+    let second: Vec<String> = lib
+        .search_artists_page(5, 3, "")
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(second, ["Mazhar", "Sezen Aksu", "Ufuk"]);
+}
+
+#[test]
+fn listening_stats_are_reused_until_the_history_changes() {
+    let e = env();
+    scanned_tracks(&e, &["Alpha"]);
+    let track = e
+        .lib
+        .tracks_page(0, 10, SortOrder::Title)
+        .unwrap()
+        .remove(0);
+    let listen = |at: i64| super::NewListenEvent {
+        path: track.path.clone(),
+        title: track.title.clone(),
+        artist: track.artist.clone(),
+        duration_ms: Some(60_000),
+        started_at: at,
+        ended_at: at + 60,
+        listened_ms: 60_000,
+        completed: true,
+        skipped: false,
+    };
+    e.lib.record_listen_event(listen(1_700_000_000)).unwrap();
+
+    let first = e.lib.listening_stats(None, None).unwrap();
+    assert_eq!(first.summary.play_count, 1);
+    // Asked again: the same answer (from the kept copy).
+    assert_eq!(e.lib.listening_stats(None, None).unwrap(), first);
+    // A different range is its own answer.
+    assert_eq!(
+        e.lib
+            .listening_stats(Some(1_800_000_000), None)
+            .unwrap()
+            .summary
+            .play_count,
+        0
+    );
+    // A new listen is never hidden by the kept copy.
+    e.lib.record_listen_event(listen(1_700_000_100)).unwrap();
+    assert_eq!(
+        e.lib
+            .listening_stats(None, None)
+            .unwrap()
+            .summary
+            .play_count,
+        2
+    );
+    // Neither is clearing the history.
+    e.lib.clear_listen_history().unwrap();
+    assert_eq!(
+        e.lib
+            .listening_stats(None, None)
+            .unwrap()
+            .summary
+            .play_count,
+        0
+    );
 }

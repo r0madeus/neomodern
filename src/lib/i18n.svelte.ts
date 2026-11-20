@@ -82,6 +82,7 @@ const TR: Record<string, string> = {
   Mute: 'Sesi kapat',
   Unmute: 'Sesi aç',
   Shuffle: 'Karıştır',
+  Stats: 'İstatistikler',
   'Shuffle play': 'Karışık çal',
   'Shuffle on': 'Karıştırma açık',
   'Shuffle off': 'Karıştırma kapalı',
@@ -323,8 +324,8 @@ const TR: Record<string, string> = {
   'Track number': 'Parça no',
   'Disc number': 'Disk no',
   Year: 'Yıl',
-  Genre: 'Tür',
   'Browse all': 'Tümüne göz at',
+  Genre: 'Tür',
   'No tracks found for this genre.': 'Bu türde şarkı bulunamadı.',
   '(multiple values)': '(farklı değerler)',
   'These tracks are no longer in the library.': 'Bu parçalar artık kütüphanede değil.',
@@ -704,6 +705,7 @@ const TR: Record<string, string> = {
   // In-app update (Android)
   Update: 'Güncelle',
   'Downloading the update…': 'Güncelleme indiriliyor…',
+  'Preparing the download…': 'İndirme hazırlanıyor…',
   'Downloading the update… {p}%': 'Güncelleme indiriliyor… %{p}',
   'Allow NeoModern to install apps, then tap Update again.':
     'NeoModern’in uygulama yüklemesine izin ver, sonra yeniden Güncelle’ye dokun.',

@@ -999,8 +999,8 @@
                     onclick={() => void updates.install()}
                   >
                     {updates.installing
-                      ? updates.progress === null
-                        ? t('Downloading the update…')
+                      ? !updates.progress
+                        ? t('Preparing the download…')
                         : t('Downloading the update… {p}%', { p: Math.round(updates.progress * 100) })
                       : t('Update')}
                   </button>

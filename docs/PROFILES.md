@@ -83,7 +83,8 @@ profile; what says something about the device or the files is shared.
   shows which profile that is.
 - A phone keeps one pairing per phone profile (K25, `SYNC.md`): each profile
   pairs with the same computer or another, under its own link id, and only
-  the active profile's pairing is connected.
+  the active profile's pairing is connected. A phone with several profiles
+  pairs under "Device · Profile", so the computer lists each pairing apart.
 
 ## Tests
 

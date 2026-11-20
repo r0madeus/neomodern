@@ -10,6 +10,8 @@ export interface DynamicMix {
   kind: string
   titleKey: string
   subject: string | null
+  /** What `subject` is: an artist or a genre (focus mixes). */
+  subjectKind?: 'artist' | 'genre' | null
   subtitleKey: string
   trackCount: number
   albumCovers: string[]

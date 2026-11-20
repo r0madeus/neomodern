@@ -175,8 +175,9 @@ fn stamp_on(
 
 fn restore_favorite(ctx: &Ctx<'_>, song: i64, on: &[&FavoriteRecord]) -> Result<()> {
     let added_at = newest_wall_secs(on.iter().map(|r| r.hlc.as_str()));
+    // K24: sync is bound to profile 1 until per-profile sync lands
     ctx.conn.execute(
-        "INSERT OR IGNORE INTO favorites(track_id, added_at) VALUES (?1, ?2)",
+        "INSERT OR IGNORE INTO favorites(profile_id, track_id, added_at) VALUES (1, ?1, ?2)",
         rusqlite::params![song, added_at],
     )?;
     Ok(())
@@ -525,12 +526,13 @@ fn listens(ctx: &mut Ctx<'_>, report: &mut CaptureReport) -> Result<()> {
         "UPDATE listen_events SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL",
         [],
     )?;
+    // K24: sync is bound to profile 1 until per-profile sync lands
     let fresh: Vec<ListenRecord> = {
         let mut st = ctx.conn.prepare(
             "SELECT e.uid, e.title, e.artist, e.album, e.genre, e.duration_ms, e.path,
                     e.started_at, e.ended_at, e.listened_ms, e.completed, e.skipped
              FROM listen_events e
-             WHERE NOT EXISTS (SELECT 1 FROM sync_listens s WHERE s.uid = e.uid)
+             WHERE e.profile_id = 1 AND NOT EXISTS (SELECT 1 FROM sync_listens s WHERE s.uid = e.uid)
              ORDER BY e.id",
         )?;
         let rows = st.query_map([], |r| {

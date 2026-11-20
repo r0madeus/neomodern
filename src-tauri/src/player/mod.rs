@@ -620,6 +620,37 @@ impl Player {
         s.pending_load_seek = None;
     }
 
+    /// Tests elsewhere in the crate: pretend the current song has been
+    /// heard for `d` (listens need at least 3 s).
+    #[cfg(test)]
+    pub(crate) fn add_listened_for_test(&self, d: Duration) {
+        if let Some(l) = self.lock().listen.as_mut() {
+            l.accumulated += d;
+        }
+    }
+
+    /// Profiles (K24): stops playback for a profile switch and returns the
+    /// leaving profile's state to park. The running listen is delivered
+    /// before this returns, so it is recorded for the profile still active.
+    pub fn take_for_profile_switch(&self) -> SessionState {
+        let state = self.export_session();
+        let _ = self.run(|s| {
+            s.context = None;
+            s.queue.replace(Vec::<Track>::new(), None);
+            s.stop_engine()
+        });
+        self.flush_listen();
+        state
+    }
+
+    /// Profiles (K24): loads the next profile's queue, paused at its saved
+    /// position, and tells the UI.
+    pub fn load_profile_state(&self, state: SessionState) -> PlayerSnapshot {
+        self.restore_session(state);
+        let _ = self.run(|_| Ok(()));
+        self.snapshot()
+    }
+
     pub fn export_session(&self) -> SessionState {
         let s = self.lock();
         let queue = s

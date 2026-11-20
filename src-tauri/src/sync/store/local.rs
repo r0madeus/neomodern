@@ -57,7 +57,10 @@ pub(super) fn field(s: &str) -> String {
 }
 
 pub(super) fn playlists(conn: &Connection) -> Result<Vec<LocalPlaylist>> {
-    let mut st = conn.prepare("SELECT id, name, cover, created_at FROM playlists ORDER BY id")?;
+    // K24: sync is bound to profile 1 until per-profile sync lands
+    let mut st = conn.prepare(
+        "SELECT id, name, cover, created_at FROM playlists WHERE profile_id = 1 ORDER BY id",
+    )?;
     let rows = st.query_map([], |r| {
         Ok(LocalPlaylist {
             id: r.get(0)?,
@@ -101,7 +104,8 @@ pub(super) fn rewrite_entries(
 
 /// track id -> added_at of every local favourite.
 pub(super) fn favorites(conn: &Connection) -> Result<HashMap<i64, i64>> {
-    let mut st = conn.prepare("SELECT track_id, added_at FROM favorites")?;
+    // K24: sync is bound to profile 1 until per-profile sync lands
+    let mut st = conn.prepare("SELECT track_id, added_at FROM favorites WHERE profile_id = 1")?;
     let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }

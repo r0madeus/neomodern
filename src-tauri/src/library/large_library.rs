@@ -16,7 +16,7 @@
 
 use super::db::{self, SortDir, SortOrder, SortSpec};
 use super::scan::scan_folder;
-use super::{Hooks, Library};
+use super::{Hooks, Library, ProfileId};
 use crate::sync::store::{self, ApplyOptions, Batch};
 use lofty::config::WriteOptions;
 use lofty::prelude::*;
@@ -517,7 +517,7 @@ fn generate(conn: &mut Connection, sc: Scale) -> Vec<TrackMeta> {
             }
         }
         let mut fav = tx
-            .prepare("INSERT OR IGNORE INTO favorites(track_id, added_at) VALUES (?1, ?2)")
+            .prepare("INSERT OR IGNORE INTO favorites(profile_id, track_id, added_at) VALUES (1, ?1, ?2)")
             .unwrap();
         for _ in 0..sc.favorites {
             let t = &metas[rng.skew(metas.len(), 1.5)];
@@ -968,7 +968,7 @@ fn large_library_benchmark() {
                 &c,
                 name,
                 &format!(
-                    "{TRACK_COLS} JOIN favorites f ON f.track_id = t.id \
+                    "{TRACK_COLS} JOIN favorites f ON f.track_id = t.id AND f.profile_id = 1 \
                      ORDER BY f.added_at DESC, t.title COLLATE NOCASE, f.track_id LIMIT 100"
                 ),
             );
@@ -1139,15 +1139,23 @@ fn second_device_batch(metas: &[TrackMeta], now: i64) -> Batch {
         tx.commit().unwrap();
     }
     for id in ids.iter().take(400) {
-        db::toggle_favorite(&conn, *id, now).unwrap();
+        db::toggle_favorite(&conn, ProfileId::FIRST, *id, now).unwrap();
     }
     for p in 0..5 {
         let slice = &ids[p * 100..p * 100 + 100];
-        db::create_playlist(&mut conn, &format!("Phone list {p}"), slice, now).unwrap();
+        db::create_playlist(
+            &mut conn,
+            ProfileId::FIRST,
+            &format!("Phone list {p}"),
+            slice,
+            now,
+        )
+        .unwrap();
     }
     for (i, m) in metas.iter().take(100).enumerate() {
         db::record_listen_event(
             &conn,
+            ProfileId::FIRST,
             &crate::library::NewListenEvent {
                 path: format!("/phone/{i}.m4a"),
                 title: m.title.clone(),

@@ -6,7 +6,7 @@ use super::hlc::{Clock, Hlc};
 use super::key::Resolver;
 use super::rows::{self, ENTRY_COLS};
 use super::*;
-use crate::library::{NewListenEvent, db};
+use crate::library::{NewListenEvent, ProfileId, db};
 use rusqlite::Connection;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -125,13 +125,13 @@ impl Device {
     }
 
     fn toggle(&self, s: &Song) -> bool {
-        db::toggle_favorite(&self.conn, self.id_of(s), self.secs()).unwrap()
+        db::toggle_favorite(&self.conn, ProfileId::FIRST, self.id_of(s), self.secs()).unwrap()
     }
 
     fn create(&mut self, name: &str, songs: &[Song]) -> i64 {
         let ids: Vec<i64> = songs.iter().map(|s| self.id_of(s)).collect();
         let now = self.secs();
-        db::create_playlist(&mut self.conn, name, &ids, now)
+        db::create_playlist(&mut self.conn, ProfileId::FIRST, name, &ids, now)
             .unwrap()
             .id
     }
@@ -139,6 +139,7 @@ impl Device {
     fn listen(&self, s: &Song, at: i64) {
         db::record_listen_event(
             &self.conn,
+            ProfileId::FIRST,
             &NewListenEvent {
                 path: Self::path(s),
                 title: s.title.into(),
@@ -161,7 +162,7 @@ impl Device {
     /// Favourite songs as track keys.
     fn favorite_keys(&self) -> BTreeSet<String> {
         let res = Resolver::load(&self.conn).unwrap();
-        db::favorites(&self.conn)
+        db::favorites(&self.conn, ProfileId::FIRST)
             .unwrap()
             .iter()
             .map(|f| res.track(f.track_id).unwrap().key.clone())
@@ -171,7 +172,7 @@ impl Device {
     /// Local playlists: name -> song keys in order (names must be unique).
     fn playlists(&self) -> BTreeMap<String, Vec<String>> {
         let res = Resolver::load(&self.conn).unwrap();
-        db::playlists(&self.conn)
+        db::playlists(&self.conn, ProfileId::FIRST)
             .unwrap()
             .into_iter()
             .map(|p| {
@@ -186,7 +187,7 @@ impl Device {
     }
 
     fn playlist_id(&self, name: &str) -> i64 {
-        db::playlists(&self.conn)
+        db::playlists(&self.conn, ProfileId::FIRST)
             .unwrap()
             .into_iter()
             .find(|p| p.name == name)
@@ -350,7 +351,7 @@ fn assert_materialized(d: &Device) {
         want.insert(row.rec.uuid.clone(), (row.rec.name.clone(), songs));
     }
     let mut have: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
-    for p in db::playlists(&d.conn).unwrap() {
+    for p in db::playlists(&d.conn, ProfileId::FIRST).unwrap() {
         let uuid = map.get(&p.id).expect("every playlist is mapped").clone();
         let songs = super::local::entries(&d.conn, p.id)
             .unwrap()
@@ -572,7 +573,7 @@ fn listen_events_get_uids_and_history_is_a_union() {
     assert_eq!(track, None);
     assert_eq!(path, Device::path(&SONGS[7]));
     // Clearing local history is not undone by the next sync.
-    db::clear_listen_history(&b.conn).unwrap();
+    db::clear_listen_history(&b.conn, ProfileId::FIRST).unwrap();
     b.tick(5);
     sync(&a, &b);
     let n: i64 = b
@@ -621,7 +622,7 @@ fn missing_track_is_not_an_unfavourite() {
     let report = a.capture();
     assert!(report.local_changed);
     assert!(
-        db::favorites(&a.conn)
+        db::favorites(&a.conn, ProfileId::FIRST)
             .unwrap()
             .iter()
             .any(|f| f.track_id == new_id)
@@ -674,8 +675,8 @@ fn unresolved_keys_survive_and_resolve_later() {
     b.tick(1000);
     let id = b.playlist_id("Mix");
     let s2 = b.id_of(&SONGS[2]);
-    db::playlist_add_tracks(&mut b.conn, id, &[s2]).unwrap();
-    db::playlist_move(&mut b.conn, id, 2, 0).unwrap();
+    db::playlist_add_tracks(&mut b.conn, ProfileId::FIRST, id, &[s2]).unwrap();
+    db::playlist_move(&mut b.conn, ProfileId::FIRST, id, 2, 0).unwrap();
     b.tick(1000);
     sync(&a, &b);
     assert_eq!(
@@ -737,18 +738,18 @@ fn playlist_operations_replicate() {
     assert_eq!(b.playlists()["Mix"], keys(&SONGS[0..3]));
 
     a.tick(1000);
-    db::rename_playlist(&a.conn, id, "Evening").unwrap();
-    db::set_playlist_cover(&a.conn, id, Some("preset:sunset")).unwrap();
+    db::rename_playlist(&a.conn, ProfileId::FIRST, id, "Evening").unwrap();
+    db::set_playlist_cover(&a.conn, ProfileId::FIRST, id, Some("preset:sunset")).unwrap();
     sync(&a, &b);
-    let info = &db::playlists(&b.conn).unwrap()[0];
+    let info = &db::playlists(&b.conn, ProfileId::FIRST).unwrap()[0];
     assert_eq!(info.name, "Evening");
     assert_eq!(info.cover.as_deref(), Some("preset:sunset"));
 
     a.tick(1000);
     let extra = a.id_of(&SONGS[5]);
-    db::playlist_add_tracks(&mut a.conn, id, &[extra]).unwrap();
-    db::playlist_move(&mut a.conn, id, 3, 0).unwrap();
-    db::playlist_remove(&mut a.conn, id, &[2]).unwrap();
+    db::playlist_add_tracks(&mut a.conn, ProfileId::FIRST, id, &[extra]).unwrap();
+    db::playlist_move(&mut a.conn, ProfileId::FIRST, id, 3, 0).unwrap();
+    db::playlist_remove(&mut a.conn, ProfileId::FIRST, id, &[2]).unwrap();
     sync(&a, &b);
     assert_eq!(
         b.playlists()["Evening"],
@@ -756,7 +757,7 @@ fn playlist_operations_replicate() {
     );
 
     a.tick(1000);
-    db::delete_playlist(&a.conn, id).unwrap();
+    db::delete_playlist(&a.conn, ProfileId::FIRST, id).unwrap();
     sync(&a, &b);
     assert!(b.playlists().is_empty());
     assert_materialized(&a);
@@ -773,11 +774,11 @@ fn image_covers_stay_local() {
     let id = a.create("Mix", &SONGS[0..2]);
     sync(&a, &b);
     a.tick(1000);
-    db::set_playlist_cover(&a.conn, id, Some("/user/covers/mine.jpg")).unwrap();
+    db::set_playlist_cover(&a.conn, ProfileId::FIRST, id, Some("/user/covers/mine.jpg")).unwrap();
     assert_eq!(a.capture(), CaptureReport::default());
     b.tick(1000);
     let bid = b.playlist_id("Mix");
-    db::set_playlist_cover(&b.conn, bid, Some("preset:ocean")).unwrap();
+    db::set_playlist_cover(&b.conn, ProfileId::FIRST, bid, Some("preset:ocean")).unwrap();
     sync(&a, &b);
     let cover: Option<String> = a
         .conn
@@ -788,7 +789,7 @@ fn image_covers_stay_local() {
     assert_eq!(cover.as_deref(), Some("/user/covers/mine.jpg"));
     // Deleting it elsewhere reports the orphaned image instead of deleting it.
     b.tick(1000);
-    db::delete_playlist(&b.conn, bid).unwrap();
+    db::delete_playlist(&b.conn, ProfileId::FIRST, bid).unwrap();
     capture(&b.conn, b.now).unwrap();
     let batch = changes_since(&b.conn, 0, 1000).unwrap();
     let report = apply(&a.conn, &batch, &opts(&a, &b)).unwrap();
@@ -814,11 +815,11 @@ fn concurrent_playlist_edits_merge() {
     a.tick(1000);
     b.tick(1000);
     let s5 = a.id_of(&SONGS[5]);
-    db::playlist_add_tracks(&mut a.conn, ida, &[s5]).unwrap();
-    db::playlist_move(&mut a.conn, ida, 0, 4).unwrap();
+    db::playlist_add_tracks(&mut a.conn, ProfileId::FIRST, ida, &[s5]).unwrap();
+    db::playlist_move(&mut a.conn, ProfileId::FIRST, ida, 0, 4).unwrap();
     let s6 = b.id_of(&SONGS[6]);
-    db::playlist_add_tracks(&mut b.conn, idb, &[s6]).unwrap();
-    db::playlist_remove(&mut b.conn, idb, &[2]).unwrap();
+    db::playlist_add_tracks(&mut b.conn, ProfileId::FIRST, idb, &[s6]).unwrap();
+    db::playlist_remove(&mut b.conn, ProfileId::FIRST, idb, &[2]).unwrap();
     sync(&a, &b);
     sync(&a, &b);
     let pa = a.playlists()["Mix"].clone();
@@ -833,10 +834,10 @@ fn concurrent_playlist_edits_merge() {
 
     // Delete (earlier) vs rename (later): the playlist survives.
     a.tick(1000);
-    db::delete_playlist(&a.conn, ida).unwrap();
+    db::delete_playlist(&a.conn, ProfileId::FIRST, ida).unwrap();
     a.capture();
     b.tick(5000);
-    db::rename_playlist(&b.conn, idb, "Renamed").unwrap();
+    db::rename_playlist(&b.conn, ProfileId::FIRST, idb, "Renamed").unwrap();
     b.capture();
     sync(&a, &b);
     assert!(a.playlists().contains_key("Renamed"));
@@ -846,10 +847,10 @@ fn concurrent_playlist_edits_merge() {
     let ida = a.playlist_id("Renamed");
     let idb = b.playlist_id("Renamed");
     a.tick(10_000);
-    db::rename_playlist(&a.conn, ida, "Again").unwrap();
+    db::rename_playlist(&a.conn, ProfileId::FIRST, ida, "Again").unwrap();
     a.capture();
     b.tick(20_000);
-    db::delete_playlist(&b.conn, idb).unwrap();
+    db::delete_playlist(&b.conn, ProfileId::FIRST, idb).unwrap();
     b.capture();
     sync(&a, &b);
     assert!(a.playlists().is_empty());
@@ -869,9 +870,9 @@ fn concurrent_reorders_converge() {
     let idb = b.playlist_id("Mix");
     a.tick(1000);
     b.tick(2000);
-    db::playlist_move(&mut a.conn, ida, 5, 0).unwrap();
-    db::playlist_move(&mut b.conn, idb, 0, 5).unwrap();
-    db::playlist_move(&mut b.conn, idb, 2, 1).unwrap();
+    db::playlist_move(&mut a.conn, ProfileId::FIRST, ida, 5, 0).unwrap();
+    db::playlist_move(&mut b.conn, ProfileId::FIRST, idb, 0, 5).unwrap();
+    db::playlist_move(&mut b.conn, ProfileId::FIRST, idb, 2, 1).unwrap();
     sync(&a, &b);
     sync(&a, &b);
     assert_eq!(a.playlists(), b.playlists());
@@ -904,7 +905,7 @@ fn added_at_is_preserved_across_devices() {
     assert_eq!(added, vec![Some(1000), Some(1001), Some(1002)]);
     // Still true after B reorders.
     b.tick(1000);
-    db::playlist_move(&mut b.conn, bid, 0, 2).unwrap();
+    db::playlist_move(&mut b.conn, ProfileId::FIRST, bid, 0, 2).unwrap();
     sync(&a, &b);
     let added: Vec<Option<i64>> = super::local::entries(&a.conn, id)
         .unwrap()
@@ -1093,7 +1094,7 @@ fn present(d: &Device) -> Vec<Song> {
 fn random_op(d: &mut Device, rng: &mut Rng) {
     d.tick(1 + rng.below(3000) as i64);
     let here = present(d);
-    let lists = db::playlists(&d.conn).unwrap();
+    let lists = db::playlists(&d.conn, ProfileId::FIRST).unwrap();
     let pick_list = |rng: &mut Rng| lists.get(rng.below(lists.len())).map(|p| p.id);
     match rng.below(12) {
         0 | 1 if !here.is_empty() => {
@@ -1110,18 +1111,18 @@ fn random_op(d: &mut Device, rng: &mut Rng) {
         3 => {
             if let Some(id) = pick_list(rng) {
                 let names = ["Mix", "Party", "Focus"];
-                db::rename_playlist(&d.conn, id, names[rng.below(3)]).unwrap();
+                db::rename_playlist(&d.conn, ProfileId::FIRST, id, names[rng.below(3)]).unwrap();
             }
         }
         4 if rng.below(3) == 0 => {
             if let Some(id) = pick_list(rng) {
-                db::delete_playlist(&d.conn, id).unwrap();
+                db::delete_playlist(&d.conn, ProfileId::FIRST, id).unwrap();
             }
         }
         5 | 6 => {
             if let (Some(id), false) = (pick_list(rng), here.is_empty()) {
                 let t = d.id_of(&here[rng.below(here.len())]);
-                db::playlist_add_tracks(&mut d.conn, id, &[t]).unwrap();
+                db::playlist_add_tracks(&mut d.conn, ProfileId::FIRST, id, &[t]).unwrap();
             }
         }
         7 => {
@@ -1129,7 +1130,7 @@ fn random_op(d: &mut Device, rng: &mut Rng) {
                 && p.track_count > 0
             {
                 let i = rng.below(p.track_count as usize);
-                db::playlist_remove(&mut d.conn, p.id, &[i]).unwrap();
+                db::playlist_remove(&mut d.conn, ProfileId::FIRST, p.id, &[i]).unwrap();
             }
         }
         8 => {
@@ -1137,13 +1138,21 @@ fn random_op(d: &mut Device, rng: &mut Rng) {
                 && p.track_count > 1
             {
                 let n = p.track_count as usize;
-                db::playlist_move(&mut d.conn, p.id, rng.below(n), rng.below(n)).unwrap();
+                db::playlist_move(
+                    &mut d.conn,
+                    ProfileId::FIRST,
+                    p.id,
+                    rng.below(n),
+                    rng.below(n),
+                )
+                .unwrap();
             }
         }
         9 => {
             if let Some(id) = pick_list(rng) {
                 let covers = [Some("preset:a"), Some("preset:b"), None];
-                db::set_playlist_cover(&d.conn, id, covers[rng.below(3)]).unwrap();
+                db::set_playlist_cover(&d.conn, ProfileId::FIRST, id, covers[rng.below(3)])
+                    .unwrap();
             }
         }
         10 if !here.is_empty() => {
@@ -1242,19 +1251,20 @@ fn run_convergence(n_devices: usize, seed: u64, steps: usize) {
         let favs: BTreeSet<String> = d.favorite_keys().intersection(&common).cloned().collect();
         let map = rows::playlist_map(&d.conn).unwrap();
         let res = Resolver::load(&d.conn).unwrap();
-        let lists: BTreeMap<String, (String, Vec<String>)> = db::playlists(&d.conn)
-            .unwrap()
-            .into_iter()
-            .map(|p| {
-                let songs = super::local::entries(&d.conn, p.id)
-                    .unwrap()
-                    .iter()
-                    .map(|(t, _)| res.track(*t).unwrap().key.clone())
-                    .filter(|k| common.contains(k))
-                    .collect();
-                (map[&p.id].clone(), (p.name, songs))
-            })
-            .collect();
+        let lists: BTreeMap<String, (String, Vec<String>)> =
+            db::playlists(&d.conn, ProfileId::FIRST)
+                .unwrap()
+                .into_iter()
+                .map(|p| {
+                    let songs = super::local::entries(&d.conn, p.id)
+                        .unwrap()
+                        .iter()
+                        .map(|(t, _)| res.track(*t).unwrap().key.clone())
+                        .filter(|k| common.contains(k))
+                        .collect();
+                    (map[&p.id].clone(), (p.name, songs))
+                })
+                .collect();
         (favs, lists)
     };
     let expected = view(&devices[0]);
@@ -1419,7 +1429,13 @@ fn mass_delete_guard_stops_and_allow_applies() {
     // Removing 11 of 20 songs from one playlist.
     a.tick(1000);
     let big = a.playlist_id("Big");
-    db::playlist_remove(&mut a.conn, big, &(0..11).collect::<Vec<_>>()).unwrap();
+    db::playlist_remove(
+        &mut a.conn,
+        ProfileId::FIRST,
+        big,
+        &(0..11).collect::<Vec<_>>(),
+    )
+    .unwrap();
     assert!(matches!(
         pull_with(&b, &a, 1000, false),
         Err(SyncError::MassDelete(p)) if matches!(p.guard, Some(GuardTrip::Songs { .. }))
@@ -1431,7 +1447,7 @@ fn mass_delete_guard_stops_and_allow_applies() {
     a.tick(1000);
     for name in ["One", "Two", "Three"] {
         let id = a.playlist_id(name);
-        db::delete_playlist(&a.conn, id).unwrap();
+        db::delete_playlist(&a.conn, ProfileId::FIRST, id).unwrap();
     }
     assert!(matches!(
         pull_with(&b, &a, 1000, false),
@@ -1533,7 +1549,7 @@ fn backups_are_rate_limited_and_rotated() {
     let v: i64 = copy
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 13);
+    assert_eq!(v, 14);
     // Close it: Windows cannot delete a file that is still open, and the
     // rotation below removes this oldest backup.
     drop(copy);
@@ -1629,6 +1645,6 @@ fn migration_backfills_listen_uids() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 13);
+        assert_eq!(v, 14);
     }
 }

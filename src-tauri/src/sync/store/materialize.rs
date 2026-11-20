@@ -49,8 +49,9 @@ fn favorites(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
     for (song, stamps) in &wanted {
         if !have.contains_key(song) {
             let added_at = newest_wall_secs(stamps.iter().map(String::as_str));
+            // K24: sync is bound to profile 1 until per-profile sync lands
             ctx.conn.execute(
-                "INSERT OR IGNORE INTO favorites(track_id, added_at) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO favorites(profile_id, track_id, added_at) VALUES (1, ?1, ?2)",
                 params![song, added_at],
             )?;
             out.changed = true;
@@ -59,8 +60,11 @@ fn favorites(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
     for (song, tracks) in &have {
         if !wanted.contains_key(song) {
             for track in tracks {
-                ctx.conn
-                    .execute("DELETE FROM favorites WHERE track_id = ?1", [track])?;
+                // K24: sync is bound to profile 1 until per-profile sync lands
+                ctx.conn.execute(
+                    "DELETE FROM favorites WHERE profile_id = 1 AND track_id = ?1",
+                    [track],
+                )?;
             }
             out.changed = true;
         }
@@ -96,8 +100,11 @@ fn playlists(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
 }
 
 fn delete_local(ctx: &Ctx<'_>, p: &local::LocalPlaylist, out: &mut Outcome) -> Result<()> {
-    ctx.conn
-        .execute("DELETE FROM playlists WHERE id = ?1", [p.id])?;
+    // K24: sync is bound to profile 1 until per-profile sync lands
+    ctx.conn.execute(
+        "DELETE FROM playlists WHERE id = ?1 AND profile_id = 1",
+        [p.id],
+    )?;
     rows::delete_map(ctx.conn, p.id)?;
     if cover_view(p.cover.as_deref()) == CoverView::Image
         && let Some(cover) = &p.cover
@@ -115,8 +122,9 @@ fn create_local(
     out: &mut Outcome,
 ) -> Result<()> {
     let cover = rec.cover_preset.as_deref().filter(|c| is_valid_preset(c));
+    // K24: sync is bound to profile 1 until per-profile sync lands
     ctx.conn.execute(
-        "INSERT INTO playlists(name, created_at, cover) VALUES (?1, ?2, ?3)",
+        "INSERT INTO playlists(name, created_at, cover, profile_id) VALUES (?1, ?2, ?3, 1)",
         params![rec.name, rec.created_at, cover],
     )?;
     let id = ctx.conn.last_insert_rowid();
@@ -185,11 +193,12 @@ fn wanted_entries(ctx: &Ctx<'_>, res: &Resolver, uuid: &str) -> Result<Vec<(i64,
 
 /// Copies history rows that are new on this device into `listen_events`.
 fn listens(ctx: &Ctx<'_>, res: &Resolver, uids: &[String], out: &mut Outcome) -> Result<()> {
+    // K24: sync is bound to profile 1 until per-profile sync lands
     let mut insert = ctx.conn.prepare_cached(
         "INSERT OR IGNORE INTO listen_events(
              uid, track_id, path, title, artist, album, genre, duration_ms,
-             started_at, ended_at, listened_ms, completed, skipped, source
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'sync')",
+             started_at, ended_at, listened_ms, completed, skipped, source, profile_id
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'sync', 1)",
     )?;
     for uid in uids {
         let Some(l) = rows::get_listen(ctx.conn, uid)? else {

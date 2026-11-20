@@ -7,7 +7,7 @@ use super::protocol::{ErrorCode, Msg, SYNC_VERSION};
 use super::remote::{RemoteCmd, RemoteFeed, RemoteStatus};
 use super::service::{EventSink, PeerStatus, SyncConfig, SyncService};
 use super::store;
-use crate::library::{Hooks, Library, db};
+use crate::library::{Hooks, Library, ProfileId, db};
 use crate::player::bulk_tests::Silent;
 use crate::player::{Player, Status};
 use std::collections::{BTreeMap, BTreeSet};
@@ -147,14 +147,27 @@ impl Dev {
 
     fn favorite(&self, songs: &[usize], on: bool) {
         let ids: Vec<i64> = songs.iter().map(|&i| self.id_of(i)).collect();
-        db::set_favorites(&mut self.lib.conn(), &ids, on, 1_700_000_000).unwrap();
+        db::set_favorites(
+            &mut self.lib.conn(),
+            ProfileId::FIRST,
+            &ids,
+            on,
+            1_700_000_000,
+        )
+        .unwrap();
     }
 
     fn create(&self, name: &str, songs: &[usize]) -> i64 {
         let ids: Vec<i64> = songs.iter().map(|&i| self.id_of(i)).collect();
-        db::create_playlist(&mut self.lib.conn(), name, &ids, 1_700_000_000)
-            .unwrap()
-            .id
+        db::create_playlist(
+            &mut self.lib.conn(),
+            ProfileId::FIRST,
+            name,
+            &ids,
+            1_700_000_000,
+        )
+        .unwrap()
+        .id
     }
 
     fn favorites(&self) -> BTreeSet<String> {
@@ -359,14 +372,14 @@ fn favourites_and_playlists_converge_both_ways() {
         p.pc.favorite(&[0], false);
         let road = p.pc.playlists().len();
         assert_eq!(road, 2);
-        let road_id = db::playlists(&p.pc.lib.conn())
+        let road_id = db::playlists(&p.pc.lib.conn(), ProfileId::FIRST)
             .unwrap()
             .into_iter()
             .find(|l| l.name == "Road")
             .unwrap()
             .id;
         let five = p.pc.id_of(5);
-        db::playlist_add_tracks(&mut p.pc.lib.conn(), road_id, &[five]).unwrap();
+        db::playlist_add_tracks(&mut p.pc.lib.conn(), ProfileId::FIRST, road_id, &[five]).unwrap();
         p.phone.favorite(&[3], true);
         p.phone.create("Chill", &[6]);
         p.sync().await;

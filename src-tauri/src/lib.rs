@@ -10,6 +10,7 @@ pub mod metadata;
 pub mod net;
 pub mod online;
 pub mod player;
+mod profiles;
 pub mod queue;
 pub mod session;
 // PC <-> phone sync and remote control (docs/SYNC.md).
@@ -272,6 +273,16 @@ pub fn run() {
                     backup_dir: data_dir.join("sync-backups"),
                 },
             );
+            // Profiles (K24): open in the profile used last. If it is gone,
+            // the session's player state goes to the library's first one.
+            {
+                let store = app.state::<Arc<SessionStore>>();
+                let wanted = library::ProfileId(store.active_profile());
+                if let Err(e) = library.set_active_profile(wanted) {
+                    log::warn!("profile {} not found ({e}); using the first one", wanted.0);
+                    store.adopt_active_profile(library.active_profile().0);
+                }
+            }
             app.manage(library);
             app.manage(sync_service.clone());
             let allow_phones = app.state::<Arc<SessionStore>>().allow_phone_connections();
@@ -347,6 +358,13 @@ pub fn run() {
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
             ui::app_set_visible,
+            profiles::profiles_list,
+            profiles::profile_create,
+            profiles::profile_rename,
+            profiles::profile_set_color,
+            profiles::profile_summary,
+            profiles::profile_delete,
+            profiles::profile_switch,
             ui::app_heartbeat,
             commands::queue_replace,
             commands::queue_append,

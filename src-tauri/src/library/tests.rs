@@ -2,7 +2,7 @@
 //! card or Tauri needed.
 
 use super::scan::{cover_file_name, fnv1a, scan_folder};
-use super::{Hooks, Library, ScanStats, SortOrder};
+use super::{Hooks, Library, ProfileId, ScanStats, SortOrder};
 use lofty::config::WriteOptions;
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::*;
@@ -137,7 +137,7 @@ fn schema_version_is_set() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 13);
+    assert_eq!(v, 14);
 }
 
 #[test]
@@ -692,7 +692,7 @@ fn migrates_a_v1_database_to_latest() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 13);
+    assert_eq!(v, 14);
     let tracks = lib.tracks_page(0, 10, SortOrder::Title).unwrap();
     assert_eq!(tracks.len(), 1, "existing data survives the migration");
     let pl = lib.create_playlist("Mix", &[tracks[0].id]).unwrap();
@@ -733,7 +733,7 @@ fn migrates_a_v2_database_and_keeps_a_folder_album_whole() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 13);
+        assert_eq!(v, 14);
         let fk_issues = conn
             .prepare("PRAGMA foreign_key_check")
             .unwrap()
@@ -1769,7 +1769,7 @@ fn migrating_to_v8_merges_year_split_albums_and_resplits_artists() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 13);
+    assert_eq!(v, 14);
     let albums = lib.albums_page(0, 10).unwrap();
     assert_eq!(albums.len(), 1);
     assert_eq!((albums[0].year, albums[0].track_count), (Some(1994), 4));
@@ -1812,7 +1812,7 @@ fn migrating_a_v8_database_adds_tag_history() {
         .conn()
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 13);
+    assert_eq!(v, 14);
     assert_eq!(lib.folders().unwrap().len(), 1);
     let cols: Vec<String> = lib
         .conn()
@@ -1878,7 +1878,7 @@ fn home_feed_cold_start_hides_history_sections_and_keeps_added_albums() {
     let tracks = e.lib.tracks_page(0, 10, SortOrder::Title).unwrap();
     e.lib.toggle_favorite(tracks[0].id).unwrap();
 
-    let feed = super::db::home_feed(&e.lib.conn(), 1_750_000_000).unwrap();
+    let feed = super::db::home_feed(&e.lib.conn(), ProfileId::FIRST, 1_750_000_000).unwrap();
     assert!(!feed.has_history);
     assert!(feed.recently_played_albums.is_empty());
     assert!(feed.recently_played_tracks.is_empty());
@@ -1916,7 +1916,7 @@ fn home_feed_builds_dynamic_mixes_and_saves_playlist() {
         push_listen(&e, track, now - 45 * 86_400, 180_000, true, false);
     }
 
-    let feed = super::db::home_feed(&e.lib.conn(), now).unwrap();
+    let feed = super::db::home_feed(&e.lib.conn(), ProfileId::FIRST, now).unwrap();
     assert!(feed.has_history);
     assert_eq!(feed.recently_played_tracks.len(), 6);
     assert_eq!(feed.recently_played_tracks[0].track.id, tracks[2].id);
@@ -1929,24 +1929,27 @@ fn home_feed_builds_dynamic_mixes_and_saves_playlist() {
     assert!(mix_ids.contains(&"focus-mix"), "{mix_ids:?}");
 
     // Rediscover order stays deterministic within the same UTC day.
-    let same_day_a = super::db::home_mix_detail(&e.lib.conn(), "rediscover", now)
+    let same_day_a = super::db::home_mix_detail(&e.lib.conn(), ProfileId::FIRST, "rediscover", now)
         .unwrap()
         .unwrap();
-    let same_day_b = super::db::home_mix_detail(&e.lib.conn(), "rediscover", now + 120)
-        .unwrap()
-        .unwrap();
+    let same_day_b =
+        super::db::home_mix_detail(&e.lib.conn(), ProfileId::FIRST, "rediscover", now + 120)
+            .unwrap()
+            .unwrap();
     let ids_a: Vec<i64> = same_day_a.tracks.iter().map(|t| t.id).collect();
     let ids_b: Vec<i64> = same_day_b.tracks.iter().map(|t| t.id).collect();
     assert_eq!(ids_a, ids_b);
     assert_eq!(ids_a.len(), 3);
 
     let q_tracks =
-        super::db::home_mix_queue_tracks(&e.lib.conn(), "weekly-favorites", now).unwrap();
+        super::db::home_mix_queue_tracks(&e.lib.conn(), ProfileId::FIRST, "weekly-favorites", now)
+            .unwrap();
     assert_eq!(q_tracks.len(), 3);
 
     let saved = {
         let mut conn = e.lib.conn();
-        super::db::save_mix_as_playlist(&mut conn, "on-repeat", "My Repeat", now).unwrap()
+        super::db::save_mix_as_playlist(&mut conn, ProfileId::FIRST, "on-repeat", "My Repeat", now)
+            .unwrap()
     };
     assert_eq!(saved.name, "My Repeat");
     assert_eq!(saved.track_count, 3);
@@ -1971,21 +1974,21 @@ fn resolve_mix_start_picks_the_clicked_track_or_fails() {
 }
 
 #[test]
-fn migrating_a_v9_database_adds_the_listen_path_index() {
+fn migrating_a_v9_database_gets_the_profile_scoped_listen_indexes() {
     let tmp = tempfile::tempdir().unwrap();
     let db_path = tmp.path().join("library.sqlite3");
     let covers = tmp.path().join("covers");
     {
         let lib = Library::open(&db_path, &covers, Hooks::none()).unwrap();
         lib.conn()
-            .execute_batch("DROP INDEX listen_events_path; PRAGMA user_version = 9;")
+            .execute_batch("DROP INDEX listen_events_profile_path; PRAGMA user_version = 9;")
             .unwrap();
     }
     let lib = Library::open(&db_path, &covers, Hooks::none()).unwrap();
     let n: i64 = lib
         .conn()
         .query_row(
-            "SELECT COUNT(*) FROM pragma_index_list('listen_events') WHERE name = 'listen_events_path'",
+            "SELECT COUNT(*) FROM pragma_index_list('listen_events') WHERE name = 'listen_events_profile_path'",
             [],
             |r| r.get(0),
         )
@@ -2343,11 +2346,19 @@ fn autoplay_picks_fitting_songs_and_goes_on_when_they_run_out() {
     let none = HashSet::new();
     let picks = |exclude: &HashSet<String>, n| -> Vec<String> {
         let conn = e.lib.conn();
-        super::autoplay::pick(&conn, &seeds, exclude, n, 1_000_000_000, 42)
-            .unwrap()
-            .into_iter()
-            .map(|t| t.path)
-            .collect()
+        super::autoplay::pick(
+            &conn,
+            ProfileId::FIRST,
+            &seeds,
+            exclude,
+            n,
+            1_000_000_000,
+            42,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|t| t.path)
+        .collect()
     };
     // Two songs per artist at most in a batch, then the same genre.
     let first = picks(&none, 3);

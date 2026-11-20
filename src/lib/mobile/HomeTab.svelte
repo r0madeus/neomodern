@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ProfileMenu from '../ProfileMenu.svelte'
+  import { profiles } from '../profiles.svelte'
   import Logo from '../Logo.svelte'
   import Cover from '../Cover.svelte'
   import EmptyLibrary from '../EmptyLibrary.svelte'
@@ -127,7 +129,10 @@
 <div class="flex h-full flex-col">
   {#if library.stats.tracks === 0 && !home.feed?.hasHistory && (home.feed?.favoriteCount ?? 0) === 0}
     <header class="flex shrink-0 items-center justify-between gap-3 px-4 pt-4 pb-3">
-      <h1 class="truncate text-2xl font-bold tracking-tight">{t('Home')}</h1>
+      <div class="flex min-w-0 items-center gap-3">
+        <ProfileMenu size="size-8 text-sm" />
+        <h1 class="truncate text-2xl font-bold tracking-tight">{t('Home')}</h1>
+      </div>
       {@render remoteButton()}
     </header>
     <EmptyLibrary />
@@ -136,12 +141,16 @@
     <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
       <!-- Sticky Spotify-style top bar with badge, filter chips & stats -->
       <header class="sticky top-0 z-10 flex items-center gap-2 bg-zinc-950/85 px-4 pt-3.5 pb-3 backdrop-blur-md">
-        <span
-          title={t(greetingKey())}
-          class="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-accent-400"
-        >
-          <Logo class="size-4" />
-        </span>
+        {#if profiles.current}
+          <ProfileMenu size="size-8 text-sm" />
+        {:else}
+          <span
+            title={t(greetingKey())}
+            class="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-accent-400"
+          >
+            <Logo class="size-4" />
+          </span>
+        {/if}
 
         <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
           {#each [

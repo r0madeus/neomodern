@@ -3195,6 +3195,7 @@ fn build_mix_meta(
         kind: kind.to_string(),
         title_key: title_key.to_string(),
         subject,
+        subject_kind: None,
         subtitle_key: subtitle_key.to_string(),
         track_count: u32::try_from(tracks.len()).unwrap_or(u32::MAX),
         album_covers: mix_album_covers(tracks),
@@ -3514,7 +3515,7 @@ fn focus_mix_data(
     conn: &Connection,
     profile: ProfileId,
     now: i64,
-) -> Result<Option<(String, Vec<TrackRow>)>> {
+) -> Result<Option<(String, &'static str, Vec<TrackRow>)>> {
     let since = now.saturating_sub(14 * SECS_PER_DAY);
     let pr = profile.0;
     let top_artist: Option<String> = conn
@@ -3560,7 +3561,7 @@ fn focus_mix_data(
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let tracks = tracks_by_ids_in_order(conn, profile, &ids)?;
         if tracks.len() >= MIN_MIX_TRACKS {
-            return Ok(Some((artist, tracks)));
+            return Ok(Some((artist, "artist", tracks)));
         }
     }
 
@@ -3607,7 +3608,7 @@ fn focus_mix_data(
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let tracks = tracks_by_ids_in_order(conn, profile, &ids)?;
         if tracks.len() >= MIN_MIX_TRACKS {
-            return Ok(Some((genre, tracks)));
+            return Ok(Some((genre, "genre", tracks)));
         }
     }
 
@@ -3667,10 +3668,10 @@ fn mix_detail_for_id(
             Ok(Some(HomeMixDetail { mix, tracks }))
         }
         MIX_FOCUS => {
-            let Some((subject, tracks)) = focus_mix_data(conn, profile, now)? else {
+            let Some((subject, subject_kind, tracks)) = focus_mix_data(conn, profile, now)? else {
                 return Ok(None);
             };
-            let mix = build_mix_meta(
+            let mut mix = build_mix_meta(
                 MIX_FOCUS,
                 MIX_FOCUS,
                 "{name} Mix",
@@ -3678,6 +3679,7 @@ fn mix_detail_for_id(
                 "Inspired by what you played most lately",
                 &tracks,
             );
+            mix.subject_kind = Some(subject_kind.to_owned());
             Ok(Some(HomeMixDetail { mix, tracks }))
         }
         _ => Ok(None),

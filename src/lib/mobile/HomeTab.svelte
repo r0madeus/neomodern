@@ -5,6 +5,7 @@
   import Cover from '../Cover.svelte'
   import EmptyLibrary from '../EmptyLibrary.svelte'
   import Icon from '../Icon.svelte'
+  import MixCover from '../MixCover.svelte'
   import PlaylistCover from '../PlaylistCover.svelte'
   import TrackItem from './TrackItem.svelte'
   import { count, t } from '../i18n.svelte'
@@ -267,13 +268,7 @@
                   class="w-[42vw] max-w-44 shrink-0 text-left active:opacity-75"
                   onclick={() => onOpenMix(mix.id)}
                 >
-                  <PlaylistCover
-                    cover={null}
-                    albumCovers={mix.albumCovers}
-                    name={title}
-                    class="aspect-square w-full rounded-lg shadow-lg shadow-black/40"
-                    iconClass="size-12"
-                  />
+                  <MixCover mix={mix} class="aspect-square w-full rounded-lg shadow-lg shadow-black/40" />
                   <span class="mt-2 block truncate text-[13px] font-semibold text-zinc-50">{title}</span>
                   <span class="mt-0.5 line-clamp-2 text-[11px] leading-snug text-zinc-400">
                     {mixSubtitle(mix)}

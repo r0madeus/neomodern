@@ -249,6 +249,8 @@ pub struct DynamicMix {
     pub kind: String,
     pub title_key: String,
     pub subject: Option<String>,
+    /// What `subject` is, for the cover: `artist` or `genre`.
+    pub subject_kind: Option<String>,
     pub subtitle_key: String,
     pub track_count: u32,
     pub album_covers: Vec<String>,

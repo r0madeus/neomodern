@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../Icon.svelte'
+  import MixCover from '../MixCover.svelte'
   import PlaylistCover from '../PlaylistCover.svelte'
   import PageHeader from './PageHeader.svelte'
   import TrackItem from './TrackItem.svelte'
@@ -69,13 +70,7 @@
     {@const title = mixTitle(detail.mix)}
     <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
       <div class="flex flex-col items-center px-4 pt-2 pb-4">
-        <PlaylistCover
-          cover={null}
-          albumCovers={detail.mix.albumCovers}
-          name={title}
-          class="aspect-square w-1/2 max-w-52 rounded-xl shadow-2xl shadow-black/60"
-          iconClass="size-20"
-        />
+        <MixCover mix={detail.mix} class="aspect-square w-1/2 max-w-52 rounded-xl shadow-2xl shadow-black/60" />
         <h2 class="mt-4 self-start text-2xl font-bold">{title}</h2>
         <p class="mt-1 self-start text-xs text-zinc-400">{mixSubtitle(detail.mix)}</p>
         <p class="mt-1 self-start text-xs text-zinc-500">

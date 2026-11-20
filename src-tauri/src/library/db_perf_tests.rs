@@ -441,8 +441,8 @@ fn focus_mix_matches_the_per_track_score_query() {
             .unwrap()
             .collect::<rusqlite::Result<Vec<_>>>()
             .unwrap();
-        assert_eq!(ids(&got.1), ids(&want), "{profile:?} {}", got.0);
-        assert_eq!(got.1, want);
+        assert_eq!(ids(&got.2), ids(&want), "{profile:?} {}", got.0);
+        assert_eq!(got.2, want);
     }
 }
 

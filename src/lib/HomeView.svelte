@@ -9,6 +9,7 @@
   import FavoriteButton from './FavoriteButton.svelte'
   import Icon from './Icon.svelte'
   import MixView from './MixView.svelte'
+  import MixCover from './MixCover.svelte'
   import PlaylistCover from './PlaylistCover.svelte'
   import { count, t } from './i18n.svelte'
   import { favorites } from './favorites.svelte'
@@ -259,13 +260,7 @@
                   class="block w-full text-left"
                   onclick={() => onSelectMix(mix.id)}
                 >
-                  <PlaylistCover
-                    cover={null}
-                    albumCovers={mix.albumCovers}
-                    name={title}
-                    class="aspect-square w-full rounded-xl shadow-md"
-                    iconClass="size-12"
-                  />
+                  <MixCover mix={mix} class="aspect-square w-full rounded-xl shadow-md" />
                   <span class="mt-3 block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
                     {title}
                   </span>

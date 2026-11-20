@@ -14,7 +14,10 @@
   tag, asset name and hash are pinned in $Pins below. CI never uses -Latest.
 
   To bump: run with -Latest, review the release, then paste the printed
-  Tag / Asset / Sha256 into $Pins and commit.
+  Tag / Asset / Sha256 into $Pins and commit. Pin a release that is at
+  least two days old: mpv-winbuild rebuilds and re-uploads the newest tag
+  under the same name (seen on 2026-11-20: same tag and file name, different
+  file), which the hash check rightly refuses.
 
   Works with Windows PowerShell 5.1 and PowerShell 7. Needs the MSVC build
   tools (already required by Rust on Windows) and either the built-in
@@ -45,9 +48,9 @@ $ProgressPreference = 'SilentlyContinue'
 # Pinned libmpv builds, one entry per architecture (bump with -Latest).
 $Pins = @{
     'x86_64' = @{
-        Tag    = '2026-11-20-94127e1e1a'
-        Asset  = 'mpv-dev-lgpl-x86_64-20261120-git-94127e1e1a.7z'
-        Sha256 = '67a2af9f5b6479475cdb412d480ee445fd87c678ea75de5a74de5211175a8132'
+        Tag    = '2026-11-18-f92afa75cd'
+        Asset  = 'mpv-dev-lgpl-x86_64-20261118-git-f92afa75cd.7z'
+        Sha256 = 'b1378ebcc4b52325723343fc0c1330e56bd388166667f340f1ef249a3ded9773'
     }
 }
 

@@ -453,6 +453,8 @@ impl Library {
         }
         std::fs::create_dir_all(covers_dir)?;
         let conn = Connection::open(db_path)?;
+        // Before anything reads the file: its indexes may use the collation.
+        db::register_collation(&conn)?;
         backup_before_profiles(&conn, db_path)?;
         db::init_with_first_profile(&conn, first_profile_name)?;
         Ok(Self::with_connection(conn, covers_dir, hooks))

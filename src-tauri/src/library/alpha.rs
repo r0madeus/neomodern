@@ -12,8 +12,16 @@
 //! - other accented Latin letters sort with their base letter (é with e);
 //! - spaces and punctuation come first, then digits, then letters, then other
 //!   scripts (Cyrillic, Japanese …) by code point;
-//! - strings that differ only in case or accents keep a fixed order, so the
-//!   order is total, as SQLite requires of a collation.
+//! - a leading "The " does not count ("The Bends" sits under B, like
+//!   "Bends"); only "The", because "A" and "An" are real words in other
+//!   languages. When two names differ only by that article, the one without
+//!   it comes first;
+//! - names that differ only in case are equal, as with `NOCASE`, which the
+//!   title and artist columns use (so "Zed" and "zed" stay one artist);
+//!   names that differ in accents keep a fixed order.
+//!
+//! Indexes are built with this collation (see schema v17), so the order must
+//! never change without rebuilding them (`REINDEX`).
 //!
 //! It compares letter by letter without building keys, so sorting a few
 //! thousand names costs nothing noticeable.
@@ -81,12 +89,23 @@ fn weights(s: &str) -> impl Iterator<Item = u32> + '_ {
         .map(weight)
 }
 
+/// `s` without a leading "The " (when something follows it).
+fn without_article(s: &str) -> &str {
+    let trimmed = s.trim_start();
+    match trimmed.get(..4) {
+        Some(head) if head.eq_ignore_ascii_case("the ") && !trimmed[4..].trim().is_empty() => {
+            trimmed[4..].trim_start()
+        }
+        _ => s,
+    }
+}
+
 /// Compares two names alphabetically (see the module docs).
 pub fn compare(a: &str, b: &str) -> Ordering {
-    weights(a)
-        .cmp(weights(b))
+    weights(without_article(a))
+        .cmp(weights(without_article(b)))
+        .then_with(|| weights(a).cmp(weights(b)))
         .then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
-        .then_with(|| a.cmp(b))
 }
 
 #[cfg(test)]
@@ -96,6 +115,34 @@ mod tests {
     fn sorted(mut names: Vec<&str>) -> Vec<&str> {
         names.sort_by(|a, b| compare(a, b));
         names
+    }
+
+    #[test]
+    fn a_leading_the_does_not_count() {
+        assert_eq!(
+            sorted(vec![
+                "The Smiths",
+                "Tame Impala",
+                "The Bends",
+                "Bends",
+                "Kid A",
+                "the cure",
+                "The",
+                "The The",
+                "Thee Oh Sees"
+            ]),
+            [
+                "Bends",
+                "The Bends",
+                "the cure",
+                "Kid A",
+                "The Smiths",
+                "Tame Impala",
+                "The",
+                "The The",
+                "Thee Oh Sees"
+            ]
+        );
     }
 
     #[test]
@@ -222,8 +269,10 @@ mod tests {
             assert_eq!(compare(a, a), Ordering::Equal, "{a:?}");
             for b in names {
                 assert_eq!(compare(a, b), compare(b, a).reverse(), "{a:?} {b:?}");
-                if a != b {
+                if a.to_lowercase() != b.to_lowercase() {
                     assert_ne!(compare(a, b), Ordering::Equal, "{a:?} {b:?}");
+                } else {
+                    assert_eq!(compare(a, b), Ordering::Equal, "{a:?} {b:?}");
                 }
                 for c in names {
                     if compare(a, b) != Ordering::Greater && compare(b, c) != Ordering::Greater {

@@ -654,14 +654,16 @@ const TRACK_COLS: &str = "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''),
 fn order_by(order: SortOrder) -> &'static str {
     match order {
         SortOrder::Artist => {
-            "t.artist DESC, a.title, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+            "t.artist COLLATE neoalpha DESC, a.title COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
         }
-        SortOrder::Title => "t.title, t.artist, t.id",
+        SortOrder::Title => "t.title COLLATE neoalpha, t.artist COLLATE neoalpha, t.id",
         SortOrder::Album => {
-            "a.title, a.album_artist, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+            "a.title COLLATE neoalpha, a.album_artist COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
         }
         SortOrder::Added => "t.added_at DESC, t.id",
-        SortOrder::Duration => "t.duration_ms IS NULL, t.duration_ms DESC, t.title, t.id",
+        SortOrder::Duration => {
+            "t.duration_ms IS NULL, t.duration_ms DESC, t.title COLLATE neoalpha, t.id"
+        }
     }
 }
 

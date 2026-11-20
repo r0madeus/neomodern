@@ -14,7 +14,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 16;
+const SCHEMA_VERSION: i64 = 17;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -389,6 +389,22 @@ fn migrate_v15(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Schema v17: indexes in A to Z order (`neoalpha`) for the song list sorted
+/// by title or artist, so a page of a big library does not sort every track.
+/// The collation's order is frozen because these indexes depend on it.
+fn migrate_v17(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        "CREATE INDEX IF NOT EXISTS tracks_title_alpha
+             ON tracks(title COLLATE neoalpha, artist COLLATE neoalpha, id);
+         CREATE INDEX IF NOT EXISTS tracks_artist_alpha
+             ON tracks(artist COLLATE neoalpha, title COLLATE neoalpha);",
+    )?;
+    tx.pragma_update(None, "user_version", 17)?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Schema v16: an optional PIN per profile (K25), stored salted and hashed
 /// (see `library::profiles`). Repeating it is harmless.
 fn migrate_v16(conn: &Connection) -> Result<()> {
@@ -407,13 +423,18 @@ pub fn init(conn: &Connection) -> Result<()> {
     init_with_first_profile(conn, DEFAULT_FIRST_PROFILE_NAME)
 }
 
+/// Album, artist and song lists sort A to Z with the Turkish letters in their
+/// places (`library::alpha`), and indexes are built with that collation, so
+/// every connection registers it before it reads the file.
+pub fn register_collation(conn: &Connection) -> Result<()> {
+    conn.create_collation(super::alpha::COLLATION, super::alpha::compare)?;
+    Ok(())
+}
+
 /// Like [`init`]; `first_profile_name` names profile 1 when the v14
 /// migration creates it.
 pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> Result<()> {
-    // Album and artist lists sort A to Z with the Turkish letters in their
-    // places (`library::alpha`); every connection registers the collation
-    // before it runs a query.
-    conn.create_collation(super::alpha::COLLATION, super::alpha::compare)?;
+    register_collation(conn)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -572,6 +593,9 @@ pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> R
     }
     if version < 16 {
         migrate_v16(conn)?;
+    }
+    if version < 17 {
+        migrate_v17(conn)?;
     }
     // Indexes of the profile-scoped queries lead with `profile_id`.
     conn.execute_batch(
@@ -793,28 +817,33 @@ impl SortSpec {
     }
 
     fn order_by(self) -> &'static str {
+        // Text columns sort A to Z (`neoalpha`, see `library::alpha`).
         match (self.order, self.dir) {
             (SortOrder::Artist, SortDir::Asc) => {
-                "t.artist, a.title, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+                "t.artist COLLATE neoalpha, a.title COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Artist, SortDir::Desc) => {
-                "t.artist DESC, a.title, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+                "t.artist COLLATE neoalpha DESC, a.title COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
-            (SortOrder::Title, SortDir::Asc) => "t.title, t.artist, t.id",
-            (SortOrder::Title, SortDir::Desc) => "t.title DESC, t.artist, t.id",
+            (SortOrder::Title, SortDir::Asc) => {
+                "t.title COLLATE neoalpha, t.artist COLLATE neoalpha, t.id"
+            }
+            (SortOrder::Title, SortDir::Desc) => {
+                "t.title COLLATE neoalpha DESC, t.artist COLLATE neoalpha, t.id"
+            }
             (SortOrder::Album, SortDir::Asc) => {
-                "a.title, a.album_artist, a.year, a.id, t.disc_no, t.track_no, t.title, t.id"
+                "a.title COLLATE neoalpha, a.album_artist COLLATE neoalpha, a.year, a.id, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Album, SortDir::Desc) => {
-                "a.title DESC, a.album_artist DESC, a.year DESC, a.id DESC, t.disc_no, t.track_no, t.title, t.id"
+                "a.title COLLATE neoalpha DESC, a.album_artist COLLATE neoalpha DESC, a.year DESC, a.id DESC, t.disc_no, t.track_no, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Added, SortDir::Asc) => "t.added_at ASC, t.id ASC",
             (SortOrder::Added, SortDir::Desc) => "t.added_at DESC, t.id",
             (SortOrder::Duration, SortDir::Asc) => {
-                "t.duration_ms IS NULL, t.duration_ms ASC, t.title, t.id"
+                "t.duration_ms IS NULL, t.duration_ms ASC, t.title COLLATE neoalpha, t.id"
             }
             (SortOrder::Duration, SortDir::Desc) => {
-                "t.duration_ms IS NULL, t.duration_ms DESC, t.title, t.id"
+                "t.duration_ms IS NULL, t.duration_ms DESC, t.title COLLATE neoalpha, t.id"
             }
         }
     }
@@ -1111,7 +1140,9 @@ fn deep_artist_page(
     };
     let Some(boundary): Option<String> = conn
         .query_row(
-            &format!("SELECT artist FROM tracks ORDER BY artist{dir_sql} LIMIT 1 OFFSET ?1"),
+            &format!(
+                "SELECT artist FROM tracks ORDER BY artist COLLATE neoalpha{dir_sql} LIMIT 1 OFFSET ?1"
+            ),
             [offset as i64],
             |r| r.get(0),
         )
@@ -1121,7 +1152,7 @@ fn deep_artist_page(
     };
     let before_cmp = if dir == SortDir::Asc { "<" } else { ">" };
     let before: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM tracks WHERE artist {before_cmp} ?1"),
+        &format!("SELECT COUNT(*) FROM tracks WHERE artist COLLATE neoalpha {before_cmp} ?1"),
         [&boundary],
         |r| r.get(0),
     )?;
@@ -1131,7 +1162,7 @@ fn deep_artist_page(
         "{cols}
          FROM (SELECT t.id AS id
                FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
-               WHERE t.artist {cmp} ?1 ORDER BY {order} LIMIT ?2 OFFSET ?3) p
+               WHERE t.artist COLLATE neoalpha {cmp} ?1 ORDER BY {order} LIMIT ?2 OFFSET ?3) p
          JOIN tracks t ON t.id = p.id
          LEFT JOIN albums a ON a.id = t.album_id
          ORDER BY {order}"

@@ -292,13 +292,18 @@ jobs:
     name: Linux Release (AppImage)
     needs: prepare
     runs-on: ubuntu-24.04
+    # Normally about 12 minutes; fail instead of hanging for hours.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # A plain `apt-get install` once took 29 minutes on a slow mirror and
+      # the release never finished (2026-11-20); the script retries and
+      # switches mirrors, and the step has a time limit.
       - name: System packages
+        timeout-minutes: 25
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+          ./scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev libmpv-dev libdbus-1-dev \
             patchelf file
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { portal } from './portal'
   import { fade, scale } from 'svelte/transition'
   import Icon from './Icon.svelte'
   import { t } from './i18n.svelte'
@@ -47,6 +48,7 @@
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onClose()} />
 
 <div
+  use:portal
   transition:fade={{ duration: motionDuration(120) }}
   class="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
   role="dialog"

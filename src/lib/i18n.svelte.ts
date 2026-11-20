@@ -860,6 +860,8 @@ const TR: Record<string, string> = {
     'Bilgisayarın yerel adresini gir, örneğin 192.168.1.20.',
   'Remote control': 'Uzaktan kumanda',
   'Sync now': 'Şimdi eşitle',
+  'Syncs with profile {name}': '{name} profiliyle eşitlenir',
+  'This phone will sync with profile {name}': 'Bu telefon {name} profiliyle eşitlenecek',
   Forget: 'Unut',
   'Forget this computer': 'Bu bilgisayarı unut',
   'Forget {device}? Your music stays on both devices; to sync again you pair with a new code.':

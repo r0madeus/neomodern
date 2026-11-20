@@ -77,14 +77,14 @@ pub(super) fn compute(ctx: &Ctx<'_>, res: &Resolver, batch: &Batch) -> Result<Pl
 }
 
 fn favorites(ctx: &Ctx<'_>, res: &Resolver, batch: &Batch, plan: &mut Plan) -> Result<()> {
-    let local_songs: HashSet<i64> = local::favorites(ctx.conn)?
+    let local_songs: HashSet<i64> = local::favorites(ctx.conn, ctx.profile)?
         .into_keys()
         .filter_map(|t| res.canon(t))
         .collect();
     plan.local_favorites = local_songs.len();
     let mut turned_off = HashSet::new();
     for f in &batch.favorites {
-        let current = rows::get_favorite(ctx.conn, &f.key)?;
+        let current = rows::get_favorite(ctx.conn, ctx.profile, &f.key)?;
         if current.as_ref().is_some_and(|c| c.hlc >= f.hlc) {
             continue;
         }
@@ -104,7 +104,7 @@ fn favorites(ctx: &Ctx<'_>, res: &Resolver, batch: &Batch, plan: &mut Plan) -> R
 fn playlists(ctx: &Ctx<'_>, batch: &Batch, plan: &mut Plan) -> Result<HashSet<String>> {
     let mut deleted = HashSet::new();
     for p in &batch.playlists {
-        let Some(row) = rows::get_playlist(ctx.conn, &p.uuid)? else {
+        let Some(row) = rows::get_playlist(ctx.conn, ctx.profile, &p.uuid)? else {
             plan.playlists += 1;
             continue;
         };
@@ -131,7 +131,7 @@ fn entries(
 ) -> Result<()> {
     let mut removed: BTreeMap<String, usize> = BTreeMap::new();
     for e in &batch.entries {
-        let Some(cur) = rows::get_entry(ctx.conn, &e.uuid)? else {
+        let Some(cur) = rows::get_entry(ctx.conn, ctx.profile, &e.uuid)? else {
             plan.entries += 1;
             continue;
         };
@@ -146,7 +146,7 @@ fn entries(
         }
     }
     for (uuid, count) in removed {
-        let Some(row) = rows::get_playlist(ctx.conn, &uuid)? else {
+        let Some(row) = rows::get_playlist(ctx.conn, ctx.profile, &uuid)? else {
             continue;
         };
         if row.rec.deleted || !row.reconciled {

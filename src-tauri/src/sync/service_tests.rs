@@ -677,8 +677,15 @@ fn a_page_shrinks_until_it_fits_the_size_limit() {
         let pc = device("Desk PC", true).await;
         pc.favorite(&(0..SONGS).collect::<Vec<_>>(), true);
         let conn = pc.lib.conn();
-        store::upsert_peer(&conn, "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "Pixel", &[1; 32]).unwrap();
-        store::capture(&conn, 1_700_000_000_000).unwrap();
+        store::upsert_peer(
+            &conn,
+            "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+            "Pixel",
+            &[1; 32],
+            ProfileId::FIRST,
+        )
+        .unwrap();
+        store::capture(&conn, 1_700_000_000_000, &[ProfileId::FIRST]).unwrap();
         let whole =
             super::conn::build_page(&conn, "0f1e2d3c4b5a69788796a5b4c3d2e1f0", 2000, 1 << 20)
                 .unwrap();
@@ -770,5 +777,116 @@ fn the_phone_pairs_from_the_qr_code() {
         );
         phone.svc.shutdown().await;
         pc.svc.shutdown().await;
+    });
+}
+
+/// Titles of the favourites of one profile on a device.
+fn profile_favorites(dev: &Dev, profile: ProfileId) -> BTreeSet<String> {
+    let conn = dev.lib.conn();
+    let mut st = conn
+        .prepare(
+            "SELECT t.title FROM favorites f JOIN tracks t ON t.id = f.track_id
+             WHERE f.profile_id = ?1",
+        )
+        .unwrap();
+    st.query_map([profile.0], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+fn favorite_in(dev: &Dev, profile: ProfileId, songs: &[usize]) {
+    let ids: Vec<i64> = songs.iter().map(|&i| dev.id_of(i)).collect();
+    db::set_favorites(&mut dev.lib.conn(), profile, &ids, true, 1_700_000_000).unwrap();
+}
+
+/// Pairs `phone` with `pc` while `profile` is the computer's active one.
+async fn pair_with_profile(pc: &Dev, phone: &Dev, port: u16, profile: ProfileId) {
+    pc.lib.set_active_profile(profile).unwrap();
+    let open = pc.svc.pair_open().await.unwrap();
+    assert_eq!(
+        open.profile_name,
+        pc.lib
+            .profiles()
+            .unwrap()
+            .into_iter()
+            .find(|p| p.id == profile)
+            .unwrap()
+            .name
+    );
+    phone
+        .svc
+        .connect_pair(&format!("127.0.0.1:{port}"), &open.code)
+        .await
+        .unwrap();
+    let pc_id = pc.id().await;
+    wait_for!("the first sync", phone.rounds(&pc_id).await >= 1);
+    pc.svc.pair_close();
+}
+
+#[test]
+fn two_phones_sync_two_different_computer_profiles() {
+    rt(async {
+        let pc = device("Desk PC", true).await;
+        let (one, two) = (device("Pixel", false).await, device("Galaxy", false).await);
+        let second = pc.lib.create_profile("Second").unwrap().id;
+        let first = ProfileId::FIRST;
+        favorite_in(&pc, first, &[0, 1]);
+        favorite_in(&pc, second, &[5]);
+        favorite_in(&one, first, &[2]);
+        favorite_in(&two, first, &[6]);
+        let port = pc
+            .svc
+            .set_allow_phone_connections(true)
+            .await
+            .unwrap()
+            .listening
+            .unwrap()
+            .port;
+        pair_with_profile(&pc, &one, port, first).await;
+        pair_with_profile(&pc, &two, port, second).await;
+        let (one_id, two_id) = (one.id().await, two.id().await);
+
+        // Each phone sees only its profile's favourites.
+        assert_eq!(one.favorites(), title_set(&[0, 1, 2]));
+        assert_eq!(two.favorites(), title_set(&[5, 6]));
+        assert_eq!(profile_favorites(&pc, first), title_set(&[0, 1, 2]));
+        assert_eq!(profile_favorites(&pc, second), title_set(&[5, 6]));
+
+        // The binding is shown by name.
+        let names: BTreeMap<String, String> = pc
+            .svc
+            .status()
+            .await
+            .unwrap()
+            .peers
+            .into_iter()
+            .map(|p| (p.id, p.profile_name))
+            .collect();
+        assert_eq!(names[&two_id], "Second");
+        assert_ne!(names[&one_id], "Second");
+
+        // Later edits stay in their own profile.
+        favorite_in(&one, first, &[3]);
+        let before = one.rounds(&pc.id().await).await;
+        one.svc.sync_now().await.unwrap();
+        wait_for!("a round", one.rounds(&pc.id().await).await > before);
+        assert_eq!(profile_favorites(&pc, first), title_set(&[0, 1, 2, 3]));
+        assert_eq!(profile_favorites(&pc, second), title_set(&[5, 6]));
+        assert_eq!(two.favorites(), title_set(&[5, 6]));
+
+        // Deleting the bound profile drops its pairing and closes the session.
+        pc.lib.set_active_profile(first).unwrap();
+        pc.lib.delete_profile(second).unwrap();
+        pc.svc.profile_deleted(second).await.unwrap();
+        assert!(pc.peer(&two_id).await.is_none());
+        assert!(pc.peer(&one_id).await.is_some());
+        wait_for!(
+            "the phone to be dropped",
+            !two.connected(&pc.id().await).await
+        );
+        pc.svc.shutdown().await;
+        one.svc.shutdown().await;
+        two.svc.shutdown().await;
     });
 }

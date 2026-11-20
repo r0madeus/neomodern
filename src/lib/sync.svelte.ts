@@ -28,6 +28,8 @@ export interface PeerStatus {
   syncing: boolean
   /** Unix milliseconds. */
   lastSyncAt: number | null
+  /** The local profile this pairing syncs (K24). */
+  profileName: string
   lastError: string | null
   pendingGuard: GuardSummary | null
   lastResult: SyncResult | null
@@ -42,7 +44,7 @@ export interface SyncStatus {
   deviceName: string
   allowPhoneConnections: boolean
   listening: { port: number; addresses: string[] } | null
-  pairing: { state: PairingState; code: string | null; remainingSecs: number | null }
+  pairing: { state: PairingState; code: string | null; remainingSecs: number | null; profileName: string | null }
   peers: PeerStatus[]
   lastResult: SyncResult | null
 }
@@ -59,6 +61,8 @@ export interface PairingOpen {
   addresses: string[]
   port: number
   remainingSecs: number
+  /** The local profile a phone paired with this code will sync with. */
+  profileName: string
   /** The same code as a QR code with the addresses (K23). */
   qr: PairQr | null
 }

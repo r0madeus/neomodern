@@ -6,6 +6,7 @@ use super::rows::{self, ENTRY_COLS, FAVORITE_COLS, LISTEN_COLS, PLAYLIST_COLS};
 use super::{
     Batch, EntryRecord, FavoriteRecord, ListenRecord, MAX_RECORDS, PlaylistRecord, Result,
 };
+use crate::library::ProfileId;
 use rusqlite::{Connection, Row};
 
 /// The highest sequence number handed out on this device.
@@ -20,13 +21,19 @@ enum Record {
     Listen(ListenRecord),
 }
 
-/// Rows with `seq > after`, at most `limit` (capped at the batch limit).
+/// Rows of `profile` with `seq > after`, at most `limit` (capped at the batch limit).
 /// `upto_seq` is the highest seq included; `more` says whether rows remain.
-pub fn changes_since(conn: &Connection, after: i64, limit: usize) -> Result<Batch> {
+pub fn changes_since(
+    conn: &Connection,
+    profile: ProfileId,
+    after: i64,
+    limit: usize,
+) -> Result<Batch> {
     let limit = limit.clamp(1, MAX_RECORDS);
     let mut found: Vec<(i64, Record)> = Vec::new();
     found.extend(read(
         conn,
+        profile,
         "sync_favorites",
         FAVORITE_COLS,
         after,
@@ -35,6 +42,7 @@ pub fn changes_since(conn: &Connection, after: i64, limit: usize) -> Result<Batc
     )?);
     found.extend(read(
         conn,
+        profile,
         "sync_playlists",
         PLAYLIST_COLS,
         after,
@@ -43,6 +51,7 @@ pub fn changes_since(conn: &Connection, after: i64, limit: usize) -> Result<Batc
     )?);
     found.extend(read(
         conn,
+        profile,
         "sync_playlist_entries",
         ENTRY_COLS,
         after,
@@ -51,6 +60,7 @@ pub fn changes_since(conn: &Connection, after: i64, limit: usize) -> Result<Batc
     )?);
     found.extend(read(
         conn,
+        profile,
         "sync_listens",
         LISTEN_COLS,
         after,
@@ -86,6 +96,7 @@ pub fn changes_since(conn: &Connection, after: i64, limit: usize) -> Result<Batc
 /// Up to `limit + 1` rows of one table (one extra to detect `more`).
 fn read(
     conn: &Connection,
+    profile: ProfileId,
     table: &str,
     cols: &str,
     after: i64,
@@ -94,10 +105,15 @@ fn read(
 ) -> Result<Vec<(i64, Record)>> {
     let n_cols = cols.split(',').count();
     let mut st = conn.prepare(&format!(
-        "SELECT {cols}, seq FROM {table} WHERE seq > ?1 ORDER BY seq LIMIT ?2"
+        "SELECT {cols}, seq FROM {table} WHERE profile_id = ?1 AND seq > ?2
+         ORDER BY seq LIMIT ?3"
     ))?;
     let rows = st.query_map(
-        rusqlite::params![after, i64::try_from(limit + 1).unwrap_or(i64::MAX)],
+        rusqlite::params![
+            profile.0,
+            after,
+            i64::try_from(limit + 1).unwrap_or(i64::MAX)
+        ],
         |r| Ok((r.get::<_, i64>(n_cols)?, map(r)?)),
     )?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

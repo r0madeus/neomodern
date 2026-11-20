@@ -22,7 +22,7 @@ use super::{MAX_NAME_CHARS, PlaylistRecord, Result};
 
 /// Returns whether any playlist was waiting to be reconciled (rows written).
 pub(super) fn run(ctx: &mut Ctx<'_>, res: &Resolver, peer_name: &str) -> Result<bool> {
-    let all = rows::all_playlists(ctx.conn)?;
+    let all = rows::all_playlists(ctx.conn, ctx.profile)?;
     let (pending, settled): (Vec<PlaylistRow>, Vec<PlaylistRow>) =
         all.into_iter().partition(|row| !row.reconciled);
     if pending.is_empty() {
@@ -100,7 +100,7 @@ fn stamp_deleted(ctx: &mut Ctx<'_>, mut rec: PlaylistRecord) -> Result<()> {
     rec.deleted = true;
     rec.deleted_hlc = ctx.stamp();
     let seq = ctx.next_seq();
-    rows::put_playlist(ctx.conn, &rec, true, seq)
+    rows::put_playlist(ctx.conn, ctx.profile, &rec, true, seq)
 }
 
 fn unify(
@@ -112,7 +112,7 @@ fn unify(
     if incoming.uuid < local.uuid {
         // The incoming uuid wins: the local playlist now follows it (it
         // keeps its local id; materialise updates its name and entries).
-        let map = rows::playlist_map(ctx.conn)?;
+        let map = rows::playlist_map(ctx.conn, ctx.profile)?;
         if let Some((&id, _)) = map.iter().find(|(_, u)| **u == local.uuid) {
             rows::set_map(ctx.conn, id, &incoming.uuid)?;
         }
@@ -141,6 +141,6 @@ fn rename(ctx: &mut Ctx<'_>, mut rec: PlaylistRecord, peer_name: &str) -> Result
     rec.name = format!("{}{suffix}", base.trim_end());
     rec.name_hlc = ctx.stamp();
     let seq = ctx.next_seq();
-    rows::put_playlist(ctx.conn, &rec, true, seq)?;
+    rows::put_playlist(ctx.conn, ctx.profile, &rec, true, seq)?;
     Ok(rec)
 }

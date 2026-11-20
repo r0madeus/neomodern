@@ -25,6 +25,7 @@ fn write_v13_database(path: &Path) {
     conn.execute_batch(db::SCHEMA_V1).unwrap();
     conn.execute_batch(db::SCHEMA_V2).unwrap();
     conn.execute_batch(db::SCHEMA_V9).unwrap();
+    conn.execute_batch(db::SCHEMA_V13).unwrap();
     conn.execute_batch(
         "ALTER TABLE playlists ADD COLUMN cover TEXT;
          ALTER TABLE playlist_tracks ADD COLUMN added_at INTEGER;
@@ -136,7 +137,7 @@ fn migrating_a_v13_database_puts_everything_in_profile_1_and_keeps_a_copy() {
         count("SELECT COUNT(*) FROM listen_events WHERE profile_id = 1"),
         2
     );
-    assert_eq!(count("PRAGMA user_version"), 14);
+    assert_eq!(count("PRAGMA user_version"), 15);
     assert_eq!(
         count("SELECT COUNT(*) FROM pragma_foreign_key_list('favorites')"),
         2

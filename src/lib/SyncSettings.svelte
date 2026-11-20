@@ -102,6 +102,7 @@
     const ips = sync.pairing?.addresses.length ? sync.pairing.addresses : (status?.listening?.addresses ?? [])
     return port === null ? [] : ips.map((ip) => addressWithPort(ip, port))
   })
+  const pairProfile = $derived(sync.pairing?.profileName ?? status?.pairing.profileName ?? null)
   const pairShown = $derived(sync.pairing !== null || pairState === 'open' || pairState === 'tooManyAttempts')
 
   let confirmRemove = $state<string | null>(null)
@@ -258,6 +259,11 @@
                 {:else}
                   <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('On your phone, enter this code')}</p>
                 {/if}
+                {#if pairProfile}
+                  <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    {t('This phone will sync with profile {name}', { name: pairProfile })}
+                  </p>
+                {/if}
                 <p class="text-4xl font-bold tracking-[0.12em] text-zinc-900 tabular-nums dark:text-zinc-50" aria-label={pairCode.split('').join(' ')}>
                   {formatPairCode(pairCode)}
                 </p>
@@ -331,6 +337,11 @@
                   <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
                     {ago(phone.lastSyncAt)}{lastResultText(phone) ? ` · ${lastResultText(phone)}` : ''}
                   </p>
+                  {#if phone.profileName}
+                    <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      {t('Syncs with profile {name}', { name: phone.profileName })}
+                    </p>
+                  {/if}
                 </div>
                 {#if confirmRemove === phone.id}
                   <div class="flex shrink-0 items-center gap-1">
@@ -467,6 +478,11 @@
         <p class="text-xs text-zinc-500 dark:text-zinc-400">
           {ago(computer.lastSyncAt)}{lastResultText(computer) ? ` · ${lastResultText(computer)}` : ''}
         </p>
+        {#if computer.profileName}
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            {t('Syncs with profile {name}', { name: computer.profileName })}
+          </p>
+        {/if}
         {#if computer.lastError}
           <p class={errorText}>{computer.lastError}</p>
         {/if}

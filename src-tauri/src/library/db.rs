@@ -14,7 +14,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 14;
+const SCHEMA_VERSION: i64 = 15;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -175,7 +175,7 @@ CREATE INDEX IF NOT EXISTS tag_history_batch ON tag_history(batch_id);
 /// playlists and listening history, plus local-only bookkeeping. Sync rows
 /// store track *keys*, never `tracks.id`, so they have no foreign keys into
 /// the library: a song missing on this device must not cascade them away.
-const SCHEMA_V13: &str = "
+pub(crate) const SCHEMA_V13: &str = "
 CREATE TABLE IF NOT EXISTS sync_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -325,6 +325,66 @@ fn migrate_v14(conn: &Connection, first_profile_name: &str) -> Result<()> {
     }
     tx.execute_batch(SCHEMA_V14_DROP_INDEXES)?;
     tx.pragma_update(None, "user_version", 14)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Per-profile sync (K24, `docs/PROFILES.md`): every pairing is bound to one
+/// profile and the replicated rows carry the profile they belong to.
+/// `sync_playlist_map` (playlist ids are global) and `sync_present`
+/// (presence is about the library) stay shared. Runs with
+/// `foreign_keys = OFF`, like v14.
+const SCHEMA_V15_FAVORITES: &str = "
+CREATE TABLE sync_favorites_v15 (
+    profile_id  INTEGER NOT NULL DEFAULT 1 REFERENCES profiles(id) ON DELETE CASCADE,
+    key         TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    artist      TEXT NOT NULL,
+    album       TEXT NOT NULL,
+    duration_ms INTEGER,
+    is_on       INTEGER NOT NULL,
+    hlc         TEXT NOT NULL,
+    seq         INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, key)
+);
+INSERT INTO sync_favorites_v15(profile_id, key, title, artist, album, duration_ms, is_on, hlc, seq)
+SELECT 1, key, title, artist, album, duration_ms, is_on, hlc, seq FROM sync_favorites;
+DROP TABLE sync_favorites;
+ALTER TABLE sync_favorites_v15 RENAME TO sync_favorites;
+";
+
+const SCHEMA_V15_INDEXES: &str = "
+DROP INDEX IF EXISTS sync_favorites_seq;
+DROP INDEX IF EXISTS sync_playlists_seq;
+DROP INDEX IF EXISTS sync_playlist_entries_seq;
+DROP INDEX IF EXISTS sync_listens_seq;
+CREATE INDEX IF NOT EXISTS sync_favorites_profile_seq ON sync_favorites(profile_id, seq);
+CREATE INDEX IF NOT EXISTS sync_playlists_profile_seq ON sync_playlists(profile_id, seq);
+CREATE INDEX IF NOT EXISTS sync_playlist_entries_profile_seq ON sync_playlist_entries(profile_id, seq);
+CREATE INDEX IF NOT EXISTS sync_listens_profile_seq ON sync_listens(profile_id, seq);
+";
+
+/// Schema v15, written so a repeated run is harmless (like v13 and v14).
+fn migrate_v15(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    for table in [
+        "sync_peers",
+        "sync_playlists",
+        "sync_playlist_entries",
+        "sync_listens",
+    ] {
+        if !has_column(&tx, table, "profile_id")? {
+            tx.execute_batch(&format!(
+                "ALTER TABLE {table}
+                 ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1 REFERENCES profiles(id) ON DELETE CASCADE;"
+            ))?;
+        }
+    }
+    if !has_column(&tx, "sync_favorites", "profile_id")? {
+        tx.execute_batch(SCHEMA_V15_FAVORITES)?;
+    }
+    tx.execute_batch(SCHEMA_V15_INDEXES)?;
+    tx.pragma_update(None, "user_version", 15)?;
     tx.commit()?;
     Ok(())
 }
@@ -485,6 +545,12 @@ pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> R
     if version < 14 {
         conn.pragma_update(None, "foreign_keys", false)?;
         let res = migrate_v14(conn, first_profile_name);
+        conn.pragma_update(None, "foreign_keys", true)?;
+        res?;
+    }
+    if version < 15 {
+        conn.pragma_update(None, "foreign_keys", false)?;
+        let res = migrate_v15(conn);
         conn.pragma_update(None, "foreign_keys", true)?;
         res?;
     }

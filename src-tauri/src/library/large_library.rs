@@ -1014,12 +1014,12 @@ fn large_library_benchmark() {
             store::resolve_key(&conn, "x\u{1f}y\u{1f}z", None).unwrap()
         });
         let first = rep.once("sync", "capture, first (everything new)", || {
-            store::capture(&conn, now_ms).unwrap()
+            store::capture(&conn, now_ms, &[ProfileId::FIRST]).unwrap()
         });
         println!("    first capture stamped {} rows", first.stamped);
         rep.bench("sync", "capture, idle", || {
             now_ms += 1000;
-            store::capture(&conn, now_ms).unwrap()
+            store::capture(&conn, now_ms, &[ProfileId::FIRST]).unwrap()
         });
 
         // A second device (an in-memory phone) with ~1 000 changes.
@@ -1031,8 +1031,16 @@ fn large_library_benchmark() {
             batch.entries.len(),
             batch.listens.len()
         );
-        store::upsert_peer(&conn, &batch.from_device, "phone", b"bench-secret").unwrap();
+        store::upsert_peer(
+            &conn,
+            &batch.from_device,
+            "phone",
+            b"bench-secret",
+            ProfileId::FIRST,
+        )
+        .unwrap();
         let opts = ApplyOptions {
+            profile: ProfileId::FIRST,
             peer_id: Some(batch.from_device.clone()),
             peer_name: "phone".into(),
             allow_mass_delete: false,
@@ -1051,7 +1059,7 @@ fn large_library_benchmark() {
         rep.once(
             "sync",
             &format!("plan, {} changes (read-only)", batch.len()),
-            || store::plan(&conn, &batch, now_ms).unwrap(),
+            || store::plan(&conn, ProfileId::FIRST, &batch, now_ms).unwrap(),
         );
         let report = rep.once(
             "sync",
@@ -1170,8 +1178,8 @@ fn second_device_batch(metas: &[TrackMeta], now: i64) -> Batch {
         )
         .unwrap();
     }
-    store::capture(&conn, now * 1000).unwrap();
-    store::changes_since(&conn, 0, 200_000).unwrap()
+    store::capture(&conn, now * 1000, &[ProfileId::FIRST]).unwrap();
+    store::changes_since(&conn, ProfileId::FIRST, 0, 200_000).unwrap()
 }
 
 /// Generates tiny tagged WAVs, scans them, then rescans with nothing changed.

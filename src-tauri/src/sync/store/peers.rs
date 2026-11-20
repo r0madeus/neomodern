@@ -3,7 +3,9 @@
 use super::ctx::{get_meta, set_meta};
 use super::hlc::is_id;
 use super::{MAX_NAME_CHARS, Result, SyncError};
+use crate::library::ProfileId;
 use rusqlite::{Connection, OptionalExtension, Row, params};
+use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Peer {
@@ -11,6 +13,9 @@ pub struct Peer {
     pub name: String,
     /// The per-device pairing secret (never logged).
     pub secret: Vec<u8>,
+    /// The local profile this pairing syncs: only its favourites, playlists
+    /// and listens travel to this peer.
+    pub profile: ProfileId,
     /// Our highest seq the peer has acknowledged.
     pub last_seq_sent: i64,
     /// The peer's highest seq we have applied.
@@ -25,6 +30,7 @@ impl std::fmt::Debug for Peer {
             .field("device_id", &self.device_id)
             .field("name", &self.name)
             .field("secret", &"<redacted>")
+            .field("profile", &self.profile)
             .field("last_seq_sent", &self.last_seq_sent)
             .field("last_seq_received", &self.last_seq_received)
             .field("last_sync_at", &self.last_sync_at)
@@ -32,7 +38,8 @@ impl std::fmt::Debug for Peer {
     }
 }
 
-const COLS: &str = "device_id, name, secret, last_seq_sent, last_seq_received, last_sync_at";
+const COLS: &str =
+    "device_id, name, secret, last_seq_sent, last_seq_received, last_sync_at, profile_id";
 
 fn row(r: &Row<'_>) -> rusqlite::Result<Peer> {
     Ok(Peer {
@@ -42,6 +49,7 @@ fn row(r: &Row<'_>) -> rusqlite::Result<Peer> {
         last_seq_sent: r.get(3)?,
         last_seq_received: r.get(4)?,
         last_sync_at: r.get(5)?,
+        profile: ProfileId(r.get(6)?),
     })
 }
 
@@ -63,9 +71,33 @@ pub fn peer(conn: &Connection, device_id: &str) -> Result<Option<Peer>> {
         .optional()?)
 }
 
-/// Adds a paired device, or updates its name and secret (re-pairing keeps
-/// the watermarks: the data on both sides is unchanged).
-pub fn upsert_peer(conn: &Connection, device_id: &str, name: &str, secret: &[u8]) -> Result<()> {
+/// The profiles that have at least one pairing, in id order. Capture runs
+/// for exactly these.
+pub fn bound_profiles(conn: &Connection) -> Result<Vec<ProfileId>> {
+    let mut st = conn.prepare("SELECT DISTINCT profile_id FROM sync_peers ORDER BY profile_id")?;
+    let rows = st.query_map([], |r| Ok(ProfileId(r.get(0)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Profile id -> name, for showing which profile a pairing syncs.
+pub fn profile_names(conn: &Connection) -> Result<HashMap<ProfileId, String>> {
+    let mut st = conn.prepare("SELECT id, name FROM profiles")?;
+    let rows = st.query_map([], |r| Ok((ProfileId(r.get(0)?), r.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Adds a paired device bound to `profile`, or updates its name, secret and
+/// profile. Pairing again re-binds, and the watermarks start over: the
+/// peer's profile may have changed too (it is not told to us), so the next
+/// round re-sends this profile's changes in full. That is cheap and safe,
+/// because merging is idempotent.
+pub fn upsert_peer(
+    conn: &Connection,
+    device_id: &str,
+    name: &str,
+    secret: &[u8],
+    profile: ProfileId,
+) -> Result<()> {
     if !is_id(device_id) {
         return Err(SyncError::Other("malformed device id".into()));
     }
@@ -73,10 +105,20 @@ pub fn upsert_peer(conn: &Connection, device_id: &str, name: &str, secret: &[u8]
     if name.is_empty() || name.chars().count() > MAX_NAME_CHARS {
         return Err(SyncError::Other("invalid device name".into()));
     }
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM profiles WHERE id = ?1)",
+        [profile.0],
+        |r| r.get(0),
+    )?;
+    if !exists {
+        return Err(SyncError::Other("no such profile".into()));
+    }
     conn.execute(
-        "INSERT INTO sync_peers(device_id, name, secret) VALUES (?1, ?2, ?3)
-         ON CONFLICT(device_id) DO UPDATE SET name = excluded.name, secret = excluded.secret",
-        params![device_id, name, secret],
+        "INSERT INTO sync_peers(device_id, name, secret, profile_id) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(device_id) DO UPDATE SET
+            name = excluded.name, secret = excluded.secret, profile_id = excluded.profile_id,
+            last_seq_sent = 0, last_seq_received = 0",
+        params![device_id, name, secret, profile.0],
     )?;
     Ok(())
 }

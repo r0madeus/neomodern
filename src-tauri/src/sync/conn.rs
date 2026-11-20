@@ -23,6 +23,7 @@ use super::protocol::{ErrorCode, GuardSummary, Msg, SEND_LIMIT, SYNC_VERSION};
 use super::remote::{self, QueuePage, RemoteCmd, RemoteErrorCode, RemoteFailure};
 use super::service::{Shared, SyncResult, db, now_ms, run_blocking};
 use super::store::{self, ApplyOptions, SyncError};
+use crate::library::ProfileId;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -482,7 +483,8 @@ impl Conn {
         let page = db(&self.sh, move |conn| {
             let mut changed = false;
             if capture {
-                changed = store::capture(conn, now_ms())?.local_changed;
+                let bound = store::bound_profiles(conn)?;
+                changed = store::capture(conn, now_ms(), &bound)?.local_changed;
             }
             let page = build_page(conn, &peer, limit, SEND_LIMIT)?;
             Ok((page, changed))
@@ -599,14 +601,26 @@ impl Conn {
                 .await;
         }
         let allow = self.sh.allow_once(&self.peer_id);
-        let opts = ApplyOptions {
+        let peer_id = self.peer_id.clone();
+        let mut opts = ApplyOptions {
+            // Read below, from the pairing as it is stored now.
+            profile: ProfileId::FIRST,
             peer_id: Some(self.peer_id.clone()),
             peer_name: self.peer_name.clone(),
             allow_mass_delete: allow,
             backup_dir: Some(self.sh.backup_dir.clone()),
             now_ms: now_ms(),
         };
-        let result = db(&self.sh, move |c| Ok(store::apply(c, &batch, &opts))).await?;
+        let result = db(&self.sh, move |c| {
+            // The profile the pairing is bound to, read fresh: a re-pairing
+            // may have re-bound it since the session started.
+            let Some(peer) = store::peer(c, &peer_id)? else {
+                return Err(SyncError::Other("unknown peer".into()));
+            };
+            opts.profile = peer.profile;
+            Ok(store::apply(c, &batch, &opts))
+        })
+        .await?;
         match result {
             Ok(report) => {
                 if report.local_changed {
@@ -728,12 +742,12 @@ pub(super) fn build_page(
     limit: usize,
     max_bytes: usize,
 ) -> store::Result<Page> {
-    let after = store::peer(conn, peer_id)?
-        .ok_or_else(|| SyncError::Other("unknown peer".into()))?
-        .last_seq_sent;
+    let peer =
+        store::peer(conn, peer_id)?.ok_or_else(|| SyncError::Other("unknown peer".into()))?;
+    let after = peer.last_seq_sent;
     let mut limit = limit.max(1);
     loop {
-        let batch = store::changes_since(conn, after, limit)?;
+        let batch = store::changes_since(conn, peer.profile, after, limit)?;
         let (upto, more, len) = (batch.upto_seq, batch.more, batch.len());
         let bytes = Msg::SyncBatch { batch }.to_bytes();
         if bytes.len() <= max_bytes || limit == 1 {

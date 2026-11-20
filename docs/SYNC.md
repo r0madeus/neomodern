@@ -148,6 +148,48 @@ song the receiving device cannot resolve is never unified. Playlists with a
 new uuid wait (local-only `reconciled = 0`, not shown) until the last page
 of a sync, so the comparison sees all their entries.
 
+## Profiles (schema v15, decision K24)
+
+A pairing is bound to **one local profile** (`sync_peers.profile_id`).
+Only that profile's favourites, playlists and listens travel to the peer,
+and incoming changes are merged into and materialised for that profile
+only; other profiles are never read, sent or changed. See `PROFILES.md`.
+
+- `sync_favorites` (key `(profile_id, key)`), `sync_playlists`,
+  `sync_playlist_entries` and `sync_listens` carry `profile_id` with an
+  index `(profile_id, seq)`; the foreign key cascades, so deleting a profile
+  removes its pairings and sync rows. `sync_playlist_map` (playlist ids are
+  global) and `sync_present` (about the library) stay shared. Old rows
+  become profile 1.
+- The sequence number and the clock stay global; `changes_since(profile,
+  after, limit)` returns that profile's rows (gaps are fine for the
+  watermark). A playlist/entry uuid that already belongs to another profile
+  is never overwritten.
+- **Capture runs for all bound profiles together** (`SELECT DISTINCT
+  profile_id FROM sync_peers`): the presence snapshot ("reappeared songs")
+  is library-wide, so it is read once, favourites/playlists/listens are
+  captured per bound profile, and the snapshot is saved once. `apply`
+  captures the same set inside its transaction, so a profile that is not the
+  peer's still sees a song that reappeared.
+- The desktop binds a phone to the profile that was **active when the
+  pairing code was opened**; the phone binds its active profile. Pairing
+  again re-binds and resets both watermarks (the peer's profile is not
+  announced on the wire, so a full re-send is the safe way to fill a new
+  profile; merging is idempotent).
+- `PeerStatus.profileName` and `PairingInfo/PairingOpen.profileName` tell
+  the UI which local profile is synced. The peer's own profile name is not
+  transmitted.
+- Deleting a profile calls `SyncService::profile_deleted`, which forgets the
+  runtime state (secrets, sessions, the phone's client) of the removed
+  peers.
+- Remote control is unchanged: it drives the computer's player, and listens
+  go to the computer's active profile.
+- Tests: `a_pairing_syncs_only_its_bound_profile`,
+  `every_bound_profile_is_captured_when_a_song_reappears`,
+  `deleting_a_bound_profile_removes_its_pairing_and_sync_rows`,
+  `migration_v14_to_v15_keeps_sync_rows_in_profile_one` (store) and
+  `two_phones_sync_two_different_computer_profiles` (service).
+
 ## Data health
 
 - **Validation before apply**: the whole incoming batch is checked first

@@ -4,6 +4,7 @@
 
 use super::hlc::{Clock, Hlc, is_id};
 use super::{MAX_NAME_CHARS, Result, SyncError};
+use crate::library::ProfileId;
 use rusqlite::{Connection, OptionalExtension};
 
 const META_DEVICE_ID: &str = "device_id";
@@ -69,17 +70,22 @@ fn meta_number<T: std::str::FromStr + Default>(conn: &Connection, key: &str) -> 
 pub(super) struct Ctx<'c> {
     pub conn: &'c Connection,
     pub now_ms: i64,
+    /// The profile whose rows this operation reads and writes. Capture
+    /// visits every bound profile in turn; everything else works on the
+    /// profile of the pairing.
+    pub profile: ProfileId,
     pub clock: Clock,
     /// Last sequence number handed out.
     seq: i64,
 }
 
 impl<'c> Ctx<'c> {
-    pub fn load(conn: &'c Connection, now_ms: i64) -> Result<Self> {
+    pub fn load(conn: &'c Connection, now_ms: i64, profile: ProfileId) -> Result<Self> {
         let device = device_id(conn)?;
         Ok(Self {
             conn,
             now_ms,
+            profile,
             clock: Clock {
                 wall_ms: meta_number(conn, META_HLC_WALL)?,
                 counter: meta_number(conn, META_HLC_COUNTER)?,

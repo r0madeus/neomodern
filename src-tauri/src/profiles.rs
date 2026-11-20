@@ -7,6 +7,7 @@
 use crate::library::{Library, Profile, ProfileId, ProfileSummary};
 use crate::player::{Player, PlayerSnapshot};
 use crate::session::SessionStore;
+use crate::sync::SyncService;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -98,18 +99,22 @@ pub fn profile_summary(lib: State<'_, Arc<Library>>, id: i64) -> Res<ProfileSumm
 
 /// Deletes a profile that is not in use, with its favourites, playlists,
 /// listens, parked queue and pins (the last profile cannot be deleted).
-#[tauri::command(async)]
-pub fn profile_delete(
+#[tauri::command]
+pub async fn profile_delete(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
     store: State<'_, Arc<SessionStore>>,
     player: State<'_, Arc<Player>>,
+    sync: State<'_, SyncService>,
     id: i64,
 ) -> Res<ProfilesState> {
     if lib.active_profile().0 == id {
         return Err("switch to another profile before deleting this one".into());
     }
     le(lib.delete_profile(ProfileId(id)))?;
+    // The database removed the profile's pairings; the sync service forgets
+    // their sessions and secrets.
+    sync.profile_deleted(ProfileId(id)).await?;
     store.forget_profile(id);
     store.save_now(&player.export_session());
     let s = state(&lib)?;

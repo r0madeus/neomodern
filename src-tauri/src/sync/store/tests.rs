@@ -156,7 +156,7 @@ impl Device {
     }
 
     fn capture(&self) -> CaptureReport {
-        capture(&self.conn, self.now).unwrap()
+        capture(&self.conn, self.now, &[ProfileId::FIRST]).unwrap()
     }
 
     /// Favourite songs as track keys.
@@ -205,12 +205,25 @@ fn keys(songs: &[Song]) -> Vec<String> {
 }
 
 fn pair(a: &Device, b: &Device) {
-    upsert_peer(&a.conn, &b.id, &b.name, b"secret-ab").unwrap();
-    upsert_peer(&b.conn, &a.id, &a.name, b"secret-ab").unwrap();
+    upsert_peer(&a.conn, &b.id, &b.name, b"secret-ab", ProfileId::FIRST).unwrap();
+    upsert_peer(&b.conn, &a.id, &a.name, b"secret-ab", ProfileId::FIRST).unwrap();
+}
+
+/// Options for a batch from no particular peer, into the first profile.
+fn default_opts() -> ApplyOptions {
+    ApplyOptions {
+        profile: ProfileId::FIRST,
+        peer_id: None,
+        peer_name: String::new(),
+        allow_mass_delete: false,
+        backup_dir: None,
+        now_ms: 0,
+    }
 }
 
 fn opts(to: &Device, from: &Device) -> ApplyOptions {
     ApplyOptions {
+        profile: peer(&to.conn, &from.id).unwrap().unwrap().profile,
         peer_id: Some(from.id.clone()),
         peer_name: from.name.clone(),
         allow_mass_delete: false,
@@ -221,10 +234,11 @@ fn opts(to: &Device, from: &Device) -> ApplyOptions {
 
 /// `to` pulls every change of `from`, page by page, acknowledging each.
 fn pull_with(to: &Device, from: &Device, limit: usize, allow: bool) -> Result<()> {
-    capture(&from.conn, from.now)?;
+    capture(&from.conn, from.now, &bound_profiles(&from.conn)?)?;
+    let sent_profile = peer(&from.conn, &to.id)?.unwrap().profile;
     loop {
         let after = peer(&to.conn, &from.id)?.unwrap().last_seq_received;
-        let batch = changes_since(&from.conn, after, limit)?;
+        let batch = changes_since(&from.conn, sent_profile, after, limit)?;
         // Over the wire as JSON, like the link layer will send it.
         let bytes = serde_json::to_vec(&batch).unwrap();
         let batch = Batch::from_json(&bytes)?;
@@ -282,8 +296,8 @@ fn replicated(conn: &Connection) -> Replicated {
             .unwrap()
     };
     Replicated {
-        favorites: rows::all_favorites(conn).unwrap(),
-        playlists: rows::all_playlists(conn)
+        favorites: rows::all_favorites(conn, ProfileId::FIRST).unwrap(),
+        playlists: rows::all_playlists(conn, ProfileId::FIRST)
             .unwrap()
             .into_iter()
             .map(|r| r.rec)
@@ -326,7 +340,7 @@ fn dump(conn: &Connection) -> Vec<String> {
 /// Local tables equal the view of the sync tables (materialised state).
 fn assert_materialized(d: &Device) {
     let res = Resolver::load(&d.conn).unwrap();
-    let want_favs: BTreeSet<String> = rows::all_favorites(&d.conn)
+    let want_favs: BTreeSet<String> = rows::all_favorites(&d.conn, ProfileId::FIRST)
         .unwrap()
         .into_iter()
         .filter(|f| f.on)
@@ -335,9 +349,9 @@ fn assert_materialized(d: &Device) {
         .collect();
     assert_eq!(d.favorite_keys(), want_favs, "{} favourites", d.name);
 
-    let map = rows::playlist_map(&d.conn).unwrap();
+    let map = rows::playlist_map(&d.conn, ProfileId::FIRST).unwrap();
     let mut want: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
-    for row in rows::all_playlists(&d.conn).unwrap() {
+    for row in rows::all_playlists(&d.conn, ProfileId::FIRST).unwrap() {
         assert!(row.reconciled, "{} has unreconciled playlists", d.name);
         if row.rec.deleted {
             continue;
@@ -601,14 +615,17 @@ fn missing_track_is_not_an_unfavourite() {
     a.tick(1000);
     a.remove(&SONGS[0]);
     a.capture();
-    let rec = rows::get_favorite(&a.conn, &key_of(&SONGS[0]))
+    let rec = rows::get_favorite(&a.conn, ProfileId::FIRST, &key_of(&SONGS[0]))
         .unwrap()
         .unwrap();
     assert!(rec.on, "a missing song is not an unfavourite");
     assert_eq!(
-        rows::live_entries(&a.conn, &rows::playlist_map(&a.conn).unwrap()[&pl])
-            .unwrap()
-            .len(),
+        rows::live_entries(
+            &a.conn,
+            &rows::playlist_map(&a.conn, ProfileId::FIRST).unwrap()[&pl]
+        )
+        .unwrap()
+        .len(),
         3
     );
     b.tick(1000);
@@ -790,8 +807,8 @@ fn image_covers_stay_local() {
     // Deleting it elsewhere reports the orphaned image instead of deleting it.
     b.tick(1000);
     db::delete_playlist(&b.conn, ProfileId::FIRST, bid).unwrap();
-    capture(&b.conn, b.now).unwrap();
-    let batch = changes_since(&b.conn, 0, 1000).unwrap();
+    capture(&b.conn, b.now, &[ProfileId::FIRST]).unwrap();
+    let batch = changes_since(&b.conn, ProfileId::FIRST, 0, 1000).unwrap();
     let report = apply(&a.conn, &batch, &opts(&a, &b)).unwrap();
     assert_eq!(
         report.orphan_covers,
@@ -1019,8 +1036,8 @@ fn apply_is_idempotent_and_order_independent() {
     c.create("From C", &SONGS[4..7]);
     a.capture();
     c.capture();
-    let from_a = changes_since(&a.conn, 0, 1000).unwrap();
-    let from_c = changes_since(&c.conn, 0, 1000).unwrap();
+    let from_a = changes_since(&a.conn, ProfileId::FIRST, 0, 1000).unwrap();
+    let from_c = changes_since(&c.conn, ProfileId::FIRST, 0, 1000).unwrap();
 
     let b1 = Device::new("B1");
     let b2 = Device::new("B2");
@@ -1029,7 +1046,7 @@ fn apply_is_idempotent_and_order_independent() {
     }
     let o = |d: &Device| ApplyOptions {
         now_ms: d.now,
-        ..ApplyOptions::default()
+        ..default_opts()
     };
     apply(&b1.conn, &from_a, &o(&b1)).unwrap();
     apply(&b1.conn, &from_c, &o(&b1)).unwrap();
@@ -1249,7 +1266,7 @@ fn run_convergence(n_devices: usize, seed: u64, steps: usize) {
         .collect();
     let view = |d: &Device| {
         let favs: BTreeSet<String> = d.favorite_keys().intersection(&common).cloned().collect();
-        let map = rows::playlist_map(&d.conn).unwrap();
+        let map = rows::playlist_map(&d.conn, ProfileId::FIRST).unwrap();
         let res = Resolver::load(&d.conn).unwrap();
         let lists: BTreeMap<String, (String, Vec<String>)> =
             db::playlists(&d.conn, ProfileId::FIRST)
@@ -1297,7 +1314,7 @@ fn sample_batch() -> (Device, Batch) {
     a.listen(&SONGS[0], 1);
     a.tick(1);
     a.capture();
-    let batch = changes_since(&a.conn, 0, 1000).unwrap();
+    let batch = changes_since(&a.conn, ProfileId::FIRST, 0, 1000).unwrap();
     (a, batch)
 }
 
@@ -1348,7 +1365,7 @@ fn validation_rejects_bad_batches_and_applies_nothing() {
             batch,
             &ApplyOptions {
                 now_ms: b.now,
-                ..ApplyOptions::default()
+                ..default_opts()
             },
         );
         assert!(matches!(err, Err(SyncError::Invalid(_))), "{what}: {err:?}");
@@ -1363,7 +1380,7 @@ fn validation_rejects_bad_batches_and_applies_nothing() {
     // A batch from ourselves or claiming another sender is refused.
     let (a, own) = sample_batch();
     assert!(matches!(
-        apply(&a.conn, &own, &ApplyOptions::default()),
+        apply(&a.conn, &own, &default_opts()),
         Err(SyncError::Invalid(_))
     ));
 }
@@ -1416,11 +1433,12 @@ fn mass_delete_guard_stops_and_allow_applies() {
     // `plan` reports the same without writing.
     let batch = changes_since(
         &a.conn,
+        ProfileId::FIRST,
         peer(&b.conn, &a.id).unwrap().unwrap().last_seq_received,
         1000,
     )
     .unwrap();
-    let p = plan(&b.conn, &batch, b.now).unwrap();
+    let p = plan(&b.conn, ProfileId::FIRST, &batch, b.now).unwrap();
     assert!(p.guard.is_some() && p.changes_anything());
     assert_eq!(dump(&b.conn), before);
     pull_with(&b, &a, 1000, true).unwrap();
@@ -1499,7 +1517,7 @@ fn changes_are_paged_in_seq_order() {
     let mut seen = 0;
     let mut pages = 0;
     loop {
-        let page = changes_since(&a.conn, after, 2).unwrap();
+        let page = changes_since(&a.conn, ProfileId::FIRST, after, 2).unwrap();
         assert!(page.len() <= 2);
         seen += page.len();
         pages += 1;
@@ -1511,14 +1529,18 @@ fn changes_are_paged_in_seq_order() {
     }
     assert_eq!(seen, total);
     assert!(pages >= total / 2);
-    assert!(changes_since(&a.conn, after, 10).unwrap().is_empty());
+    assert!(
+        changes_since(&a.conn, ProfileId::FIRST, after, 10)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
 fn peers_store_watermarks_and_hide_secrets() {
     let d = Device::new("A");
     let other = "b".repeat(32);
-    upsert_peer(&d.conn, &other, "Phone", b"top-secret").unwrap();
+    upsert_peer(&d.conn, &other, "Phone", b"top-secret", ProfileId::FIRST).unwrap();
     ack_sent(&d.conn, &other, 10).unwrap();
     ack_sent(&d.conn, &other, 4).unwrap();
     let p = peer(&d.conn, &other).unwrap().unwrap();
@@ -1528,7 +1550,7 @@ fn peers_store_watermarks_and_hide_secrets() {
     assert_eq!(peers(&d.conn).unwrap().len(), 1);
     assert!(remove_peer(&d.conn, &other).unwrap());
     assert!(ack_sent(&d.conn, &other, 1).is_err());
-    assert!(upsert_peer(&d.conn, "bad", "x", b"").is_err());
+    assert!(upsert_peer(&d.conn, "bad", "x", b"", ProfileId::FIRST).is_err());
 }
 
 #[test]
@@ -1549,7 +1571,7 @@ fn backups_are_rate_limited_and_rotated() {
     let v: i64 = copy
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 14);
+    assert_eq!(v, 15);
     // Close it: Windows cannot delete a file that is still open, and the
     // rotation below removes this oldest backup.
     drop(copy);
@@ -1645,6 +1667,374 @@ fn migration_backfills_listen_uids() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 14);
+        assert_eq!(v, 15);
+    }
+}
+
+// --- per-profile sync (K24) ---------------------------------------------------
+
+impl Device {
+    fn add_profile(&self, name: &str) -> ProfileId {
+        crate::library::profiles::create_profile(&self.conn, name, 1)
+            .unwrap()
+            .id
+    }
+
+    fn pfavorite(&self, p: ProfileId, s: &Song) {
+        let id = self.id_of(s);
+        db::toggle_favorite(&self.conn, p, id, self.secs()).unwrap();
+    }
+
+    fn pcreate(&mut self, p: ProfileId, name: &str, songs: &[Song]) -> i64 {
+        let ids: Vec<i64> = songs.iter().map(|s| self.id_of(s)).collect();
+        let now = self.secs();
+        db::create_playlist(&mut self.conn, p, name, &ids, now)
+            .unwrap()
+            .id
+    }
+
+    fn plisten(&self, p: ProfileId, s: &Song, at: i64) {
+        db::record_listen_event(
+            &self.conn,
+            p,
+            &NewListenEvent {
+                path: Self::path(s),
+                title: s.title.into(),
+                artist: s.artist.into(),
+                duration_ms: Some(200_000),
+                started_at: at,
+                ended_at: at + 200,
+                listened_ms: 200_000,
+                completed: true,
+                skipped: false,
+            },
+        )
+        .unwrap();
+    }
+
+    /// A profile's favourites as track keys.
+    fn pfavorite_keys(&self, p: ProfileId) -> BTreeSet<String> {
+        let res = Resolver::load(&self.conn).unwrap();
+        db::favorites(&self.conn, p)
+            .unwrap()
+            .iter()
+            .map(|f| res.track(f.track_id).unwrap().key.clone())
+            .collect()
+    }
+
+    /// A profile's playlists: name -> song keys in order.
+    fn pplaylists(&self, p: ProfileId) -> BTreeMap<String, Vec<String>> {
+        let res = Resolver::load(&self.conn).unwrap();
+        db::playlists(&self.conn, p)
+            .unwrap()
+            .into_iter()
+            .map(|pl| {
+                let keys = super::local::entries(&self.conn, pl.id)
+                    .unwrap()
+                    .iter()
+                    .map(|(t, _)| res.track(*t).unwrap().key.clone())
+                    .collect();
+                (pl.name, keys)
+            })
+            .collect()
+    }
+
+    /// A profile's local listens: titles, sorted.
+    fn plistens(&self, p: ProfileId) -> Vec<String> {
+        let mut st = self
+            .conn
+            .prepare("SELECT title FROM listen_events WHERE profile_id = ?1 ORDER BY title")
+            .unwrap();
+        st.query_map([p.0], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    fn count(&self, sql: &str, p: ProfileId) -> i64 {
+        self.conn.query_row(sql, [p.0], |r| r.get(0)).unwrap()
+    }
+}
+
+/// `a` has two profiles and pairs `b` with its profile `bound`; `b` (one
+/// profile) is bound to its own profile 1.
+fn pair_bound(a: &Device, b: &Device, bound: ProfileId) {
+    upsert_peer(&a.conn, &b.id, &b.name, b"secret-ab", bound).unwrap();
+    upsert_peer(&b.conn, &a.id, &a.name, b"secret-ab", ProfileId::FIRST).unwrap();
+}
+
+#[test]
+fn a_pairing_syncs_only_its_bound_profile() {
+    let mut a = Device::new("A");
+    let mut b = Device::new("B");
+    a.add_all(&SONGS);
+    b.add_all(&SONGS);
+    let (p1, p2) = (ProfileId::FIRST, a.add_profile("Second"));
+    // Profile 1 of A has its own taste; profile 2 is the one B syncs with.
+    a.pfavorite(p1, &SONGS[0]);
+    a.pcreate(p1, "Private mix", &[SONGS[0], SONGS[1]]);
+    a.plisten(p1, &SONGS[0], 1_000);
+    a.pfavorite(p2, &SONGS[1]);
+    a.pcreate(p2, "Shared mix", &[SONGS[2], SONGS[3]]);
+    a.plisten(p2, &SONGS[2], 2_000);
+    b.toggle(&SONGS[4]);
+    b.create("From B", &[SONGS[5]]);
+    b.listen(&SONGS[5], 3_000);
+    pair_bound(&a, &b, p2);
+
+    // Nothing of profile 1 is in any batch A sends.
+    a.tick(1000);
+    capture(&a.conn, a.now, &bound_profiles(&a.conn).unwrap()).unwrap();
+    assert_eq!(bound_profiles(&a.conn).unwrap(), vec![p2]);
+    let out = changes_since(&a.conn, p2, 0, 1000).unwrap();
+    let wire = serde_json::to_string(&out).unwrap();
+    for leaked in [
+        "Private mix",
+        &key_of(&SONGS[0]),
+        &key_of(&SONGS[1]),
+        "Sinnerman",
+    ] {
+        assert!(!wire.contains(leaked), "leaked {leaked}");
+    }
+    assert_eq!(out.listens.len(), 1);
+    assert_eq!(out.listens[0].title, SONGS[2].title);
+    assert!(
+        changes_since(&a.conn, p1, 0, 1000).unwrap().is_empty(),
+        "profile 1 was never captured for sync"
+    );
+
+    sync(&a, &b);
+    a.tick(1000);
+    sync(&a, &b);
+
+    // Profile 2 and B converge.
+    let want_favs: BTreeSet<String> = [key_of(&SONGS[1]), key_of(&SONGS[4])].into();
+    assert_eq!(a.pfavorite_keys(p2), want_favs);
+    assert_eq!(b.favorite_keys(), want_favs);
+    assert_eq!(
+        a.pplaylists(p2).keys().collect::<Vec<_>>(),
+        vec!["From B", "Shared mix"]
+    );
+    assert_eq!(a.pplaylists(p2), b.playlists());
+    let both = vec![SONGS[5].title.to_owned(), SONGS[2].title.to_owned()];
+    assert_eq!(a.plistens(p2), both);
+    assert_eq!(b.plistens(ProfileId::FIRST), both);
+
+    // Profile 1 is exactly as it was.
+    assert_eq!(
+        a.pfavorite_keys(p1),
+        [key_of(&SONGS[0])].into_iter().collect()
+    );
+    assert_eq!(
+        a.pplaylists(p1).keys().collect::<Vec<_>>(),
+        vec!["Private mix"]
+    );
+    assert_eq!(a.plistens(p1), vec![SONGS[0].title.to_owned()]);
+    for table in [
+        "sync_favorites",
+        "sync_playlists",
+        "sync_playlist_entries",
+        "sync_listens",
+    ] {
+        assert_eq!(
+            a.count(
+                &format!("SELECT COUNT(*) FROM {table} WHERE profile_id = ?1"),
+                p1
+            ),
+            0,
+            "{table} has profile 1 rows"
+        );
+    }
+
+    // Later edits on both sides keep converging, and still never touch
+    // profile 1.
+    a.tick(1000);
+    a.pfavorite(p2, &SONGS[1]); // un-favourite
+    a.pfavorite(p1, &SONGS[6]);
+    b.tick(1000);
+    b.toggle(&SONGS[7]);
+    sync(&a, &b);
+    a.tick(1000);
+    sync(&a, &b);
+    assert_eq!(a.pfavorite_keys(p2), b.favorite_keys());
+    assert!(!a.pfavorite_keys(p2).contains(&key_of(&SONGS[1])));
+    assert_eq!(
+        a.pfavorite_keys(p1),
+        [key_of(&SONGS[0]), key_of(&SONGS[6])].into_iter().collect()
+    );
+}
+
+#[test]
+fn every_bound_profile_is_captured_when_a_song_reappears() {
+    let mut a = Device::new("A");
+    let (b, c) = (Device::new("B"), Device::new("C"));
+    a.add_all(&SONGS);
+    let (p1, p2) = (ProfileId::FIRST, a.add_profile("Second"));
+    // B is bound to profile 1, C to profile 2.
+    upsert_peer(&a.conn, &b.id, &b.name, b"s1", p1).unwrap();
+    upsert_peer(&b.conn, &a.id, &a.name, b"s1", p1).unwrap();
+    upsert_peer(&a.conn, &c.id, &c.name, b"s2", p2).unwrap();
+    upsert_peer(&c.conn, &a.id, &a.name, b"s2", p1).unwrap();
+    a.pfavorite(p1, &SONGS[0]);
+    a.pfavorite(p2, &SONGS[0]);
+    a.pcreate(p2, "List", &[SONGS[0], SONGS[1]]);
+    let bound = bound_profiles(&a.conn).unwrap();
+    assert_eq!(bound, vec![p1, p2]);
+    capture(&a.conn, a.now, &bound).unwrap();
+
+    // The song disappears (an unplugged drive): its rows cascade out of
+    // both profiles and capture, which sees it absent, keeps the sync state.
+    a.remove(&SONGS[0]);
+    a.tick(1000);
+    capture(&a.conn, a.now, &bound).unwrap();
+    assert!(a.pfavorite_keys(p1).is_empty() && a.pfavorite_keys(p2).is_empty());
+    // It comes back. The sync with B captures *all* bound profiles, so
+    // profile 2 is restored as well, not read as an unfavourite.
+    a.add(&SONGS[0]);
+    b.add_all(&SONGS);
+    a.tick(1000);
+    pull(&a, &b);
+    let want: BTreeSet<String> = [key_of(&SONGS[0])].into();
+    assert_eq!(a.pfavorite_keys(p1), want);
+    assert_eq!(a.pfavorite_keys(p2), want);
+    assert_eq!(a.pplaylists(p2)["List"], keys(&[SONGS[0], SONGS[1]]));
+    // And nothing was stamped as removed for either profile.
+    assert_eq!(
+        a.count(
+            "SELECT COUNT(*) FROM sync_favorites WHERE profile_id = ?1 AND is_on = 0",
+            p2
+        ),
+        0
+    );
+    a.tick(1000);
+    assert_eq!(
+        capture(&a.conn, a.now, &bound).unwrap(),
+        CaptureReport::default()
+    );
+}
+
+#[test]
+fn deleting_a_bound_profile_removes_its_pairing_and_sync_rows() {
+    let mut a = Device::new("A");
+    let (b, c) = (Device::new("B"), Device::new("C"));
+    a.add_all(&SONGS);
+    b.add_all(&SONGS);
+    c.add_all(&SONGS);
+    let (p1, p2) = (ProfileId::FIRST, a.add_profile("Second"));
+    upsert_peer(&a.conn, &b.id, &b.name, b"s1", p1).unwrap();
+    upsert_peer(&b.conn, &a.id, &a.name, b"s1", p1).unwrap();
+    upsert_peer(&a.conn, &c.id, &c.name, b"s2", p2).unwrap();
+    upsert_peer(&c.conn, &a.id, &a.name, b"s2", p1).unwrap();
+    set_peer_address(&a.conn, &c.id, "127.0.0.1:1").unwrap();
+    a.pfavorite(p1, &SONGS[0]);
+    a.pfavorite(p2, &SONGS[1]);
+    a.pcreate(p2, "Two", &[SONGS[2]]);
+    a.plisten(p2, &SONGS[2], 5_000);
+    pull(&c, &a);
+    pull(&b, &a);
+    assert_eq!(peers(&a.conn).unwrap().len(), 2);
+
+    crate::library::profiles::delete_profile(&mut a.conn, p2, p1).unwrap();
+
+    let left: Vec<String> = peers(&a.conn)
+        .unwrap()
+        .into_iter()
+        .map(|p| p.device_id)
+        .collect();
+    assert_eq!(left, vec![b.id.clone()]);
+    for table in [
+        "sync_favorites",
+        "sync_playlists",
+        "sync_playlist_entries",
+        "sync_listens",
+    ] {
+        assert_eq!(
+            a.count(
+                &format!("SELECT COUNT(*) FROM {table} WHERE profile_id = ?1"),
+                p2
+            ),
+            0,
+            "{table}"
+        );
+    }
+    // Profile 1's pairing and rows are untouched.
+    assert_eq!(bound_profiles(&a.conn).unwrap(), vec![p1]);
+    assert_eq!(
+        a.count(
+            "SELECT COUNT(*) FROM sync_favorites WHERE profile_id = ?1",
+            p1
+        ),
+        1
+    );
+    // Capture still works afterwards (stale playlist-map rows are ignored).
+    a.tick(1000);
+    capture(&a.conn, a.now, &[p1]).unwrap();
+    assert_eq!(a.pfavorite_keys(p1), [key_of(&SONGS[0])].into());
+}
+
+#[test]
+fn migration_v14_to_v15_keeps_sync_rows_in_profile_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("v14.sqlite3");
+    {
+        let conn = Connection::open(&path).unwrap();
+        db::init(&conn).unwrap();
+        // Rebuild the sync tables as v14 had them (no profile columns) and
+        // fill them.
+        conn.execute_batch(
+            "DROP TABLE sync_favorites; DROP TABLE sync_playlists;
+             DROP TABLE sync_playlist_entries; DROP TABLE sync_listens;
+             DROP TABLE sync_playlist_map; DROP TABLE sync_peers; DROP TABLE sync_present;
+             DROP TABLE sync_meta;",
+        )
+        .unwrap();
+        conn.execute_batch(db::SCHEMA_V13).unwrap();
+        conn.execute_batch(
+            "INSERT INTO sync_favorites VALUES ('k1','T','A','B',1,1,'h1',1), ('k2','T','A','B',1,0,'h2',2);
+             INSERT INTO sync_playlists VALUES ('u1','N','h','preset:x','h',0,'h',1,1,3);
+             INSERT INTO sync_playlist_entries VALUES
+                 ('e1','u1','k1','T','A','B',1,1,'m','h',0,'h',4);
+             INSERT INTO sync_listens VALUES
+                 ('l1','k1','T','A','B','',1,'/p',1,2,3,1,0,5);
+             INSERT INTO sync_peers(device_id, name, secret, last_seq_sent, last_seq_received)
+                 VALUES ('0f1e2d3c4b5a69788796a5b4c3d2e1f0', 'Phone', x'01', 4, 7);
+             PRAGMA user_version = 14;",
+        )
+        .unwrap();
+    }
+    for _ in 0..2 {
+        let conn = Connection::open(&path).unwrap();
+        db::init(&conn).unwrap();
+        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        for table in [
+            "sync_favorites",
+            "sync_playlists",
+            "sync_playlist_entries",
+            "sync_listens",
+            "sync_peers",
+        ] {
+            let total = count(&format!("SELECT COUNT(*) FROM {table}"));
+            let first = count(&format!(
+                "SELECT COUNT(*) FROM {table} WHERE profile_id = 1"
+            ));
+            assert!(total > 0 && total == first, "{table}: {first}/{total}");
+        }
+        assert_eq!(count("SELECT COUNT(*) FROM sync_favorites"), 2);
+        let p = peers(&conn).unwrap();
+        assert_eq!(p[0].profile, ProfileId::FIRST);
+        assert_eq!((p[0].last_seq_sent, p[0].last_seq_received), (4, 7));
+        let batch = changes_since(&conn, ProfileId::FIRST, 0, 100).unwrap();
+        assert_eq!(batch.len(), 5);
+        assert!(
+            changes_since(&conn, ProfileId(2), 0, 100)
+                .unwrap()
+                .is_empty()
+        );
+        // (profile_id, key) is the favourites key now.
+        let pk: i64 =
+            count("SELECT COUNT(*) FROM pragma_table_info('sync_favorites') WHERE pk > 0");
+        assert_eq!(pk, 2);
+        assert_eq!(count("PRAGMA user_version"), 15);
+        assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     }
 }

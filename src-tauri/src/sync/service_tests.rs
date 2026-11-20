@@ -1062,12 +1062,12 @@ fn a_phone_with_two_profiles_pairs_with_two_computers_and_follows_the_profile() 
         wait_for!("computer A", phone.connected(&to_a.id).await);
         wait_for!("computer B to be left", !phone.connected(&to_b.id).await);
         favorite_in(&phone, one, &[3]);
-        let before = phone.rounds(&to_a.id).await;
         phone.svc.sync_now().await.unwrap();
-        wait_for!("a round with A", phone.rounds(&to_a.id).await > before);
-        assert_eq!(
-            profile_favorites(&pc_a, ProfileId::FIRST),
-            title_set(&[0, 1, 2, 3])
+        // Wait for the edit, not for "a round": the reconnect's round can end
+        // after the edit without carrying it.
+        wait_for!(
+            "the edit on computer A",
+            profile_favorites(&pc_a, ProfileId::FIRST) == title_set(&[0, 1, 2, 3])
         );
         assert_eq!(
             profile_favorites(&pc_b, ProfileId::FIRST),
@@ -1142,10 +1142,14 @@ fn two_phone_profiles_pair_with_the_same_computer_as_two_phones() {
             !phone.connected(&second.id).await
         );
         favorite_in(&phone, phone_one, &[2]);
-        let before = phone.rounds(&first.id).await;
         phone.svc.sync_now().await.unwrap();
-        wait_for!("a round", phone.rounds(&first.id).await > before);
-        assert_eq!(profile_favorites(&pc, pc_one), title_set(&[0, 1, 2]));
+        // Not "the next round ended": the round started by the reconnect can
+        // end after the edit without carrying it; the one asked for here
+        // follows it.
+        wait_for!(
+            "the edit on the computer",
+            profile_favorites(&pc, pc_one) == title_set(&[0, 1, 2])
+        );
         assert_eq!(profile_favorites(&pc, pc_two), title_set(&[7, 8]));
 
         // The computer removes profile 2's phone: profile 1 keeps syncing.

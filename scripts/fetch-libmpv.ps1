@@ -3,33 +3,59 @@
   Downloads the LGPL libmpv build for Windows into src-tauri/lib.
 
 .DESCRIPTION
-  Picks the newest "mpv-dev-lgpl-x86_64-<date>-git-<hash>.7z" asset from
+  Downloads one PINNED "mpv-dev-lgpl-x86_64-<date>-git-<hash>.7z" asset from
   zhongfly/mpv-winbuild (the plain x86_64 build, not "v3", which needs newer
-  CPU instructions), extracts libmpv-2.dll and creates the MSVC import
-  library mpv.lib that the Rust build links against.
+  CPU instructions), verifies its SHA-256 against the value pinned in this
+  script (it throws on mismatch, before extraction), extracts libmpv-2.dll
+  and creates the MSVC import library mpv.lib that the Rust build links
+  against.
+
+  Supply chain: the DLL ships inside every Windows installer, so the release
+  tag, asset name and hash are pinned in $Pins below. CI never uses -Latest.
+
+  To bump: run with -Latest, review the release, then paste the printed
+  Tag / Asset / Sha256 into $Pins and commit.
 
   Works with Windows PowerShell 5.1 and PowerShell 7. Needs the MSVC build
   tools (already required by Rust on Windows) and either the built-in
   tar.exe with 7z support or 7-Zip (winget install 7zip.7zip).
 
+.PARAMETER Latest
+  Maintainer opt-in: resolve the newest release instead of the pin, download
+  it, print its tag, asset name and SHA-256 for pasting into $Pins, and stop
+  (nothing is extracted or installed). Never use this in CI.
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts/fetch-libmpv.ps1
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File scripts/fetch-libmpv.ps1 -Latest
 #>
 param(
     [string]$Dest = (Join-Path $PSScriptRoot '..\src-tauri\lib'),
     [string]$Arch = 'x86_64',
-    [switch]$Force
+    [switch]$Force,
+    [switch]$Latest
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# Pinned libmpv builds, one entry per architecture (bump with -Latest).
+$Pins = @{
+    'x86_64' = @{
+        Tag    = '2026-11-20-94127e1e1a'
+        Asset  = 'mpv-dev-lgpl-x86_64-20261120-git-94127e1e1a.7z'
+        Sha256 = '67a2af9f5b6479475cdb412d480ee445fd87c678ea75de5a74de5211175a8132'
+    }
+}
+
 $Dest = [IO.Path]::GetFullPath($Dest)
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 $dllOut = Join-Path $Dest 'libmpv-2.dll'
 $libOut = Join-Path $Dest 'mpv.lib'
-if ((Test-Path $dllOut) -and (Test-Path $libOut) -and -not $Force) {
+if ((Test-Path $dllOut) -and (Test-Path $libOut) -and -not $Force -and -not $Latest) {
     Write-Host "libmpv already present in $Dest (use -Force to re-download)."
     exit 0
 }
@@ -37,13 +63,30 @@ if ((Test-Path $dllOut) -and (Test-Path $libOut) -and -not $Force) {
 # --- 1. Find the release asset -------------------------------------------
 $headers = @{ 'User-Agent' = 'neomodern-fetch-libmpv'; 'Accept' = 'application/vnd.github+json' }
 if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)" }
-$release = Invoke-RestMethod -Headers $headers -Uri 'https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest'
+$repoApi = 'https://api.github.com/repos/zhongfly/mpv-winbuild/releases'
 $pattern = "^mpv-dev-lgpl-$Arch-\d{8}-git-[0-9a-f]+\.7z$"
-$asset = $release.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
+$expectedSha = $null
+if ($Latest) {
+    $release = Invoke-RestMethod -Headers $headers -Uri "$repoApi/latest"
+    $asset = $release.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
+} else {
+    $pin = $Pins[$Arch]
+    if (-not $pin -or $pin.Sha256 -notmatch '^[0-9a-fA-F]{64}$') {
+        throw "No valid libmpv pin for architecture '$Arch'. Run with -Latest and paste the result into `$Pins."
+    }
+    # The pinned file is fetched by its fixed URL (no API call, no rate
+    # limit); the hash check below is what makes it trustworthy.
+    $release = [pscustomobject]@{ tag_name = $pin.Tag; assets = @() }
+    $asset = [pscustomobject]@{
+        name                 = $pin.Asset
+        browser_download_url = "https://github.com/zhongfly/mpv-winbuild/releases/download/$($pin.Tag)/$($pin.Asset)"
+    }
+    $expectedSha = $pin.Sha256
+}
 if (-not $asset) {
     Write-Host "Assets in release $($release.tag_name):"
     $release.assets | ForEach-Object { Write-Host "  $($_.name)" }
-    throw "No asset matches $pattern"
+    throw "No matching libmpv asset found in release $($release.tag_name)"
 }
 Write-Host "Using $($asset.name) from release $($release.tag_name)"
 
@@ -53,6 +96,19 @@ New-Item -ItemType Directory -Force -Path $work | Out-Null
 try {
     $archive = Join-Path $work $asset.name
     Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent' = 'neomodern-fetch-libmpv' } -Uri $asset.browser_download_url -OutFile $archive
+    $actualSha = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLowerInvariant()
+    if ($Latest) {
+        Write-Host ''
+        Write-Host 'Paste into $Pins (after reviewing the release):'
+        Write-Host "  Tag    = '$($release.tag_name)'"
+        Write-Host "  Asset  = '$($asset.name)'"
+        Write-Host "  Sha256 = '$actualSha'"
+        exit 0
+    }
+    if ($actualSha -ne $expectedSha.ToLowerInvariant()) {
+        throw "SHA-256 mismatch for $($asset.name): expected $expectedSha, got $actualSha. Refusing to extract."
+    }
+    Write-Host "SHA-256 verified: $actualSha"
     $extract = Join-Path $work 'x'
     New-Item -ItemType Directory -Force -Path $extract | Out-Null
 

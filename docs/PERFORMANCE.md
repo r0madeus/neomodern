@@ -1,6 +1,6 @@
 # Large-library performance
 
-Measurement only: nothing here has been optimised yet. The benchmark is
+The benchmark is
 `src-tauri/src/library/large_library.rs` (ignored by default).
 
 ## Run it
@@ -81,45 +81,78 @@ Rescan: 0.036 ms/file first scan, 0.002 ms/file unchanged, so about 1.8 s and
 0.1 s for 50 000 files. Caveat: tiny files in a warm OS cache; a real library
 on a cold disk or network share will be dominated by `stat` and tag reads.
 
-## Slow spots and proposed fixes
+## Optimisation round 1 (library queries, per-profile)
 
-UI waits above 100 ms, background work above 1 s. Causes marked "likely" were
-inferred from the SQL and plans, not profiled.
+The results table above is the first measurement (before profiles existed).
+Once every query was per profile, the same benchmark (`NM_BENCH_SKIP_SYNC=1`
+stops before the sync steps) was slower in places and one query never
+finished; the "before" column is that run, "after" is the same benchmark
+after this round. Median ms, 50 000 tracks, 200 000 listens, release build.
 
-1. **Stats view, 0.4-3.1 s** (`listening_stats`, grows with the period).
-   It runs ~10 aggregate queries over `listen_events`, each with
-   `(?1 IS NULL OR started_at >= ?1)` (SQLite cannot use the `started_at`
-   index for an `OR ?param IS NULL` range, likely) and
-   `GROUP BY LOWER(title), LOWER(artist)` (temp B-tree), plus `streak_stats`
-   with `julianday()` per row. Fix: build the SQL with the range bounds only
-   when present (or use `COALESCE(?1, -1<<62)` bounds) so the index range is
-   used; group by `track_id` where set; compute streak days from
-   `SELECT DISTINCT started_at / 86400` buckets. Optionally cache the result
-   per library version.
-2. **Home feed 2.1 s** on every Home open. Four mix queries plus recent
-   lists over `listen_events` (mix detail alone is ~50 ms, so the feed does
-   far more than four mixes' worth, likely repeated recent/"rediscover"
-   scans). Fix: load the lists lazily or in parallel, cache by library
-   version, and make the mix count queries cheap (count only, no track
-   rows).
-3. **Artist directory 110 ms at the top, 340 ms deep.** Plan: `SCAN ta USING
-   COVERING INDEX track_artists_artist`, two `count(DISTINCT)` temp
-   B-trees, `ORDER BY` temp B-tree, and two correlated `listen_events`
-   scans per artist group (`artist = ... COLLATE NOCASE`). The whole
-   `track_artists` table is grouped before `LIMIT`. Fix: page the artist
-   names first (`SELECT DISTINCT artist ... LIMIT/OFFSET`), then compute
-   counts and plays only for those 100 names; or keep an `artists` summary
-   table updated at scan time. The artist profile (~120 ms) has the same
-   per-artist event scans.
-4. **Songs, deep pages 170-270 ms** (offset 45 000), and sort by duration.
-   Plans: `SCAN t USING INDEX idx_tracks_album_added` + `USE TEMP B-TREE FOR
-   ORDER BY` (album, duration), `SCAN t USING INDEX tracks_added` (added).
-   OFFSET walks and the `plays` subqueries run for skipped rows, and
-   several sorts lack a matching index (`LEFT JOIN albums` plus
-   `COLLATE NOCASE` columns). Fix: keyset pagination (remember the last sort
-   key), or select ids first in a subquery and compute `plays` only for the
-   100 returned rows; add an index on `duration_ms`.
-5. **Sync rounds are heavy even when idle: ~0.6 s every round.**
+| Operation | Before | After |
+|---|---:|---:|
+| songs page @45000, sort artist | 170 | 5 |
+| songs page @45000, sort title | 248 | 4 |
+| songs page @45000, sort album | 173 | 70 |
+| songs page @45000, sort duration | 229 | 4 |
+| songs page @45000, sort added | 51 | 4 |
+| songs page @0, any sort | 21-24 / 2.6 | 21-23 / 2-3 |
+| artist directory @0 / @2000 / search | 119 / 329 / 29 | 11 / 11 / 11 |
+| artist profile (prolific / median) | 362 / 356 | 39 / 36 |
+| listening_stats 7 days | 2949 | 76 |
+| listening_stats 30 days | 3125 | 163 |
+| listening_stats 90 days | 3406 | 284 |
+| listening_stats last year | 3763 | 406 |
+| listening_stats this year | 4151 | 588 |
+| listening_stats all time | 4892 | 901 |
+| home_feed | did not finish (> 39 CPU-minutes) | 290 |
+| home_mix_detail (weekly) | 51 | 28 |
+
+What changed (all results identical, checked by `library/db_perf_tests.rs`
+against the old SQL on a seeded two-profile library, order included):
+
+- **Songs.** The page's ids are chosen first (sort + OFFSET on minimal
+  columns), then rows and `plays` are computed for those 100 ids only. New
+  indexes `tracks_title_artist`, `tracks_title_desc`, `tracks_duration_asc`,
+  `tracks_duration_desc` let title and duration sorts read the index in
+  order. A deep artist-sorted page finds the artist at the offset and the
+  number of tracks before it from the `(artist, title)` index and sorts only
+  the tracks from that artist on (`deep_artist_page`).
+- **Artist directory.** The page of names is selected first (index-only
+  scan), counts and plays are computed for those names only; new covering
+  index `listen_events_profile_artist_plays`. The profile totals use
+  `track_id IN (...)` instead of a per-event `EXISTS`.
+- **Stats.** Range bounds are written into the SQL only when present, so the
+  `(profile_id, started_at)` range is used (the `?1 IS NULL OR ...` form made
+  every query scan the whole profile). The numeric parts (summary sums, hour,
+  weekday, month, active days, streaks) come from one ordered pass summed per
+  15-minute window, with the local offset looked up once per window instead
+  of `strftime(..., 'localtime')` per event; years are found by index hops.
+  Events are grouped once into a small temp table (by track id and names), and
+  the track, artist, album and genre lists are aggregated from that. Path and
+  cover of the few listed tracks are looked up afterwards. New covering index
+  `listen_events_profile_stats` (about 15 MB at 200 000 listens).
+- **Home feed.** Rediscover is set-based (it ran a full scan of the listens
+  per track: minutes at this size); recently played tracks and albums walk
+  the newest plays and stop at the limit; the weekly, on-repeat and focus
+  mixes aggregate events by track id from the covering index (events whose
+  id was lost are resolved by path in a second select) and load track rows,
+  with `plays`, only for the final handful.
+
+Not reached: the 90-day stats (284 ms, target 150), all-time stats (901 ms,
+target 300) and the album-sorted deep songs page (70 ms, target 60). What is
+left in stats is the grouping of 50 000+ (track, name) groups in SQLite's
+temp b-trees for the all-time range; going lower needs the grouping done in
+one Rust pass over the covering index, or per-day summary rows kept up to
+date (a schema change). Album sort needs the album columns in the sort key;
+a boundary trick like the artist one, or a denormalised sort key, would do it.
+The benchmark's listens are inserted in random time order, so index-order
+reads of the old non-covering indexes were random I/O; real histories are
+mostly chronological and were cheaper than measured here.
+
+## Slow spots still open
+
+1. **Sync rounds are heavy even when idle: ~0.6 s every round.**
    `Resolver::load` (200 ms, loads all 50 000 tracks and builds keys) runs in
    every `capture`, `plan` and `apply` (apply with a backup runs it three
    times); idle capture is 585 ms, `plan` 620 ms. The first capture is

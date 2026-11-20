@@ -1005,6 +1005,15 @@ fn large_library_benchmark() {
         lib.genre_tracks(&genre).unwrap()
     });
 
+    // `NM_BENCH_SKIP_SYNC=1` stops before the sync steps (library queries only).
+    if std::env::var_os("NM_BENCH_SKIP_SYNC").is_some() {
+        rep.print_table();
+        if std::env::var_os("NM_BENCH_KEEP").is_some() {
+            println!("kept: {}", tmp.keep().display());
+        }
+        return;
+    }
+
     // --- sync ----------------------------------------------------------
     let backups = tmp.path().join("backups");
     {

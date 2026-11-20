@@ -292,23 +292,36 @@ pub fn apply(conn: &Connection, batch: &Batch, opts: &ApplyOptions) -> Result<Ap
             return Err(SyncError::MassDelete(Box::new(plan)));
         }
         let merged = merge::run(&mut ctx, batch)?;
-        if !batch.more {
-            reconcile::run(&mut ctx, &res, &opts.peer_name)?;
-        }
+        let reconciled = !batch.more && reconcile::run(&mut ctx, &res, &opts.peer_name)?;
         let materialized = materialize::run(&ctx, &res, &merged.new_listens)?;
         if let Some(peer) = &opts.peer_id {
             peers::mark_received(&tx, peer, batch.upto_seq, opts.now_ms)?;
         }
         ctx.save()?;
         tx.commit()?;
-        ApplyReport {
-            plan,
-            merged: merged.stats,
-            local_changed: captured.local_changed || materialized.changed,
-            orphan_covers: materialized.orphan_covers,
-        }
+        // An idle round (the periodic sync with nothing new on either side)
+        // writes only bookkeeping (clock, watermark); the full-database
+        // `quick_check` is then skipped, so it does not hold the library
+        // lock every ten minutes for nothing.
+        let wrote_data = !batch.is_empty()
+            || captured.stamped > 0
+            || captured.local_changed
+            || reconciled
+            || materialized.changed;
+        (
+            ApplyReport {
+                plan,
+                merged: merged.stats,
+                local_changed: captured.local_changed || materialized.changed,
+                orphan_covers: materialized.orphan_covers,
+            },
+            wrote_data,
+        )
     };
-    quick_check(conn)?;
+    let (report, wrote_data) = report;
+    if wrote_data {
+        quick_check(conn)?;
+    }
     Ok(report)
 }
 

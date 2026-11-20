@@ -31,7 +31,7 @@ pub fn queue_append(player: State<'_, Arc<Player>>, paths: Vec<String>) -> Res<P
     s(player.append(to_paths(paths)))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_play_next(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -49,7 +49,7 @@ pub fn queue_play_next(
 }
 
 /// Several tracks to play next, keeping their order.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_play_next_many(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -70,7 +70,7 @@ pub fn queue_play_next_many(
 }
 
 /// "Add to queue" (Spotify order: after earlier adds, before the rest).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_add(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -233,7 +233,7 @@ fn le<T>(r: Result<T, crate::library::LibraryError>) -> Res<T> {
     r.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_add_folder(lib: State<'_, Arc<Library>>, path: String) -> Res<Vec<FolderInfo>> {
     let id = le(lib.add_folder(&path))?;
     let folders = le(lib.folders())?;
@@ -242,7 +242,7 @@ pub fn library_add_folder(lib: State<'_, Arc<Library>>, path: String) -> Res<Vec
 }
 
 /// Cached cover of the album containing `path` (the playing track in the UI).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_track_cover(
     lib: State<'_, Arc<Library>>,
     online: State<'_, Arc<OnlineService>>,
@@ -531,7 +531,7 @@ pub async fn app_welcome(
 }
 
 /// Marks the welcome as finished (or skipped) so it is not shown again.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_finish_welcome(store: State<'_, Arc<SessionStore>>, player: State<'_, Arc<Player>>) {
     store.set_welcome_done(true);
     store.save_now(&player.export_session());
@@ -728,24 +728,24 @@ pub async fn android_save_text(app: tauri::AppHandle, name: String, text: String
     Ok(s.saved)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_remove_folder(lib: State<'_, Arc<Library>>, id: i64) -> Res<Vec<FolderInfo>> {
     le(lib.remove_folder(id))?;
     le(lib.folders())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_folders(lib: State<'_, Arc<Library>>) -> Res<Vec<FolderInfo>> {
     le(lib.folders())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_rescan(lib: State<'_, Arc<Library>>) -> Res<()> {
     lib.start_scan(le(lib.folders())?);
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_stats(lib: State<'_, Arc<Library>>) -> Res<LibraryStats> {
     le(lib.stats())
 }
@@ -772,7 +772,7 @@ pub async fn library_tracks_page(
     .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_track_by_path(lib: State<'_, Arc<Library>>, path: String) -> Res<Option<TrackRow>> {
     le(lib.track_row_by_path(&path))
 }
@@ -840,7 +840,7 @@ pub async fn library_clear_album_cover(
     Ok(row)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_play_album(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -851,7 +851,7 @@ pub fn library_play_album(
     s(player.replace_queue_from(paths, start_index, Some(format!("album:{album_id}"))))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_play_all(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -880,12 +880,12 @@ fn playlists_changed(app: &AppHandle) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlists_list(lib: State<'_, Arc<Library>>) -> Res<Vec<PlaylistInfo>> {
     le(lib.playlists())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_create(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -897,7 +897,7 @@ pub fn playlist_create(
     Ok(info)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_rename(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -909,7 +909,7 @@ pub fn playlist_rename(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_delete(app: AppHandle, lib: State<'_, Arc<Library>>, id: i64) -> Res<()> {
     le(lib.delete_playlist(id))?;
     playlists_changed(&app);
@@ -933,7 +933,7 @@ pub async fn playlist_set_cover_file(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_set_cover_preset(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -945,14 +945,14 @@ pub fn playlist_set_cover_preset(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_clear_cover(app: AppHandle, lib: State<'_, Arc<Library>>, id: i64) -> Res<()> {
     le(lib.clear_playlist_cover(id))?;
     playlists_changed(&app);
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_tracks(
     lib: State<'_, Arc<Library>>,
     id: i64,
@@ -962,7 +962,7 @@ pub fn playlist_tracks(
     le(lib.playlist_tracks(id, offset, limit))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_add_tracks(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -974,7 +974,7 @@ pub fn playlist_add_tracks(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_add_album(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -986,7 +986,7 @@ pub fn playlist_add_album(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_remove(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -999,13 +999,13 @@ pub fn playlist_remove(
 }
 
 /// Playlists that contain the track (for the "Saved in" list).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlists_with_track(lib: State<'_, Arc<Library>>, track_id: i64) -> Res<Vec<i64>> {
     le(lib.playlists_with_track(track_id))
 }
 
 /// Takes every entry of the track out of the playlist.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_remove_track(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -1017,7 +1017,7 @@ pub fn playlist_remove_track(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_move(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -1030,7 +1030,7 @@ pub fn playlist_move(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_play(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -1044,13 +1044,13 @@ pub fn playlist_play(
 /// Saves the current queue as a playlist. Queue entries that are not in the
 /// library are skipped; the result says how many.
 /// The playlist as M3U text (Android saves it through the system picker).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_export_m3u(lib: State<'_, Arc<Library>>, id: i64) -> Res<String> {
     le(lib.export_m3u(id))
 }
 
 /// Writes the playlist as an M3U file (desktop, path from a save dialog).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_export_m3u_file(lib: State<'_, Arc<Library>>, id: i64, path: String) -> Res<()> {
     let valid_ext = std::path::Path::new(&path)
         .extension()
@@ -1064,7 +1064,7 @@ pub fn playlist_export_m3u_file(lib: State<'_, Arc<Library>>, id: i64, path: Str
 }
 
 /// Creates a playlist from M3U text (Android, read through the picker).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_import_m3u(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -1077,7 +1077,7 @@ pub fn playlist_import_m3u(
 }
 
 /// Creates a playlist from an M3U file (desktop); named after the file.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_import_m3u_file(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -1095,7 +1095,7 @@ pub fn playlist_import_m3u_file(
     Ok(imported)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn playlist_from_queue(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -1191,7 +1191,7 @@ pub fn app_settings(
     app_settings_now(&store, &tray)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_set_close_to_tray(
     store: State<'_, Arc<SessionStore>>,
     tray: State<'_, TrayStatus>,
@@ -1203,7 +1203,7 @@ pub fn app_set_close_to_tray(
     app_settings_now(&store, &tray)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_set_lyrics_save(
     store: State<'_, Arc<SessionStore>>,
     tray: State<'_, TrayStatus>,
@@ -1215,7 +1215,7 @@ pub fn app_set_lyrics_save(
     app_settings_now(&store, &tray)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_set_autoplay(
     store: State<'_, Arc<SessionStore>>,
     tray: State<'_, TrayStatus>,
@@ -1227,7 +1227,7 @@ pub fn app_set_autoplay(
     app_settings_now(&store, &tray)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_set_lyrics_netease(
     store: State<'_, Arc<SessionStore>>,
     tray: State<'_, TrayStatus>,
@@ -1239,7 +1239,7 @@ pub fn app_set_lyrics_netease(
     app_settings_now(&store, &tray)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_set_offline_mode(
     store: State<'_, Arc<SessionStore>>,
     tray: State<'_, TrayStatus>,
@@ -1253,7 +1253,7 @@ pub fn app_set_offline_mode(
 
 /// Switches one internet feature (`lyrics`, `online`, `artistInfo`,
 /// `metadata`, `updates`).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_set_net_feature(
     store: State<'_, Arc<SessionStore>>,
     tray: State<'_, TrayStatus>,
@@ -1529,7 +1529,7 @@ pub async fn lyrics_share(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lyrics_share_cancel(lyrics: State<'_, Arc<LyricsService>>) {
     lyrics.cancel_share();
 }
@@ -1742,7 +1742,7 @@ pub async fn online_play_tracks(
     Ok(snap)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn online_download_track(
     store: State<'_, Arc<SessionStore>>,
     lib: State<'_, Arc<Library>>,
@@ -1763,7 +1763,7 @@ pub fn online_download_track(
     res.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn online_download_album(
     store: State<'_, Arc<SessionStore>>,
     lib: State<'_, Arc<Library>>,
@@ -1783,19 +1783,19 @@ pub fn online_download_album(
     res.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn online_downloads(online: State<'_, Arc<OnlineService>>) -> Vec<DownloadJob> {
     online.downloads()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn online_cancel_download(online: State<'_, Arc<OnlineService>>, id: u64) -> Vec<DownloadJob> {
     online
         .cancel_download(id)
         .unwrap_or_else(|| online.downloads())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn online_clear_finished(online: State<'_, Arc<OnlineService>>) -> Vec<DownloadJob> {
     online.clear_finished()
 }
@@ -1860,7 +1860,7 @@ fn resolve_pinned(store: &SessionStore, lib: &Library) -> Res<Vec<PinnedEntry>> 
     Ok(out)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pinned_list(
     store: State<'_, Arc<SessionStore>>,
     lib: State<'_, Arc<Library>>,
@@ -1868,7 +1868,7 @@ pub fn pinned_list(
     resolve_pinned(&store, &lib)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pinned_toggle(
     app: AppHandle,
     store: State<'_, Arc<SessionStore>>,
@@ -1897,12 +1897,12 @@ fn favorites_changed(app: &AppHandle) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn favorites_list(lib: State<'_, Arc<Library>>) -> Res<Vec<FavoriteRef>> {
     le(lib.favorites())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn favorites_toggle(app: AppHandle, lib: State<'_, Arc<Library>>, track_id: i64) -> Res<bool> {
     let added = le(lib.toggle_favorite(track_id))?;
     favorites_changed(&app);
@@ -1910,7 +1910,7 @@ pub fn favorites_toggle(app: AppHandle, lib: State<'_, Arc<Library>>, track_id: 
 }
 
 /// Adds (`favorite`) or removes several tracks at once; returns how many changed.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn favorites_set_many(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -1922,7 +1922,7 @@ pub fn favorites_set_many(
     Ok(n)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn favorites_toggle_by_path(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
@@ -1933,7 +1933,7 @@ pub fn favorites_toggle_by_path(
     Ok(added)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn favorites_tracks_page(
     lib: State<'_, Arc<Library>>,
     offset: u64,
@@ -1942,7 +1942,7 @@ pub fn favorites_tracks_page(
     le(lib.favorites_page(offset, limit))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn favorites_play(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -1968,7 +1968,7 @@ pub async fn history_stats(
         .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn history_clear(app: AppHandle, lib: State<'_, Arc<Library>>) -> Res<u64> {
     let removed = le(lib.clear_listen_history())?;
     let _ = app.emit("library://history", ());
@@ -2005,7 +2005,7 @@ pub async fn library_artist_profile(
         .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_play_artist(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -2036,7 +2036,7 @@ pub async fn library_genre_detail(
         .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_genre_tracks_page(
     lib: State<'_, Arc<Library>>,
     name: String,
@@ -2046,7 +2046,7 @@ pub fn library_genre_tracks_page(
     le(lib.genre_tracks_page(&name, offset, limit))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_play_genre(
     lib: State<'_, Arc<Library>>,
     player: State<'_, Arc<Player>>,
@@ -2086,14 +2086,14 @@ pub async fn artist_enrich_all(
     .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn artist_enrich_status(
     online: State<'_, Arc<OnlineService>>,
 ) -> crate::online::ArtistScanProgress {
     online.artist_scan_status()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn artist_enrich_cancel(online: State<'_, Arc<OnlineService>>) {
     online.cancel_artist_scan();
 }
@@ -2142,7 +2142,7 @@ pub async fn library_play_mix(
     .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_save_mix_playlist(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,

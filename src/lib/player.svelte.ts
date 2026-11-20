@@ -119,6 +119,9 @@ class PlayerStore {
     if (typeof document !== 'undefined' && !this.#visibilityBound) {
       this.#visibilityBound = true
       document.addEventListener('visibilitychange', () => {
+        // While hidden the webview freezes the page; the backend stops sending
+        // position updates so they do not pile up (src-tauri/src/ui.rs).
+        void invoke('app_set_visible', { visible: document.visibilityState !== 'hidden' }).catch(() => {})
         if (document.visibilityState === 'hidden') {
           cancelAnimationFrame(this.#frame)
           this.#frame = 0

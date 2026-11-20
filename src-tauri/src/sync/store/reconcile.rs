@@ -20,12 +20,13 @@ use super::key::Resolver;
 use super::rows::{self, PlaylistRow};
 use super::{MAX_NAME_CHARS, PlaylistRecord, Result};
 
-pub(super) fn run(ctx: &mut Ctx<'_>, res: &Resolver, peer_name: &str) -> Result<()> {
+/// Returns whether any playlist was waiting to be reconciled (rows written).
+pub(super) fn run(ctx: &mut Ctx<'_>, res: &Resolver, peer_name: &str) -> Result<bool> {
     let all = rows::all_playlists(ctx.conn)?;
     let (pending, settled): (Vec<PlaylistRow>, Vec<PlaylistRow>) =
         all.into_iter().partition(|row| !row.reconciled);
     if pending.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let mut shown: Vec<PlaylistRecord> = settled
         .into_iter()
@@ -68,7 +69,7 @@ pub(super) fn run(ctx: &mut Ctx<'_>, res: &Resolver, peer_name: &str) -> Result<
             }
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 fn fold(name: &str) -> String {

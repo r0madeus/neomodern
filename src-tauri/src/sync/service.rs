@@ -44,7 +44,13 @@ pub struct TauriSink(pub tauri::AppHandle);
 
 impl EventSink for TauriSink {
     fn emit(&self, event: &str, payload: serde_json::Value) {
-        use tauri::Emitter;
+        use tauri::{Emitter, Manager};
+        // High-rate events wait while the page is hidden (see `crate::ui`).
+        if let Some(ui) = self.0.try_state::<Arc<crate::ui::UiVisibility>>()
+            && !ui.wants(event)
+        {
+            return;
+        }
         if let Err(e) = self.0.emit(event, payload) {
             log::warn!("failed to emit {event}: {e}");
         }

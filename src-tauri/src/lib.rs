@@ -15,6 +15,7 @@ pub mod session;
 // PC <-> phone sync and remote control (docs/SYNC.md).
 pub mod sync;
 pub mod tray;
+mod ui;
 pub mod update;
 
 #[cfg(not(target_os = "android"))]
@@ -95,6 +96,8 @@ pub fn run() {
             // The phone remote's view of the player (docs/SYNC.md).
             let remote_feed = sync::RemoteFeed::new();
             let observer_feed = remote_feed.clone();
+            let ui_visibility = Arc::new(ui::UiVisibility::default());
+            app.manage(Arc::clone(&ui_visibility));
             let player = Arc::new(Player::new(
                 Box::new(audio::NetGuardedEngine::new(
                     Box::new(engine),
@@ -139,7 +142,16 @@ pub fn run() {
                                 observer_session
                                     .maybe_save_progress(qv, idx, pos, || p.export_session());
                             }
-                            handle.emit("player://position", PositionPayload { seconds, duration })
+                            // Not while the page is hidden: the webview would
+                            // queue them and run them all on return (see `ui`).
+                            if ui_visibility.visible() {
+                                handle.emit(
+                                    "player://position",
+                                    PositionPayload { seconds, duration },
+                                )
+                            } else {
+                                Ok(())
+                            }
                         }
                         PlayerEvent::Listen(rec) => {
                             if let Some(lib) = handle.try_state::<Arc<Library>>() {
@@ -322,6 +334,7 @@ pub fn run() {
         })
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            ui::app_set_visible,
             commands::queue_replace,
             commands::queue_append,
             commands::queue_play_next,

@@ -672,3 +672,45 @@ async fn the_server_caps_sessions_and_stop_closes_everything() {
     let refused = tokio::net::TcpStream::connect(addr).await;
     assert!(refused.is_err());
 }
+
+#[tokio::test]
+async fn one_address_cannot_take_every_slot() {
+    let listener = bind(0).await.unwrap().with_per_address_limit(2);
+    let port = listener.port();
+    let r = Arc::new(responder(Arc::new(PairingWindow::new())));
+    let server = listener.serve(MAX_SESSIONS, move |stream, _peer, _stop| {
+        let r = Arc::clone(&r);
+        async move {
+            if let Ok(Accepted::Session(mut s)) = accept(stream, &r).await {
+                while let Ok(m) = s.recv().await {
+                    if s.send(&m).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+
+    // Two silent connections (no handshake) from the same address...
+    let _a = dial(addr, Duration::from_secs(1)).await.unwrap();
+    let _b = dial(addr, Duration::from_secs(1)).await.unwrap();
+    wait_until(|| server.active_connections() == 2).await;
+    // ...and a third from it is closed at once, although slots are free.
+    let mut extra = dial(addr, Duration::from_secs(1)).await.unwrap();
+    let mut buf = [0u8; 1];
+    let n = tokio::time::timeout(Duration::from_secs(2), extra.read(&mut buf))
+        .await
+        .expect("closed promptly")
+        .unwrap_or(0);
+    assert_eq!(n, 0);
+    assert_eq!(server.active_connections(), 2);
+
+    // When one ends, the address may connect again.
+    drop(_a);
+    wait_until(|| server.active_connections() < 2).await;
+    let mut s = connect(addr, &phone().id, &PC_SECRET).await.unwrap();
+    s.send(b"ok").await.unwrap();
+    assert_eq!(s.recv().await.unwrap(), b"ok");
+    server.shutdown().await;
+}

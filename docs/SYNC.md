@@ -197,7 +197,7 @@ the home network, a stolen phone.
   the secret and closes its session. The phone can "Forget this PC".
 - **Exposure limits**: accept only private/link-local/loopback source
   addresses (RFC 1918, 100.64/10 excluded, fc00::/7, fe80::/10); at most 4
-  sessions; handshake must finish in 5 s; frames ≤ 1 MiB (big batches are
+  sessions, at most 2 from one address; handshake must finish in 5 s; frames ≤ 1 MiB (big batches are
   paged); idle timeout 60 s with keep-alive; 20 commands/s per session.
 - **Whitelist**: the remote protocol is a closed `enum` of messages
   (`deny_unknown_fields`). No message carries a file path that the PC

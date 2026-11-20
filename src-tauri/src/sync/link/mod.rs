@@ -46,6 +46,10 @@ pub const PROTOCOL_VERSION: u16 = 1;
 pub const DEFAULT_PORT: u16 = 47_321;
 /// Most simultaneous connections the desktop serves (docs/SYNC.md).
 pub const MAX_SESSIONS: usize = 4;
+/// Most simultaneous connections from one address: a phone needs at most two
+/// (a new session while the old one times out, or pairing next to a
+/// session), and one device cannot fill every slot.
+pub const MAX_PER_ADDRESS: usize = 2;
 /// The opening frame and the Noise handshake must finish within this.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// The whole pairing exchange (after the opening frame) must finish within

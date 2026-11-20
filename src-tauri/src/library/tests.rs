@@ -2593,3 +2593,60 @@ fn albums_sort_by_title_and_artists_a_to_z_with_the_turkish_letters_in_place() {
         .collect();
     assert_eq!(second, ["Mazhar", "Sezen Aksu", "Ufuk"]);
 }
+
+#[test]
+fn listening_stats_are_reused_until_the_history_changes() {
+    let e = env();
+    scanned_tracks(&e, &["Alpha"]);
+    let track = e
+        .lib
+        .tracks_page(0, 10, SortOrder::Title)
+        .unwrap()
+        .remove(0);
+    let listen = |at: i64| super::NewListenEvent {
+        path: track.path.clone(),
+        title: track.title.clone(),
+        artist: track.artist.clone(),
+        duration_ms: Some(60_000),
+        started_at: at,
+        ended_at: at + 60,
+        listened_ms: 60_000,
+        completed: true,
+        skipped: false,
+    };
+    e.lib.record_listen_event(listen(1_700_000_000)).unwrap();
+
+    let first = e.lib.listening_stats(None, None).unwrap();
+    assert_eq!(first.summary.play_count, 1);
+    // Asked again: the same answer (from the kept copy).
+    assert_eq!(e.lib.listening_stats(None, None).unwrap(), first);
+    // A different range is its own answer.
+    assert_eq!(
+        e.lib
+            .listening_stats(Some(1_800_000_000), None)
+            .unwrap()
+            .summary
+            .play_count,
+        0
+    );
+    // A new listen is never hidden by the kept copy.
+    e.lib.record_listen_event(listen(1_700_000_100)).unwrap();
+    assert_eq!(
+        e.lib
+            .listening_stats(None, None)
+            .unwrap()
+            .summary
+            .play_count,
+        2
+    );
+    // Neither is clearing the history.
+    e.lib.clear_listen_history().unwrap();
+    assert_eq!(
+        e.lib
+            .listening_stats(None, None)
+            .unwrap()
+            .summary
+            .play_count,
+        0
+    );
+}

@@ -1571,7 +1571,7 @@ fn backups_are_rate_limited_and_rotated() {
     let v: i64 = copy
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 16);
+    assert_eq!(v, 17);
     // Close it: Windows cannot delete a file that is still open, and the
     // rotation below removes this oldest backup.
     drop(copy);
@@ -1667,7 +1667,7 @@ fn migration_backfills_listen_uids() {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 16);
+        assert_eq!(v, 17);
     }
 }
 
@@ -2034,7 +2034,7 @@ fn migration_v14_to_v15_keeps_sync_rows_in_profile_one() {
         let pk: i64 =
             count("SELECT COUNT(*) FROM pragma_table_info('sync_favorites') WHERE pk > 0");
         assert_eq!(pk, 2);
-        assert_eq!(count("PRAGMA user_version"), 16);
+        assert_eq!(count("PRAGMA user_version"), 17);
         assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     }
 }

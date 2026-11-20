@@ -1043,6 +1043,33 @@ fn a_phone_with_two_profiles_pairs_with_two_computers_and_follows_the_profile() 
         let to_b = pair_phone(&phone, &pc_b, port_b, ProfileId::FIRST).await;
         assert_ne!(to_a.id, to_b.id);
 
+        // Each computer lists the phone with the profile that paired.
+        let phone_name = |pc: &Dev| {
+            let pc = pc.svc.clone();
+            async move {
+                let peers = pc.status().await.unwrap().peers;
+                peers
+                    .into_iter()
+                    .find(|p| p.kind == "phone")
+                    .map(|p| p.name)
+            }
+        };
+        let names: Vec<String> = phone
+            .lib
+            .profiles()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        assert_eq!(
+            phone_name(&pc_a).await,
+            Some(format!("Pixel \u{b7} {}", names[0]))
+        );
+        assert_eq!(
+            phone_name(&pc_b).await,
+            Some(format!("Pixel \u{b7} {}", names[1]))
+        );
+
         // Pairing profile 2 did not remove profile 1's pairing, and each
         // profile synced only its own data with its own computer.
         assert!(computer_peer(&phone, one).await.is_some());
@@ -1207,4 +1234,14 @@ fn each_phone_profile_has_its_own_link_id_and_a_batch_from_it_is_not_foreign() {
         store::forget_link_device_id(&conn, two).unwrap();
         assert_ne!(store::link_device_id(&conn, two).unwrap(), id2);
     });
+}
+
+#[test]
+fn the_pairing_name_adds_the_profile_only_when_there_are_several() {
+    use super::service::pairing_display_name as name;
+    assert_eq!(name("Pixel", "Melih", 1), "Pixel");
+    assert_eq!(name("Pixel", "Melih", 2), "Pixel \u{b7} Melih");
+    // Long names stay within the link's 200 characters.
+    let long = "x".repeat(300);
+    assert!(name(&long, &long, 3).chars().count() <= 200);
 }

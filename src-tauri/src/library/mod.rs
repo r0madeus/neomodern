@@ -226,6 +226,25 @@ pub struct RecentListen {
     pub source: String,
 }
 
+/// How many answers of [`Library::listening_stats`] are kept.
+const STATS_CACHE_SIZE: usize = 6;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StatsKey {
+    profile: i64,
+    from: Option<i64>,
+    to: Option<i64>,
+    version: u64,
+    listens: i64,
+    newest: i64,
+    hour: u64,
+}
+
+struct StatsCacheEntry {
+    key: StatsKey,
+    value: ListeningStats,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ListeningStats {
@@ -421,6 +440,8 @@ pub struct Library {
     active: AtomicI64,
     /// Wrong PIN guesses per profile: (count, last try) (K25).
     pin_tries: Mutex<HashMap<i64, (u32, std::time::Instant)>>,
+    /// Recent answers of `listening_stats` (see there).
+    stats_cache: Mutex<Vec<StatsCacheEntry>>,
 }
 
 /// Name of the pre-profiles database copy, next to the database.
@@ -472,6 +493,7 @@ impl Library {
             hooks,
             active: AtomicI64::new(ProfileId::FIRST.0),
             pin_tries: Mutex::new(HashMap::new()),
+            stats_cache: Mutex::new(Vec::new()),
         }
     }
 
@@ -1042,8 +1064,62 @@ impl Library {
     }
 
     /// Aggregated listening statistics for the `[from, to)` Unix-second range.
+    ///
+    /// The big ranges cost up to a second on a large history, and the page is
+    /// reopened or switched between ranges far more often than the history
+    /// changes, so the last few answers are kept. An answer is reused only
+    /// while nothing it depends on has changed: the profile, the library
+    /// version (covers and albums come from the library), the number and
+    /// newest id of the profile's listens, and the hour (the streaks count
+    /// up to today).
     pub fn listening_stats(&self, from: Option<i64>, to: Option<i64>) -> Result<ListeningStats> {
-        db::listening_stats(&self.conn(), self.active_profile(), from, to, 15)
+        let profile = self.active_profile();
+        let conn = self.conn();
+        let (listens, newest): (i64, i64) = conn.query_row(
+            "SELECT COUNT(*), COALESCE(MAX(id), 0) FROM listen_events WHERE profile_id = ?1",
+            [profile.0],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let hour = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() / 3600);
+        let key = StatsKey {
+            profile: profile.0,
+            from,
+            to,
+            version: self.version.load(Ordering::SeqCst),
+            listens,
+            newest,
+            hour,
+        };
+        if let Some(hit) = self
+            .stats_cache
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .find(|e| e.key == key)
+        {
+            return Ok(hit.value.clone());
+        }
+        let value = db::listening_stats(&conn, profile, from, to, 15)?;
+        drop(conn);
+        let mut cache = self.stats_cache.lock().unwrap_or_else(|p| p.into_inner());
+        // Answers of an older state are of no use any more.
+        cache.retain(|e| {
+            e.key.profile == key.profile
+                && e.key.version == key.version
+                && e.key.listens == key.listens
+                && e.key.newest == key.newest
+                && e.key.hour == key.hour
+        });
+        if cache.len() >= STATS_CACHE_SIZE {
+            cache.remove(0);
+        }
+        cache.push(StatsCacheEntry {
+            key,
+            value: value.clone(),
+        });
+        Ok(value)
     }
 
     /// Removes all recorded listening history entries and returns rows deleted.

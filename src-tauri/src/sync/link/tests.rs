@@ -936,7 +936,9 @@ async fn discover_validates_and_dedups_replies() {
         targets.push(s.local_addr().unwrap());
         let reply = discovery::reply(id, name, 47_321).unwrap();
         tokio::spawn(async move {
-            let mut buf = [0u8; 64];
+            // Big enough for the padded probe: on Windows a datagram larger
+            // than the buffer is an error, not a truncated read.
+            let mut buf = [0u8; 1024];
             if let Ok((_, from)) = s.recv_from(&mut buf).await {
                 let _ = s.send_to(b"garbage", from).await;
                 for _ in 0..times {

@@ -55,6 +55,11 @@ tauri-plugin-single-instance = "=2.5.5"
 tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["native-tls", "system-proxy"] }
 reqwest = { version = "=0.13.5", default-features = false, features = ["native-tls"] }
 
+# Windows only: reload the page when WebView2's renderer fails
+# (src/webview_guard.rs). Same version Tauri already uses.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "=0.39.1"
+
 # Android: audio through Media3/ExoPlayer (Kotlin plugin), rustls with the
 # Mozilla root store (no OpenSSL to cross-compile, no JNI verifier setup).
 [target.'cfg(target_os = "android")'.dependencies]

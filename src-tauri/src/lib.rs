@@ -17,6 +17,7 @@ pub mod sync;
 pub mod tray;
 mod ui;
 pub mod update;
+mod webview_guard;
 
 #[cfg(not(target_os = "android"))]
 use audio::mpv::{MpvEngine, MpvOptions};
@@ -38,6 +39,9 @@ struct PositionPayload {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything starts a thread or creates the webview.
+    #[cfg(target_os = "linux")]
+    webview_guard::linux_renderer_workaround();
     let builder = tauri::Builder::default();
     // Register single-instance first so a second desktop launch focuses the
     // existing window (also recovers hidden windows when close-to-tray is on
@@ -98,6 +102,11 @@ pub fn run() {
             let observer_feed = remote_feed.clone();
             let ui_visibility = Arc::new(ui::UiVisibility::default());
             app.manage(Arc::clone(&ui_visibility));
+            ui::spawn_watchdog(Arc::clone(&ui_visibility));
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                webview_guard::install(&window);
+            }
             let player = Arc::new(Player::new(
                 Box::new(audio::NetGuardedEngine::new(
                     Box::new(engine),
@@ -335,6 +344,7 @@ pub fn run() {
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
             ui::app_set_visible,
+            ui::app_heartbeat,
             commands::queue_replace,
             commands::queue_append,
             commands::queue_play_next,

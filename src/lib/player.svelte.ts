@@ -101,6 +101,7 @@ class PlayerStore {
   #loadedQueueVersion = -1
   #unmutedVolume = 100
   #visibilityBound = false
+  #heartbeat: ReturnType<typeof setInterval> | null = null
 
   position = $derived.by(() => {
     const { seconds, at } = this.#anchor
@@ -132,6 +133,12 @@ class PlayerStore {
           this.#startClock()
         }
       })
+    }
+    if (typeof document !== 'undefined' && !this.#heartbeat) {
+      // Lets the backend log when the window stops responding (src-tauri/src/ui.rs).
+      this.#heartbeat = setInterval(() => {
+        if (document.visibilityState === 'visible') void invoke('app_heartbeat').catch(() => {})
+      }, 5000)
     }
     await this.#run('player_snapshot')
   }

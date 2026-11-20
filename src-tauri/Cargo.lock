@@ -2598,6 +2598,7 @@ dependencies = [
  "tokio",
  "walkdir",
  "webpki-roots",
+ "webview2-com",
 ]
 
 [[package]]

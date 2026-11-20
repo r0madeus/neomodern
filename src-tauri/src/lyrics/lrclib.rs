@@ -1,7 +1,7 @@
 //! HTTP client for LRCLIB (https://lrclib.net).
 
 use super::{LyricsError, LyricsResult, LyricsSource, TrackQuery, lrc};
-use crate::net::{Feature, NetPolicy};
+use crate::net::{BodyError, Feature, NetPolicy, read_json_limited, read_text_limited};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -13,6 +13,24 @@ const USER_AGENT: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (https://github.com/r0madeus/neomodern)"
 );
+/// A single record, a challenge or an error text.
+const MAX_SMALL_BODY_BYTES: usize = 1024 * 1024;
+/// A search result list.
+const MAX_SEARCH_BODY_BYTES: usize = 4 * 1024 * 1024;
+
+impl From<BodyError> for LyricsError {
+    fn from(e: BodyError) -> Self {
+        match e {
+            BodyError::Http(e) => Self::Http(e),
+            BodyError::Json(e) => Self::Json(e),
+            e @ BodyError::TooLarge { .. } => Self::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
+        }
+    }
+}
+
 const SEARCH_DURATION_TOLERANCE_SECS: f64 = 5.0;
 const LOOSE_DURATION_TOLERANCE_SECS: f64 = 20.0;
 
@@ -214,7 +232,7 @@ impl LrclibClient {
 
         match res.status() {
             StatusCode::OK => {
-                let record: LrclibRecord = res.json().await?;
+                let record: LrclibRecord = read_json_limited(res, MAX_SMALL_BODY_BYTES).await?;
                 if record.has_content() {
                     return Ok(Some(record));
                 }
@@ -238,7 +256,8 @@ impl LrclibClient {
 
         match search_res.status() {
             StatusCode::OK => {
-                let records: Vec<LrclibRecord> = search_res.json().await?;
+                let records: Vec<LrclibRecord> =
+                    read_json_limited(search_res, MAX_SEARCH_BODY_BYTES).await?;
                 Ok(pick_best_match(records, query.duration_secs))
             }
             StatusCode::NOT_FOUND => Ok(None),
@@ -283,7 +302,7 @@ impl LrclibClient {
         if !res.status().is_success() {
             return Err(LyricsError::HttpStatus(res.status().as_u16()));
         }
-        Ok(res.json().await?)
+        Ok(read_json_limited(res, MAX_SMALL_BODY_BYTES).await?)
     }
 
     pub async fn publish(
@@ -303,7 +322,9 @@ impl LrclibClient {
             return Ok(PublishReply::Created);
         }
         if status == StatusCode::BAD_REQUEST {
-            let text = res.text().await.unwrap_or_default();
+            let text = read_text_limited(res, MAX_SMALL_BODY_BYTES)
+                .await
+                .unwrap_or_default();
             if text.contains("PublishToken") || text.to_lowercase().contains("token") {
                 return Ok(PublishReply::BadToken);
             }

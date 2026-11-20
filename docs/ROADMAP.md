@@ -1,6 +1,6 @@
 # NeoModern – status and roadmap
 
-Last updated: 2026-11-14 (evening). The owner's decision notes live in the 2ncibeyn
+Last updated: 2026-11-20. The owner's decision notes live in the 2ncibeyn
 vault (`projects/muzik-calar/`); this file is the in-repo summary for
 contributors and agents.
 
@@ -195,7 +195,7 @@ contributors and agents.
 - **Data**: downloaded album covers, artist pictures and lyrics are kept
   in the data folder (docs/DATA-LAYOUT.md), not lost with the cache.
 
-### PC ↔ phone sync and remote control (K21, experimental, in review)
+### PC ↔ phone sync and remote control (K21, experimental)
 
 - Same Wi-Fi only, off by default (desktop Settings › Phone). Pair once
   with a 6-digit code (SPAKE2), then Noise-encrypted sessions per device.
@@ -205,11 +205,25 @@ contributors and agents.
   validation, one transaction per page, backups, mass-delete question.
 - The phone controls the PC: play/pause, seek, volume, shuffle/repeat,
   "Up next". Design and limits: `docs/SYNC.md`.
-- Not yet tried on real devices (Windows firewall prompt, Android
-  local-network access).
+- Tried on real devices by the owner (2026-11-20): works.
+- Pairing by QR code (K23): the PC shows the code as a QR code with its
+  LAN addresses; the phone scans it (Android, camera asked when scanning).
+  Typing the address and code still works.
+- "Next up" follows the shuffle order (desktop, phone, remote).
+
+### Desktop stability (K22: keep the system webview)
+- No high-rate events while the page is hidden (WebView2 freezes it);
+  a UI watchdog logs stalls; on Windows a failed or hung page renderer is
+  reloaded; on Linux the DMA-BUF renderer is off with the NVIDIA driver.
+- Library commands run off the main thread.
+- HTTP responses are size-capped; at most 2 sync connections per address.
 
 ## Next
 
+0. **Large-library speed** (`docs/PERFORMANCE.md`, 50k tracks / 200k
+   listens): stats view 0.4–3.1 s, home feed 2.1 s, artist directory and
+   deep song pages 0.1–0.3 s, ~0.6 s of sync work per idle round. Fixes
+   are listed there.
 1. **Try metadata matching on real albums** (desktop and phone): the
    MusicBrainz responses so far are recorded fixtures. A live check:
    `cd src-tauri && cargo test live_musicbrainz -- --ignored --nocapture`.

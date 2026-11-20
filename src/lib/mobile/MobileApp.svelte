@@ -14,6 +14,7 @@
   import AlbumsPage from './AlbumsPage.svelte'
   import MixPage from './MixPage.svelte'
   import AlbumPage from './AlbumPage.svelte'
+  import GenrePage from './GenrePage.svelte'
   import ArtistPage from './ArtistPage.svelte'
   import ArtistsPage from './ArtistsPage.svelte'
   import FavoritesPage from './FavoritesPage.svelte'
@@ -53,6 +54,7 @@
     | { type: 'album'; id: number }
     | { type: 'onlineAlbum'; album: OnlineAlbum }
     | { type: 'artist'; name: string }
+    | { type: 'genre'; name: string }
     | { type: 'playlist'; id: number }
     | { type: 'favorites' }
     | { type: 'artists' }
@@ -118,6 +120,7 @@
   const openAlbum = (id: number) => pushSheet({ type: 'album', id })
   const openOnlineAlbum = (album: OnlineAlbum) => pushSheet({ type: 'onlineAlbum', album })
   const openArtist = (name: string) => pushSheet({ type: 'artist', name })
+  const openGenre = (name: string) => pushSheet({ type: 'genre', name })
   const openPlaylist = (id: number) => pushSheet({ type: 'playlist', id })
   const openFavorites = () => pushSheet({ type: 'favorites' })
   const openArtists = () => pushSheet({ type: 'artists' })
@@ -210,7 +213,7 @@
             onOpenRemote={openRemote}
           />
         {:else if tab === 'search'}
-          <SearchTab onOpenAlbum={openAlbum} onOpenOnlineAlbum={openOnlineAlbum} />
+          <SearchTab onOpenAlbum={openAlbum} onOpenOnlineAlbum={openOnlineAlbum} onOpenGenre={openGenre} />
         {:else}
           <LibraryTab
             onOpenPlaylist={openPlaylist}
@@ -255,6 +258,8 @@
           <PlaylistPage id={sheet.id} onBack={popLayer} />
         {:else if sheet.type === 'artist'}
           <ArtistPage name={sheet.name} onBack={popLayer} onOpenAlbum={openAlbum} />
+        {:else if sheet.type === 'genre'}
+          <GenrePage name={sheet.name} onBack={popLayer} onOpenAlbum={openAlbum} />
         {:else if sheet.type === 'album'}
           <AlbumPage albumId={sheet.id} onBack={popLayer} />
         {:else if sheet.type === 'onlineAlbum'}

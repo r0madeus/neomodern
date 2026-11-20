@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { t } from '../i18n.svelte'
+  import { count, t } from '../i18n.svelte'
+  import { genreColor } from '../genreColor'
   import { appSettings } from '../appSettings.svelte'
   import { artists } from '../artists.svelte'
   import Cover from '../Cover.svelte'
@@ -7,7 +8,7 @@
   import TrackDownloadButton from '../TrackDownloadButton.svelte'
   import PageHeader from './PageHeader.svelte'
   import TrackItem from './TrackItem.svelte'
-  import { library, PagedRows } from '../library.svelte'
+  import { library, PagedRows, type GenreRow } from '../library.svelte'
   import {
     downloadProgress,
     isAlbumInLibrary,
@@ -20,10 +21,28 @@
   let {
     onOpenAlbum,
     onOpenOnlineAlbum,
+    onOpenGenre,
   }: {
     onOpenAlbum: (albumId: number) => void
     onOpenOnlineAlbum: (album: OnlineAlbum) => void
+    onOpenGenre: (name: string) => void
   } = $props()
+
+  // "Browse all": the genre cards shown while the search box is empty.
+  let genres = $state<GenreRow[]>([])
+  $effect(() => {
+    void library.stats.version
+    let live = true
+    library
+      .genres()
+      .then((g) => {
+        if (live) genres = g
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  })
 
   const q = $derived(library.debouncedQuery)
   const trimmedQuery = $derived(library.query.trim())
@@ -224,14 +243,40 @@
     {/if}
 
     {#if q === '' && !online.searching && !hasCurrentOnline}
-      <div class="flex min-h-64 flex-col items-center justify-center gap-2 px-10 text-center">
-        <p class="text-lg font-semibold">{t("Search your library")}</p>
-        <p class="text-sm text-zinc-400">
-          {onlineEnabled
-            ? t("Find local songs, artists and albums, or press Enter to search online (Experimental).")
-            : t("Find songs, artists and albums by name.")}
-        </p>
-      </div>
+      {#if genres.length > 0}
+        <h2 class="px-4 pb-3 text-lg font-bold tracking-tight">{t('Browse all')}</h2>
+        <div class="grid grid-cols-2 gap-3 px-4 pb-6">
+          {#each genres as g (g.name)}
+            <button
+              type="button"
+              style="background-color: {genreColor(g.name)}"
+              class="relative flex h-24 flex-col items-start overflow-hidden rounded-lg p-3 text-left text-white shadow-sm active:brightness-90"
+              onclick={() => onOpenGenre(g.name)}
+            >
+              <div class="relative z-10 min-w-0 pr-10">
+                <p class="line-clamp-2 text-[15px] leading-snug font-bold drop-shadow-sm">{g.name}</p>
+                <p class="mt-0.5 text-[11px] text-white/80">{count(g.trackCount, '{n} track', '{n} tracks')}</p>
+              </div>
+              {#if g.cover}
+                <Cover
+                  cover={g.cover}
+                  title={g.name}
+                  class="pointer-events-none absolute -right-3 -bottom-2 size-16 rotate-[24deg] rounded-md shadow-xl shadow-black/45"
+                />
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <div class="flex min-h-64 flex-col items-center justify-center gap-2 px-10 text-center">
+          <p class="text-lg font-semibold">{t("Search your library")}</p>
+          <p class="text-sm text-zinc-400">
+            {onlineEnabled
+              ? t("Find local songs, artists and albums, or press Enter to search online (Experimental).")
+              : t("Find songs, artists and albums by name.")}
+          </p>
+        </div>
+      {/if}
     {:else}
       {#if q !== ''}
         {#if artistList.length > 0}

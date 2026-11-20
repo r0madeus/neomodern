@@ -226,7 +226,7 @@ fn artists_page_reference(
          LEFT JOIN artists_meta am ON am.name_key = ta.artist
          {}
          GROUP BY ta.artist
-         ORDER BY MIN(ta.artist) COLLATE NOCASE
+         ORDER BY MIN(ta.artist) COLLATE neoalpha
          LIMIT ?{} OFFSET ?{}",
         f.where_sql,
         n + 1,

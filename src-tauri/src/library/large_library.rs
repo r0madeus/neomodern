@@ -824,7 +824,7 @@ fn large_library_benchmark() {
                 name,
                 &format!(
                     "SELECT a.id, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) FROM albums a \
-                     WHERE {} AND {} ORDER BY a.album_artist, a.title, a.year, a.id LIMIT 100",
+                     WHERE {} AND {} ORDER BY a.title COLLATE neoalpha, a.album_artist, a.year, a.id LIMIT 100",
                     w("love"),
                     w("night")
                 ),
@@ -867,7 +867,7 @@ fn large_library_benchmark() {
                  FROM track_artists ta JOIN tracks t ON t.id = ta.track_id
                  LEFT JOIN albums a ON a.id = t.album_id
                  LEFT JOIN artists_meta am ON am.name_key = ta.artist
-                 GROUP BY ta.artist ORDER BY MIN(ta.artist) COLLATE NOCASE LIMIT 100 OFFSET 0",
+                 GROUP BY ta.artist ORDER BY MIN(ta.artist) COLLATE neoalpha LIMIT 100 OFFSET 0",
             );
         }
     }

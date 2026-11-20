@@ -2493,3 +2493,103 @@ fn custom_album_cover_survives_rescan_and_resets_cleanly() {
     assert!(!Path::new(&bare_cover).exists());
     assert_eq!(bare_reset.cover, None);
 }
+
+#[test]
+fn albums_sort_by_title_and_artists_a_to_z_with_the_turkish_letters_in_place() {
+    use rusqlite::params;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lib = Library::open(
+        &tmp.path().join("l.sqlite3"),
+        &tmp.path().join("c"),
+        Hooks::none(),
+    )
+    .unwrap();
+    // (album title, album artist): the artists run against the titles'
+    // alphabet, so a sort by artist would give a different list.
+    let albums = [
+        ("Zamanın Ötesi", "Ajda Pekkan"),
+        ("çaresiz", "Mazhar"),
+        ("Cennet", "Zeki Müren"),
+        ("Özgürlük", "Barış Manço"),
+        ("ay", "Sezen Aksu"),
+        ("Şarkılar", "Çigdem"),
+        ("Human After All", "Daft Punk"),
+        ("Ödül", "Ümit Besen"),
+        ("Ocak", "Ufuk"),
+        ("Çile", "Cem"),
+    ];
+    {
+        let conn = lib.conn();
+        conn.execute("INSERT INTO folders(id, path) VALUES (1, '/m')", [])
+            .unwrap();
+        for (i, (title, artist)) in albums.iter().enumerate() {
+            let id = i as i64 + 1;
+            conn.execute(
+                "INSERT INTO albums(id, title, album_artist, year) VALUES (?1, ?2, ?3, 2000)",
+                params![id, title, artist],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO tracks(id, folder_id, path, mtime, size, title, artist, album_id,
+                                    track_no, disc_no, year, duration_ms, genre, added_at)
+                 VALUES (?1, 1, ?2, 1, 1, 'Song', ?3, ?1, 1, 1, 2000, 1000, '', 1)",
+                params![id, format!("/m/{id}.flac"), artist],
+            )
+            .unwrap();
+            super::db::sync_track_artists(&conn, id, artist).unwrap();
+        }
+    }
+    let titles: Vec<String> = lib
+        .albums_page(0, 50)
+        .unwrap()
+        .into_iter()
+        .map(|a| a.title)
+        .collect();
+    assert_eq!(
+        titles,
+        [
+            "ay",
+            "Cennet",
+            "çaresiz",
+            "Çile",
+            "Human After All",
+            "Ocak",
+            "Ödül",
+            "Özgürlük",
+            "Şarkılar",
+            "Zamanın Ötesi",
+        ]
+    );
+
+    let artists: Vec<String> = lib
+        .search_artists_page(0, 50, "")
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(
+        artists,
+        [
+            "Ajda Pekkan",
+            "Barış Manço",
+            "Cem",
+            "Çigdem",
+            "Daft Punk",
+            "Mazhar",
+            "Sezen Aksu",
+            "Ufuk",
+            "Ümit Besen",
+            "Zeki Müren",
+        ]
+    );
+    // Paging keeps the order.
+    let second: Vec<String> = lib
+        .search_artists_page(5, 3, "")
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(second, ["Mazhar", "Sezen Aksu", "Ufuk"]);
+}

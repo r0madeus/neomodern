@@ -410,6 +410,10 @@ pub fn init(conn: &Connection) -> Result<()> {
 /// Like [`init`]; `first_profile_name` names profile 1 when the v14
 /// migration creates it.
 pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> Result<()> {
+    // Album and artist lists sort A to Z with the Turkish letters in their
+    // places (`library::alpha`); every connection registers the collation
+    // before it runs a query.
+    conn.create_collation(super::alpha::COLLATION, super::alpha::compare)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -1202,7 +1206,7 @@ pub fn search_albums_page(
     let n = f.params.len();
     let count_sql = format!("SELECT COUNT(*) FROM albums a {}", f.where_sql);
     let page_sql = format!(
-        "{ALBUM_SELECT} {} ORDER BY a.album_artist, a.title, a.year, a.id LIMIT ?{} OFFSET ?{}",
+        "{ALBUM_SELECT} {} ORDER BY a.title COLLATE neoalpha, a.album_artist, a.year, a.id LIMIT ?{} OFFSET ?{}",
         f.where_sql,
         n + 1,
         n + 2
@@ -2691,7 +2695,7 @@ pub fn search_artists_page(
         "WITH page(name) AS MATERIALIZED (
              SELECT MIN(ta.artist) FROM track_artists ta {}
              GROUP BY ta.artist
-             ORDER BY MIN(ta.artist) COLLATE NOCASE
+             ORDER BY MIN(ta.artist) COLLATE neoalpha
              LIMIT ?{} OFFSET ?{}
          )
          SELECT MIN(ta.artist),
@@ -2712,7 +2716,7 @@ pub fn search_artists_page(
          LEFT JOIN artists_meta am ON am.name_key = ta.artist
          WHERE ta.artist IN (SELECT name FROM page)
          GROUP BY ta.artist
-         ORDER BY MIN(ta.artist) COLLATE NOCASE",
+         ORDER BY MIN(ta.artist) COLLATE neoalpha",
         f.where_sql,
         n + 1,
         n + 2
@@ -2729,13 +2733,13 @@ pub fn search_artists_page(
     })
 }
 
-/// Distinct artist names in the library, sorted case-insensitively.
+/// Distinct artist names in the library, sorted A to Z.
 pub fn all_artist_names(conn: &Connection) -> Result<Vec<String>> {
     let mut st = conn.prepare(
         "SELECT MIN(ta.artist)
          FROM track_artists ta
          GROUP BY ta.artist
-         ORDER BY MIN(ta.artist) COLLATE NOCASE",
+         ORDER BY MIN(ta.artist) COLLATE neoalpha",
     )?;
     let rows = st.query_map([], |r| r.get(0))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

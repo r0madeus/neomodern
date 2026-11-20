@@ -12,11 +12,11 @@ use super::link::{self, Accepted, LocalDevice, PairingStatus, PairingWindow, Res
 use super::protocol::GuardSummary;
 use super::remote::{QueuePage, RemoteCmd, RemoteFeed, RemoteState};
 use super::store;
-use crate::library::Library;
+use crate::library::{Library, ProfileId};
 use crate::player::Player;
 use rusqlite::Connection;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +31,8 @@ const BACKOFF_MAX: Duration = Duration::from_secs(60);
 const CAPTURE_DEBOUNCE: Duration = Duration::from_secs(5);
 /// How long `remote_send` waits for the computer's answer.
 const REMOTE_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long the phone listens for answers to its discovery probe.
+const DISCOVERY_TIMEOUT: Duration = Duration::from_millis(1500);
 /// Longest track key accepted from the UI.
 const MAX_KEY_BYTES: usize = 4096;
 
@@ -44,7 +46,13 @@ pub struct TauriSink(pub tauri::AppHandle);
 
 impl EventSink for TauriSink {
     fn emit(&self, event: &str, payload: serde_json::Value) {
-        use tauri::Emitter;
+        use tauri::{Emitter, Manager};
+        // High-rate events wait while the page is hidden (see `crate::ui`).
+        if let Some(ui) = self.0.try_state::<Arc<crate::ui::UiVisibility>>()
+            && !ui.wants(event)
+        {
+            return;
+        }
         if let Err(e) = self.0.emit(event, payload) {
             log::warn!("failed to emit {event}: {e}");
         }
@@ -92,6 +100,9 @@ pub struct PairingInfo {
     pub state: &'static str,
     pub code: Option<String>,
     pub remaining_secs: Option<u64>,
+    /// While a code is open: the local profile a phone paired with it will
+    /// sync with (the profile that was active when the code was opened).
+    pub profile_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -106,6 +117,10 @@ pub struct PeerStatus {
     pub syncing: bool,
     /// Unix milliseconds of the last applied page from this peer.
     pub last_sync_at: Option<i64>,
+    /// The local profile this pairing syncs (K24).
+    pub profile_name: String,
+    /// Its id (the phone shows the pairing of its active profile, K25).
+    pub profile_id: i64,
     pub last_error: Option<String>,
     /// The mass-delete guard stopped a sync from this peer: ask
     /// "Apply / Skip" (`sync_guard_decide`).
@@ -122,11 +137,24 @@ pub struct SyncStatus {
     pub role: &'static str,
     pub device_id: String,
     pub device_name: String,
+    /// The library's active profile: the phone shows (and connects to) the
+    /// pairing of this profile (K25).
+    pub active_profile: i64,
     pub allow_phone_connections: bool,
     pub listening: Option<Listening>,
     pub pairing: PairingInfo,
     pub peers: Vec<PeerStatus>,
     pub last_result: Option<SyncResult>,
+}
+
+/// A computer the phone found on the network (`sync_discover`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoundComputerInfo {
+    pub device_id: String,
+    pub name: String,
+    /// `ip:port`, ready for `sync_connect_pair`.
+    pub address: String,
 }
 
 /// Returned by `sync_pair_open`: what the "Pair a phone" panel shows.
@@ -137,6 +165,11 @@ pub struct PairingOpen {
     pub addresses: Vec<String>,
     pub port: u16,
     pub remaining_secs: u64,
+    /// The local profile a phone paired with this code will sync with.
+    pub profile_name: String,
+    /// The same code as a QR code with the addresses (K23); `None` if it
+    /// could not be made.
+    pub qr: Option<super::pair_link::PairQr>,
 }
 
 /// Runtime state of one peer (not persisted).
@@ -162,6 +195,8 @@ struct SessionRt {
 struct ServerRt {
     handle: link::ServerHandle,
     port: u16,
+    /// Answers the phone's "who is there?" probes while the listener runs.
+    discovery: Option<link::DiscoveryResponder>,
 }
 
 struct ClientRt {
@@ -178,6 +213,9 @@ struct State {
     sessions: HashMap<String, SessionRt>,
     peers: HashMap<String, PeerRt>,
     client: Option<ClientRt>,
+    /// The profile that was active when the pairing code was opened: the
+    /// phone that pairs with it is bound to it.
+    pairing_profile: Option<ProfileId>,
     remote: Option<RemoteState>,
     last_result: Option<SyncResult>,
     next_session: u64,
@@ -378,6 +416,11 @@ impl Shared {
         });
     }
 
+    /// The computer's last known player state (phone side).
+    pub(super) fn remote_state_now(&self) -> Option<RemoteState> {
+        self.state().remote.clone()
+    }
+
     pub(super) fn set_remote_state(&self, state: Option<RemoteState>) {
         self.state().remote = state;
     }
@@ -485,16 +528,7 @@ impl SyncService {
         if let Err(e) = self.sh.local_device().await {
             log::warn!("sync: no device identity: {e}");
         }
-        match db(&self.sh, |c| {
-            for p in store::peers(c)? {
-                if store::peer_address(c, &p.device_id)?.is_some() {
-                    return Ok(Some(p.device_id));
-                }
-            }
-            Ok(None)
-        })
-        .await
-        {
+        match self.computer_of_active_profile().await {
             Ok(Some(computer)) => self.start_client(computer),
             Ok(None) => {}
             Err(e) => log::warn!("sync: could not read paired devices: {e}"),
@@ -503,6 +537,32 @@ impl SyncService {
             log::warn!("sync: could not listen for phones: {e}");
         }
         self.sh.dirty();
+    }
+
+    /// The `sync_peers` key of the computer the active profile is paired
+    /// with, if any (phone side).
+    async fn computer_of_active_profile(&self) -> Result<Option<String>, String> {
+        let profile = self.sh.lib.active_profile();
+        db(&self.sh, move |c| computer_of(c, profile)).await
+    }
+
+    /// The active profile changed (`profile_switch`): the phone talks to the
+    /// computer its new profile is paired with, or to none (K25). Each
+    /// profile's pairing, data and watermarks stay as they were.
+    pub async fn profile_switched(&self) -> Result<(), String> {
+        let had_client = self.sh.state().client.is_some();
+        if had_client {
+            self.stop_client();
+            self.sh.set_remote_state(None);
+            self.sh.emit("remote://state", &Option::<RemoteState>::None);
+        }
+        if !self.sh.closed.load(Ordering::SeqCst)
+            && let Some(computer) = self.computer_of_active_profile().await?
+        {
+            self.start_client(computer);
+        }
+        self.sh.dirty();
+        Ok(())
     }
 
     /// Stops everything (tests; the app just exits).
@@ -536,7 +596,17 @@ impl SyncService {
         if !link::valid_device_name(&name) {
             return Err("invalid device name".into());
         }
+        let shown = name.clone();
         db(&self.sh, move |c| store::set_device_name(c, &name)).await?;
+        if let Some(d) = self
+            .sh
+            .state()
+            .server
+            .as_ref()
+            .and_then(|s| s.discovery.as_ref())
+        {
+            d.set_name(&shown);
+        }
         self.sh.dirty();
         self.status().await
     }
@@ -566,6 +636,9 @@ impl SyncService {
             };
             self.sh.window.close();
             if let Some(server) = server {
+                if let Some(discovery) = server.discovery {
+                    discovery.shutdown().await;
+                }
                 server.handle.shutdown().await;
             }
         }
@@ -575,6 +648,7 @@ impl SyncService {
 
     async fn start_server(&self) -> Result<(), String> {
         let local = self.sh.local_device().await?;
+        let (discovery_id, discovery_name) = (local.id.clone(), local.name.clone());
         let secrets: HashMap<String, [u8; 32]> = db(&self.sh, |c| {
             Ok(store::peers(c)?
                 .into_iter()
@@ -600,6 +674,7 @@ impl SyncService {
             },
         ));
         let sh = Arc::clone(&self.sh);
+        let listener = listener.with_per_address_limit(link::MAX_PER_ADDRESS);
         let handle = listener.serve(link::MAX_SESSIONS, move |stream, _addr, _stop| {
             let sh = Arc::clone(&sh);
             let responder = Arc::clone(&responder);
@@ -608,7 +683,7 @@ impl SyncService {
                     Ok(Accepted::Paired(p)) => on_paired(&sh, p).await,
                     Ok(Accepted::Session(session)) => {
                         let peer = session.peer_id().to_owned();
-                        let ended = conn::run(Arc::clone(&sh), session, Role::Server).await;
+                        let ended = conn::run(Arc::clone(&sh), session, Role::Server, None).await;
                         if let Err(e) = ended.result {
                             log::info!("sync: session with a phone ended: {e}");
                             sh.set_peer_error(&peer, Some(e));
@@ -622,7 +697,20 @@ impl SyncService {
                 }
             }
         });
-        self.sh.state().server = Some(ServerRt { handle, port });
+        // Best effort: without it the phone just types the address.
+        let discovery =
+            match link::DiscoveryResponder::start(port, port, discovery_id, discovery_name).await {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    log::info!("sync: discovery is off (UDP port {port}): {e}");
+                    None
+                }
+            };
+        self.sh.state().server = Some(ServerRt {
+            handle,
+            port,
+            discovery,
+        });
         Ok(())
     }
 
@@ -635,7 +723,15 @@ impl SyncService {
             .as_ref()
             .map(|s| s.port)
             .ok_or("turn on \"Allow phone connections\" first")?;
+        let profile = self.sh.lib.active_profile();
+        let profile_name = db(&self.sh, move |c| {
+            Ok(store::profile_names(c)?
+                .remove(&profile)
+                .unwrap_or_default())
+        })
+        .await?;
         let code = self.sh.window.open().map_err(|e| e.to_string())?;
+        self.sh.state().pairing_profile = Some(profile);
         let addresses = run_blocking(lan_addresses).await?;
         self.sh.dirty();
         // Tell the UI when the code runs out.
@@ -644,11 +740,19 @@ impl SyncService {
             tokio::time::sleep(link::CODE_TTL + Duration::from_millis(200)).await;
             sh.dirty();
         });
+        let sockets: Vec<SocketAddr> = addresses
+            .iter()
+            .filter_map(|a| a.parse::<std::net::IpAddr>().ok())
+            .map(|ip| SocketAddr::new(ip, port))
+            .collect();
+        let qr = super::pair_link::qr(&super::pair_link::build_link(&code, &sockets));
         Ok(PairingOpen {
             code,
             addresses,
             port,
             remaining_secs: link::CODE_TTL.as_secs(),
+            profile_name,
+            qr,
         })
     }
 
@@ -667,6 +771,60 @@ impl SyncService {
         self.forget_runtime(peer_id);
         self.sh.dirty();
         self.status().await
+    }
+
+    /// A profile was deleted from the library. The database already removed
+    /// its pairings and sync rows (foreign-key cascade); this forgets the
+    /// runtime state of those peers: secrets, sessions, and the phone's
+    /// connection to its computer.
+    pub async fn profile_deleted(&self, profile: ProfileId) -> Result<(), String> {
+        let remaining: HashSet<String> = db(&self.sh, move |c| {
+            store::forget_link_device_id(c, profile)?;
+            c.execute(
+                "DELETE FROM sync_meta WHERE key LIKE 'peer\\_wire:%' ESCAPE '\\'
+                   AND substr(key, 11) NOT IN (SELECT device_id FROM sync_peers)",
+                [],
+            )?;
+            // Pairing addresses of removed peers must not linger either.
+            c.execute(
+                "DELETE FROM sync_meta WHERE key LIKE 'peer_address:%'
+                   AND substr(key, 14) NOT IN (SELECT device_id FROM sync_peers)",
+                [],
+            )?;
+            Ok(store::peers(c)?.into_iter().map(|p| p.device_id).collect())
+        })
+        .await?;
+        let gone: Vec<String> = {
+            let st = self.sh.state();
+            let mut ids: HashSet<String> = st.peers.keys().cloned().collect();
+            ids.extend(st.sessions.keys().cloned());
+            ids.extend(st.client.iter().map(|c| c.peer_id.clone()));
+            ids.extend(
+                self.sh
+                    .secrets
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .keys()
+                    .cloned(),
+            );
+            ids.into_iter()
+                .filter(|id| !remaining.contains(id))
+                .collect()
+        };
+        for id in &gone {
+            self.forget_runtime(id);
+        }
+        {
+            let mut st = self.sh.state();
+            if st.pairing_profile == Some(profile) {
+                st.pairing_profile = None;
+                drop(st);
+                // The open code would bind a profile that no longer exists.
+                self.sh.window.close();
+            }
+        }
+        self.sh.dirty();
+        Ok(())
     }
 
     fn forget_runtime(&self, peer_id: &str) {
@@ -689,27 +847,100 @@ impl SyncService {
 
     // --- client role (phone) ---------------------------------------------
 
+    /// Phone: looks for computers on the local network that allow phone
+    /// connections (about 1.5 s).
+    pub async fn discover(&self) -> Result<Vec<FoundComputerInfo>, String> {
+        if self.sh.server_capable {
+            return Err("only a phone looks for computers".into());
+        }
+        self.discover_at(&link::discovery_targets(link::DEFAULT_PORT))
+            .await
+    }
+
+    pub(super) async fn discover_at(
+        &self,
+        targets: &[SocketAddr],
+    ) -> Result<Vec<FoundComputerInfo>, String> {
+        let found = link::discover(targets, DISCOVERY_TIMEOUT)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(found
+            .into_iter()
+            .map(|f| FoundComputerInfo {
+                device_id: f.device_id,
+                name: f.name,
+                address: f.address.to_string(),
+            })
+            .collect())
+    }
+
+    /// This phone as the computer will know it for the active profile: the
+    /// device name and the profile's own link id (K25).
+    async fn pairing_identity(&self) -> Result<(LocalDevice, ProfileId), String> {
+        let mut local = self.sh.local_device().await?;
+        let profile = self.sh.lib.active_profile();
+        local.id = db(&self.sh, move |c| store::link_device_id(c, profile)).await?;
+        Ok((local, profile))
+    }
+
     /// Pairs with the computer at `address` using the code it shows, then
-    /// stays connected to it. A previously paired computer is forgotten.
+    /// stays connected to it. The active profile's previous
+    /// pairing is forgotten; other profiles' pairings stay (K25).
     pub async fn connect_pair(&self, address: &str, code: &str) -> Result<SyncStatus, String> {
         let addr = parse_address(address)?;
-        let local = self.sh.local_device().await?;
+        let (local, profile) = self.pairing_identity().await?;
         let paired = link::pair_connect(addr, &local, code.trim())
             .await
             .map_err(|e| e.to_string())?;
-        let peer_id = paired.peer_id.clone();
-        let old: Vec<String> = db(&self.sh, move |c| {
+        self.finish_pairing(paired, addr, profile).await
+    }
+
+    /// Pairs with the computer from its scanned QR code (K23): tries the
+    /// addresses in it in order; stops at the first one that answers.
+    pub async fn connect_pair_link(&self, link_text: &str) -> Result<SyncStatus, String> {
+        let parsed = super::pair_link::parse_link(link_text)?;
+        let (local, profile) = self.pairing_identity().await?;
+        let mut last = String::new();
+        for addr in parsed.addresses {
+            match link::pair_connect(addr, &local, &parsed.code).await {
+                Ok(paired) => return self.finish_pairing(paired, addr, profile).await,
+                // Not reachable this way (another network adapter): next one.
+                Err(
+                    e @ (link::LinkError::Io(_)
+                    | link::LinkError::Timeout
+                    | link::LinkError::Closed
+                    | link::LinkError::NotLocalAddress),
+                ) => last = e.to_string(),
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        Err(last)
+    }
+
+    async fn finish_pairing(
+        &self,
+        paired: link::Paired,
+        addr: SocketAddr,
+        profile: ProfileId,
+    ) -> Result<SyncStatus, String> {
+        let (peer_id, old): (String, Vec<String>) = db(&self.sh, move |c| {
+            let key = store::pairing_key(c, &paired.peer_id, profile)?;
             let mut old = Vec::new();
             for p in store::peers(c)? {
-                if p.device_id != paired.peer_id && store::peer_address(c, &p.device_id)?.is_some()
+                if p.device_id != key
+                    && p.profile == profile
+                    && store::peer_address(c, &p.device_id)?.is_some()
                 {
                     store::remove_peer(c, &p.device_id)?;
                     old.push(p.device_id);
                 }
             }
-            store::upsert_peer(c, &paired.peer_id, &paired.peer_name, &paired.secret)?;
-            store::set_peer_address(c, &paired.peer_id, &addr.to_string())?;
-            Ok(old)
+            store::upsert_peer(c, &key, &paired.peer_name, &paired.secret, profile)?;
+            if key != paired.peer_id {
+                store::set_peer_wire_id(c, &key, &paired.peer_id)?;
+            }
+            store::set_peer_address(c, &key, &addr.to_string())?;
+            Ok((key, old))
         })
         .await?;
         for id in old {
@@ -720,7 +951,10 @@ impl SyncService {
             .state()
             .peers
             .insert(peer_id.clone(), PeerRt::default());
-        self.start_client(peer_id);
+        // Only the active profile's pairing keeps a connection.
+        if self.sh.lib.active_profile() == profile {
+            self.start_client(peer_id);
+        }
         self.sh.dirty();
         self.status().await
     }
@@ -754,21 +988,16 @@ impl SyncService {
         self.sh.dirty();
     }
 
-    /// Forgets the paired computer (phone: "Forget this computer").
+    /// Forgets the active profile's paired computer (phone: "Forget this
+    /// computer"); other profiles' pairings stay.
     pub async fn forget(&self) -> Result<SyncStatus, String> {
         let peer = self.sh.state().client.as_ref().map(|c| c.peer_id.clone());
         let peer = match peer {
             Some(p) => p,
-            None => db(&self.sh, |c| {
-                for p in store::peers(c)? {
-                    if store::peer_address(c, &p.device_id)?.is_some() {
-                        return Ok(Some(p.device_id));
-                    }
-                }
-                Ok(None)
-            })
-            .await?
-            .ok_or("no computer is paired")?,
+            None => self
+                .computer_of_active_profile()
+                .await?
+                .ok_or("no computer is paired")?,
         };
         self.remove_peer(&peer).await
     }
@@ -853,7 +1082,10 @@ impl SyncService {
 
     /// Sends one remote command to the computer and waits for its answer.
     pub async fn remote_send(&self, cmd: RemoteCmd) -> Result<(), String> {
-        if matches!(cmd, RemoteCmd::QueuePage { .. }) {
+        if matches!(
+            cmd,
+            RemoteCmd::QueuePage { .. } | RemoteCmd::UpNextPage { .. }
+        ) {
             return self.remote_queue_page_cmd(cmd).await.map(|_| ());
         }
         self.remote_request(cmd).await.map(|_| ())
@@ -864,7 +1096,9 @@ impl SyncService {
         offset: usize,
         limit: usize,
     ) -> Result<QueuePage, String> {
-        self.remote_queue_page_cmd(RemoteCmd::QueuePage { offset, limit })
+        // "Next up" on the phone: play order, `offset` counted from the song
+        // after the current one.
+        self.remote_queue_page_cmd(RemoteCmd::UpNextPage { offset, limit })
             .await
     }
 
@@ -898,6 +1132,16 @@ impl SyncService {
     }
 }
 
+/// The `sync_peers` key of the computer `profile` is paired with.
+fn computer_of(c: &Connection, profile: ProfileId) -> store::Result<Option<String>> {
+    for p in store::peers(c)? {
+        if p.profile == profile && store::peer_address(c, &p.device_id)?.is_some() {
+            return Ok(Some(p.device_id));
+        }
+    }
+    Ok(None)
+}
+
 fn lan_addresses() -> Vec<String> {
     link::lan_ipv4_addresses()
         .into_iter()
@@ -907,7 +1151,16 @@ fn lan_addresses() -> Vec<String> {
 
 async fn on_paired(sh: &Arc<Shared>, p: link::Paired) {
     let (id, name, secret) = (p.peer_id.clone(), p.peer_name.clone(), p.secret);
-    match db(sh, move |c| store::upsert_peer(c, &id, &name, &secret)).await {
+    // The profile that was active when the code was opened.
+    let profile = sh
+        .state()
+        .pairing_profile
+        .unwrap_or_else(|| sh.lib.active_profile());
+    match db(sh, move |c| {
+        store::upsert_peer(c, &id, &name, &secret, profile)
+    })
+    .await
+    {
         Ok(()) => {
             sh.secrets
                 .write()
@@ -936,15 +1189,16 @@ async fn client_loop(
         }
         let id = peer_id.clone();
         let target = db(&sh, move |c| {
-            Ok((
-                store::peer(c, &id)?,
-                store::peer_address(c, &id)?,
-                store::device_id(c)?,
-            ))
+            let peer = store::peer(c, &id)?;
+            let local = match &peer {
+                Some(p) => Some(store::link_device_id(c, p.profile)?),
+                None => None,
+            };
+            Ok((peer, store::peer_address(c, &id)?, local))
         })
         .await;
         let (secret, addr, local_id) = match target {
-            Ok((Some(p), Some(a), local)) => {
+            Ok((Some(p), Some(a), Some(local))) => {
                 match (<[u8; 32]>::try_from(p.secret), parse_address(&a)) {
                     (Ok(s), Ok(a)) => (s, a, local),
                     _ => {
@@ -964,9 +1218,10 @@ async fn client_loop(
         };
         let attempt = {
             let sh = Arc::clone(&sh);
+            let key = peer_id.clone();
             async move {
                 match link::connect(addr, &local_id, &secret).await {
-                    Ok(session) => conn::run(sh, session, Role::Client).await,
+                    Ok(session) => conn::run(sh, session, Role::Client, Some(key)).await,
                     Err(e) => conn::Ended {
                         welcomed: false,
                         result: Err(e.to_string()),
@@ -1036,10 +1291,11 @@ async fn capture_task(sh: Arc<Shared>) {
             continue;
         }
         let res = db(&sh, |c| {
-            if store::peers(c)?.is_empty() {
+            let bound = store::bound_profiles(c)?;
+            if bound.is_empty() {
                 return Ok(false);
             }
-            Ok(store::capture(c, now_ms())?.local_changed)
+            Ok(store::capture(c, now_ms(), &bound)?.local_changed)
         })
         .await;
         match res {
@@ -1055,18 +1311,29 @@ async fn capture_task(sh: Arc<Shared>) {
 async fn build_status(sh: &Arc<Shared>) -> Result<SyncStatus, String> {
     let local = sh.local_device().await?;
     let listening_port = sh.state().server.as_ref().map(|s| s.port);
-    let (peers, addresses) = db(sh, move |c| {
+    let pairing_profile = sh.state().pairing_profile;
+    let (peers, addresses, pairing_profile_name) = db(sh, move |c| {
+        let names = store::profile_names(c)?;
         let mut out = Vec::new();
         for p in store::peers(c)? {
             let addr = store::peer_address(c, &p.device_id)?;
-            out.push((p.device_id, p.name, p.last_sync_at, addr));
+            let profile_name = names.get(&p.profile).cloned().unwrap_or_default();
+            out.push((
+                p.device_id,
+                p.name,
+                p.last_sync_at,
+                addr,
+                profile_name,
+                p.profile.0,
+            ));
         }
         let addresses = if listening_port.is_some() {
             lan_addresses()
         } else {
             Vec::new()
         };
-        Ok((out, addresses))
+        let pairing_name = pairing_profile.and_then(|id| names.get(&id).cloned());
+        Ok((out, addresses, pairing_name))
     })
     .await?;
     let pairing = match sh.window.status() {
@@ -1074,46 +1341,54 @@ async fn build_status(sh: &Arc<Shared>) -> Result<SyncStatus, String> {
             state: "closed",
             code: None,
             remaining_secs: None,
+            profile_name: None,
         },
         PairingStatus::Open { code, remaining } => PairingInfo {
             state: "open",
             code: Some(code),
             remaining_secs: Some(remaining.as_secs()),
+            profile_name: pairing_profile_name,
         },
         PairingStatus::Expired => PairingInfo {
             state: "expired",
             code: None,
             remaining_secs: None,
+            profile_name: None,
         },
         PairingStatus::TooManyAttempts => PairingInfo {
             state: "tooManyAttempts",
             code: None,
             remaining_secs: None,
+            profile_name: None,
         },
     };
     let st = sh.state();
     let peers = peers
         .into_iter()
-        .map(|(id, name, last_sync_at, address)| {
-            let rt = st.peers.get(&id);
-            PeerStatus {
-                kind: if address.is_some() {
-                    "computer"
-                } else {
-                    "phone"
-                },
-                connected: st.sessions.contains_key(&id),
-                syncing: rt.is_some_and(|r| r.syncing),
-                last_sync_at,
-                last_error: rt.and_then(|r| r.last_error.clone()),
-                pending_guard: rt.and_then(|r| r.pending_guard.clone()),
-                last_result: rt.and_then(|r| r.last_result.clone()),
-                rounds: rt.map_or(0, |r| r.rounds),
-                id,
-                name,
-                address,
-            }
-        })
+        .map(
+            |(id, name, last_sync_at, address, profile_name, profile_id)| {
+                let rt = st.peers.get(&id);
+                PeerStatus {
+                    kind: if address.is_some() {
+                        "computer"
+                    } else {
+                        "phone"
+                    },
+                    connected: st.sessions.contains_key(&id),
+                    syncing: rt.is_some_and(|r| r.syncing),
+                    last_sync_at,
+                    profile_name,
+                    profile_id,
+                    last_error: rt.and_then(|r| r.last_error.clone()),
+                    pending_guard: rt.and_then(|r| r.pending_guard.clone()),
+                    last_result: rt.and_then(|r| r.last_result.clone()),
+                    rounds: rt.map_or(0, |r| r.rounds),
+                    id,
+                    name,
+                    address,
+                }
+            },
+        )
         .collect();
     Ok(SyncStatus {
         role: if sh.server_capable {
@@ -1123,6 +1398,7 @@ async fn build_status(sh: &Arc<Shared>) -> Result<SyncStatus, String> {
         },
         device_id: local.id,
         device_name: local.name,
+        active_profile: sh.lib.active_profile().0,
         allow_phone_connections: st.enabled,
         listening: listening_port.map(|port| Listening { port, addresses }),
         pairing,

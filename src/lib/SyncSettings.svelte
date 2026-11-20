@@ -2,17 +2,21 @@
   import Icon from './Icon.svelte'
   import ToggleSwitch from './ToggleSwitch.svelte'
   import SyncGuardNotice from './SyncGuardNotice.svelte'
+  import PairQr from './PairQr.svelte'
   import { addedAgo } from './dates'
   import { i18n, t } from './i18n.svelte'
+  import { untrack } from 'svelte'
   import { sync, type PeerStatus, type SyncAction } from './sync.svelte'
   import {
     addressWithPort,
     checkAddress,
+    discoveryView,
     formatCountdown,
     formatPairCode,
     normalizePairCode,
     pairErrorKind,
     PAIR_CODE_DIGITS,
+    type FoundComputer,
   } from './syncLogic'
 
   // Settings › Phone (on the computer) or › Computer (on the phone): the
@@ -58,6 +62,12 @@
         return t('The apps do not match. Update NeoModern on both devices.')
       case 'address':
         return t('Enter the computer’s local address, e.g. 192.168.1.20.')
+      case 'notPairingQr':
+        return t('This is not a NeoModern pairing code. Scan the code shown in Settings › Phone on the computer.')
+      case 'qrNoAddress':
+        return t('The code has no address. Connect the computer to Wi-Fi or a network cable and show a new code.')
+      case 'camera':
+        return t('NeoModern needs the camera to scan the code. Allow it in the phone’s settings, or enter the code by hand.')
       default:
         return message
     }
@@ -95,6 +105,7 @@
     const ips = sync.pairing?.addresses.length ? sync.pairing.addresses : (status?.listening?.addresses ?? [])
     return port === null ? [] : ips.map((ip) => addressWithPort(ip, port))
   })
+  const pairProfile = $derived(sync.pairing?.profileName ?? status?.pairing.profileName ?? null)
   const pairShown = $derived(sync.pairing !== null || pairState === 'open' || pairState === 'tooManyAttempts')
 
   let confirmRemove = $state<string | null>(null)
@@ -122,6 +133,22 @@
       address = ''
       addressTouched = false
     }
+  }
+
+  // Phone: find computers on the Wi-Fi (no typing the address) ----------------
+  const phone = $derived(status?.role === 'phone')
+  const view = $derived(discoveryView(sync.searching, sync.searched, sync.found))
+  let codeInput = $state<HTMLInputElement | null>(null)
+  // Look once when the connect form opens (a profile without a computer, or
+  // after "Forget"); the button searches again.
+  $effect(() => {
+    if (phone && !computer) untrack(() => void sync.discover())
+  })
+
+  function pickFound(f: FoundComputer) {
+    address = f.address
+    addressTouched = false
+    codeInput?.focus()
   }
 
   let confirmForget = $state(false)
@@ -244,7 +271,18 @@
           <div class="rounded-xl border border-zinc-200/80 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50" aria-live="polite">
             {#if pairState === 'open' && pairCode}
               <div class="flex flex-col items-center gap-3 text-center">
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('On your phone, enter this code')}</p>
+                {#if sync.pairing?.qr}
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('On your phone, scan this code')}</p>
+                  <PairQr qr={sync.pairing.qr} label={t('Pairing QR code')} />
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('or enter this code')}</p>
+                {:else}
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('On your phone, enter this code')}</p>
+                {/if}
+                {#if pairProfile}
+                  <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    {t('This phone will sync with profile {name}', { name: pairProfile })}
+                  </p>
+                {/if}
                 <p class="text-4xl font-bold tracking-[0.12em] text-zinc-900 tabular-nums dark:text-zinc-50" aria-label={pairCode.split('').join(' ')}>
                   {formatPairCode(pairCode)}
                 </p>
@@ -318,6 +356,11 @@
                   <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
                     {ago(phone.lastSyncAt)}{lastResultText(phone) ? ` · ${lastResultText(phone)}` : ''}
                   </p>
+                  {#if phone.profileName}
+                    <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      {t('Syncs with profile {name}', { name: phone.profileName })}
+                    </p>
+                  {/if}
                 </div>
                 {#if confirmRemove === phone.id}
                   <div class="flex shrink-0 items-center gap-1">
@@ -370,6 +413,49 @@
             {t('On the computer, open Settings › Phone, turn on “Allow phone connections” and choose “Pair a phone”. Both devices must be on the same Wi-Fi.')}
           </p>
         </div>
+        <div class="flex flex-col gap-2" aria-live="polite">
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs font-medium text-zinc-600 dark:text-zinc-300">{t('Computers on this Wi-Fi')}</p>
+            <button type="button" class={quietBtn} disabled={sync.searching} onclick={() => void sync.discover()}>
+              {sync.searching ? t('Searching…') : t('Search again')}
+            </button>
+          </div>
+          {#if view === 'found'}
+            <ul class="flex flex-col gap-1">
+              {#each sync.found as f (f.deviceId)}
+                <li>
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-3 rounded-xl border border-zinc-200 px-3 py-2 text-left hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/60"
+                    onclick={() => pickFound(f)}
+                  >
+                    <Icon name="computer" class="size-4 shrink-0 text-zinc-500" />
+                    <span class="min-w-0 flex-1 truncate text-sm font-medium">{f.name}</span>
+                    <span class="shrink-0 text-xs text-zinc-400">{f.address}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+            <p class={help}>{t('Choose your computer, then type the code it shows.')}</p>
+          {:else if view === 'none'}
+            <p class={help}>
+              {t('No computer found. On the computer, turn on “Allow phone connections”; or scan the QR code or enter the address below.')}
+            </p>
+          {/if}
+          {#if errorFor('discover')}
+            <p class={errorText} role="alert">{errorFor('discover')}</p>
+          {/if}
+        </div>
+        <button
+          type="button"
+          class={[primaryBtn, 'flex items-center justify-center gap-2 py-2.5 text-sm']}
+          disabled={sync.busy === 'connect'}
+          onclick={() => void sync.scanPair()}
+        >
+          <Icon name="qr" class="size-5" />
+          {t('Scan the QR code')}
+        </button>
+        <p class="text-center text-xs text-zinc-500 dark:text-zinc-400">{t('or enter the address and code')}</p>
         <div class="grid gap-3 sm:grid-cols-[1fr_10rem]">
           <label class="flex flex-col gap-1">
             <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">{t('Computer address')}</span>
@@ -396,6 +482,7 @@
               pattern="[0-9]*"
               maxlength="7"
               placeholder="000000"
+              bind:this={codeInput}
               value={code}
               oninput={(e) => {
                 code = normalizePairCode(e.currentTarget.value)
@@ -444,6 +531,11 @@
         <p class="text-xs text-zinc-500 dark:text-zinc-400">
           {ago(computer.lastSyncAt)}{lastResultText(computer) ? ` · ${lastResultText(computer)}` : ''}
         </p>
+        {#if computer.profileName}
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            {t('Syncs with profile {name}', { name: computer.profileName })}
+          </p>
+        {/if}
         {#if computer.lastError}
           <p class={errorText}>{computer.lastError}</p>
         {/if}

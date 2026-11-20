@@ -176,7 +176,7 @@
       <Icon name="back" class="size-6" />
     </button>
     {#if profile}
-      <h1 class={['min-w-0 flex-1 truncate text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
+      <h1 class={['min-w-0 flex-1 truncate pr-14 text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
         {profile.name}
       </h1>
     {/if}
@@ -229,7 +229,6 @@
       </p>
 
       <StickyPlay
-        top="44px"
         playing={player.isActiveFrom(ctx)}
         disabled={profile.tracks.length === 0}
         onclick={() => player.playOrToggle(ctx, () => artists.play(profile!.name, 0, false))}
@@ -403,7 +402,7 @@
 </div>
 
 {#if showFavorites && profile}
-  <MobileSheet onBack={popLayer}>
+  <MobileSheet onBack={popLayer} nested>
     <div class="absolute inset-0 flex flex-col bg-zinc-950">
       <PageHeader title={`${t('Favorites')} · ${profile.name}`} onBack={popLayer} />
       <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
@@ -427,9 +426,7 @@
 {/if}
 
 {#if selectedOnlineAlbum}
-  <MobileSheet onBack={popLayer}>
-    <div class="absolute inset-0 flex flex-col bg-zinc-950 pt-2">
-      <OnlineAlbumDetail album={selectedOnlineAlbum} onBack={popLayer} />
-    </div>
+  <MobileSheet onBack={popLayer} nested>
+    <OnlineAlbumDetail mobile album={selectedOnlineAlbum} onBack={popLayer} />
   </MobileSheet>
 {/if}

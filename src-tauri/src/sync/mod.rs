@@ -2,6 +2,7 @@
 //!
 //! - `store/` – the replicated data model (pure SQLite);
 //! - `link/` – pairing, encrypted sessions, sockets;
+//! - `pair_link` – the pairing QR code (K23);
 //! - `protocol` – the messages inside a session;
 //! - `conn` – one session's event loop (sync rounds, remote, keep-alive);
 //! - `remote` – remote-control commands and the player state the phone sees;
@@ -11,6 +12,7 @@
 pub mod commands;
 mod conn;
 pub mod link;
+pub mod pair_link;
 pub mod protocol;
 pub mod remote;
 pub mod service;

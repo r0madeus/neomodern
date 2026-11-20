@@ -16,19 +16,33 @@ use super::local::{self, CoverView, LocalPlaylist, cover_view, field, sync_name}
 use super::rows::{self, PlaylistRow};
 use super::{CaptureReport, EntryRecord, FavoriteRecord, ListenRecord, PlaylistRecord, Result};
 use super::{MAX_STR_BYTES, pos};
+use crate::library::ProfileId;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Positions longer than this trigger a re-spread of the playlist (well
 /// under the 1 KiB limit the receiver enforces).
 const MAX_POS_BYTES: usize = MAX_STR_BYTES - 124;
 
-pub(super) fn run(ctx: &mut Ctx<'_>, res: &Resolver) -> Result<CaptureReport> {
+/// Captures every profile in `profiles` (the bound ones). The presence
+/// snapshot is library-wide: it is read once, every profile sees the same
+/// "reappeared songs", and it is saved once at the end. `ctx.profile` is
+/// restored afterwards.
+pub(super) fn run(
+    ctx: &mut Ctx<'_>,
+    res: &Resolver,
+    profiles: &[ProfileId],
+) -> Result<CaptureReport> {
     let mut report = CaptureReport::default();
     let snapshot = load_snapshot(ctx)?;
     let reappeared = reappeared_songs(res, &snapshot);
-    favorites(ctx, res, &reappeared, &mut report)?;
-    playlists(ctx, res, &reappeared, &mut report)?;
-    listens(ctx, &mut report)?;
+    let own = ctx.profile;
+    for &profile in profiles {
+        ctx.profile = profile;
+        favorites(ctx, res, &reappeared, &mut report)?;
+        playlists(ctx, res, &reappeared, &mut report)?;
+        listens(ctx, &mut report)?;
+    }
+    ctx.profile = own;
     save_snapshot(ctx, res, &snapshot)?;
     Ok(report)
 }
@@ -87,7 +101,7 @@ fn favorites(
     reappeared: &HashSet<i64>,
     report: &mut CaptureReport,
 ) -> Result<()> {
-    let records = rows::all_favorites(ctx.conn)?;
+    let records = rows::all_favorites(ctx.conn, ctx.profile)?;
     let by_key: HashMap<&str, &FavoriteRecord> =
         records.iter().map(|r| (r.key.as_str(), r)).collect();
     let mut on_by_song: HashMap<i64, Vec<&FavoriteRecord>> = HashMap::new();
@@ -98,7 +112,7 @@ fn favorites(
     }
     // Duplicates of a song share its canonical id: one favourite state.
     let mut local_favs: HashMap<i64, i64> = HashMap::new();
-    for (track, added_at) in local::favorites(ctx.conn)? {
+    for (track, added_at) in local::favorites(ctx.conn, ctx.profile)? {
         if let Some(song) = res.canon(track) {
             let slot = local_favs.entry(song).or_insert(added_at);
             *slot = (*slot).max(added_at);
@@ -126,7 +140,7 @@ fn favorites(
                     off.on = false;
                     off.hlc = ctx.stamp();
                     let seq = ctx.next_seq();
-                    rows::put_favorite(ctx.conn, &off, seq)?;
+                    rows::put_favorite(ctx.conn, ctx.profile, &off, seq)?;
                     report.stamped += 1;
                 }
             }
@@ -170,14 +184,14 @@ fn stamp_on(
         hlc,
     };
     let seq = ctx.next_seq();
-    rows::put_favorite(ctx.conn, &rec, seq)
+    rows::put_favorite(ctx.conn, ctx.profile, &rec, seq)
 }
 
 fn restore_favorite(ctx: &Ctx<'_>, song: i64, on: &[&FavoriteRecord]) -> Result<()> {
     let added_at = newest_wall_secs(on.iter().map(|r| r.hlc.as_str()));
     ctx.conn.execute(
-        "INSERT OR IGNORE INTO favorites(track_id, added_at) VALUES (?1, ?2)",
-        rusqlite::params![song, added_at],
+        "INSERT OR IGNORE INTO favorites(profile_id, track_id, added_at) VALUES (?1, ?2, ?3)",
+        rusqlite::params![ctx.profile.0, song, added_at],
     )?;
     Ok(())
 }
@@ -199,9 +213,11 @@ fn playlists(
     reappeared: &HashSet<i64>,
     report: &mut CaptureReport,
 ) -> Result<()> {
-    let locals = local::playlists(ctx.conn)?;
+    let locals = local::playlists(ctx.conn, ctx.profile)?;
     let alive: HashSet<i64> = locals.iter().map(|p| p.id).collect();
-    let mut map: Vec<(i64, String)> = rows::playlist_map(ctx.conn)?.into_iter().collect();
+    let mut map: Vec<(i64, String)> = rows::playlist_map(ctx.conn, ctx.profile)?
+        .into_iter()
+        .collect();
     map.sort();
     for (id, uuid) in &map {
         if !alive.contains(id) {
@@ -209,10 +225,10 @@ fn playlists(
             rows::delete_map(ctx.conn, *id)?;
         }
     }
-    let map = rows::playlist_map(ctx.conn)?;
+    let map = rows::playlist_map(ctx.conn, ctx.profile)?;
     for p in &locals {
         let row = match map.get(&p.id) {
-            Some(uuid) => rows::get_playlist(ctx.conn, uuid)?,
+            Some(uuid) => rows::get_playlist(ctx.conn, ctx.profile, uuid)?,
             None => None,
         };
         match row {
@@ -225,7 +241,7 @@ fn playlists(
 
 /// A local playlist was deleted.
 fn stamp_deleted(ctx: &mut Ctx<'_>, uuid: &str, report: &mut CaptureReport) -> Result<()> {
-    let Some(mut row) = rows::get_playlist(ctx.conn, uuid)? else {
+    let Some(mut row) = rows::get_playlist(ctx.conn, ctx.profile, uuid)? else {
         return Ok(());
     };
     if row.rec.deleted {
@@ -234,7 +250,7 @@ fn stamp_deleted(ctx: &mut Ctx<'_>, uuid: &str, report: &mut CaptureReport) -> R
     row.rec.deleted = true;
     row.rec.deleted_hlc = ctx.stamp();
     let seq = ctx.next_seq();
-    rows::put_playlist(ctx.conn, &row.rec, row.reconciled, seq)?;
+    rows::put_playlist(ctx.conn, ctx.profile, &row.rec, row.reconciled, seq)?;
     report.stamped += 1;
     Ok(())
 }
@@ -263,7 +279,7 @@ fn create_playlist(
         created_at: p.created_at,
     };
     let seq = ctx.next_seq();
-    rows::put_playlist(ctx.conn, &rec, true, seq)?;
+    rows::put_playlist(ctx.conn, ctx.profile, &rec, true, seq)?;
     rows::set_map(ctx.conn, p.id, &uuid)?;
     report.stamped += 1;
     align_entries(ctx, res, p.id, &uuid, reappeared, report)?;
@@ -301,7 +317,7 @@ fn update_playlist(
         rec.deleted = false;
         rec.deleted_hlc = ctx.stamp();
         let seq = ctx.next_seq();
-        rows::put_playlist(ctx.conn, &rec, true, seq)?;
+        rows::put_playlist(ctx.conn, ctx.profile, &rec, true, seq)?;
         report.stamped += 1;
     }
     Ok(())
@@ -366,7 +382,7 @@ fn align_entries(
             gone.deleted = true;
             gone.deleted_hlc = ctx.stamp();
             let seq = ctx.next_seq();
-            rows::put_entry(ctx.conn, &gone, seq)?;
+            rows::put_entry(ctx.conn, ctx.profile, &gone, seq)?;
             report.stamped += 1;
             changed = true;
         }
@@ -400,7 +416,7 @@ fn align_entries(
                 moved.pos = new_pos.clone();
                 moved.pos_hlc = ctx.stamp();
                 let seq = ctx.next_seq();
-                rows::put_entry(ctx.conn, &moved, seq)?;
+                rows::put_entry(ctx.conn, ctx.profile, &moved, seq)?;
             }
             (None, Slot::Local(li)) => {
                 let (track, added_at) = local_list[li];
@@ -515,7 +531,7 @@ fn new_entry(
         deleted_hlc: hlc,
     };
     let seq = ctx.next_seq();
-    rows::put_entry(ctx.conn, &rec, seq)
+    rows::put_entry(ctx.conn, ctx.profile, &rec, seq)
 }
 
 // --- listening history ----------------------------------------------------
@@ -530,10 +546,10 @@ fn listens(ctx: &mut Ctx<'_>, report: &mut CaptureReport) -> Result<()> {
             "SELECT e.uid, e.title, e.artist, e.album, e.genre, e.duration_ms, e.path,
                     e.started_at, e.ended_at, e.listened_ms, e.completed, e.skipped
              FROM listen_events e
-             WHERE NOT EXISTS (SELECT 1 FROM sync_listens s WHERE s.uid = e.uid)
+             WHERE e.profile_id = ?1 AND NOT EXISTS (SELECT 1 FROM sync_listens s WHERE s.uid = e.uid)
              ORDER BY e.id",
         )?;
-        let rows = st.query_map([], |r| {
+        let rows = st.query_map([ctx.profile.0], |r| {
             let title: String = r.get(1)?;
             let artist: String = r.get(2)?;
             let album: String = r.get(3)?;
@@ -557,7 +573,7 @@ fn listens(ctx: &mut Ctx<'_>, report: &mut CaptureReport) -> Result<()> {
     };
     for rec in &fresh {
         let seq = ctx.next_seq();
-        if rows::insert_listen(ctx.conn, rec, seq)? {
+        if rows::insert_listen(ctx.conn, ctx.profile, rec, seq)? {
             report.stamped += 1;
         }
     }

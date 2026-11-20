@@ -16,8 +16,10 @@
 
   const current = $derived(player.snapshot.currentIndex)
   const nowTrack = $derived(current !== null ? player.queue[current] ?? null : null)
-  const startOffset = $derived(current === null ? 0 : current + 1)
-  const upNext = $derived(player.queue.slice(startOffset))
+  // Play order (shuffle applied); reordering is only offered in queue order.
+  const upNextIdx = $derived(player.upNextIndexes)
+  const upNext = $derived(upNextIdx.map((i) => player.queue[i]))
+  const shuffled = $derived(player.upNextOrder !== null)
 
   let listEl = $state<HTMLOListElement | null>(null)
   const drag = createDragReorder({
@@ -25,7 +27,7 @@
     getCount: () => upNext.length,
     getListEl: () => listEl,
     getScrollEl: () => listEl?.closest<HTMLElement>('.overflow-y-auto') ?? listEl?.parentElement ?? null,
-    onMove: (from, to) => player.moveIndex(startOffset + from, startOffset + to),
+    onMove: (from, to) => player.moveIndex(upNextIdx[from], upNextIdx[to]),
   })
 
   $effect(() => () => drag.destroy())
@@ -100,14 +102,14 @@
     </h3>
     <ol bind:this={listEl} class="relative">
       {#each upNext as track, i (track.id)}
-        {@const origIndex = startOffset + i}
+        {@const origIndex = upNextIdx[i]}
         <li
           class={[
             'group flex h-14 cursor-default items-center gap-3 rounded-lg px-2 text-sm transition-opacity',
             drag.from === i && 'opacity-40',
             'text-zinc-800 hover:bg-zinc-200/60 dark:text-zinc-200 dark:hover:bg-zinc-800/60',
           ]}
-          onpointerdown={(e) => drag.onPointerDown(e, i, track.title)}
+          onpointerdown={(e) => !shuffled && drag.onPointerDown(e, i, track.title)}
           ondblclick={() => player.playIndex(origIndex)}
           oncontextmenu={(e) => void openMenu(e, track, origIndex)}
         >

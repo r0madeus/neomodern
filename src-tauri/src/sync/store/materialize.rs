@@ -35,13 +35,16 @@ pub(super) fn run(ctx: &Ctx<'_>, res: &Resolver, new_listens: &[String]) -> Resu
 /// was already a favourite keeps its `added_at`.
 fn favorites(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
     let mut wanted: BTreeMap<i64, Vec<String>> = BTreeMap::new();
-    for r in rows::all_favorites(ctx.conn)?.into_iter().filter(|r| r.on) {
+    for r in rows::all_favorites(ctx.conn, ctx.profile)?
+        .into_iter()
+        .filter(|r| r.on)
+    {
         if let Some(song) = res.resolve(&r.key, r.duration_ms) {
             wanted.entry(song).or_default().push(r.hlc);
         }
     }
     let mut have: HashMap<i64, Vec<i64>> = HashMap::new();
-    for (track, _) in local::favorites(ctx.conn)? {
+    for (track, _) in local::favorites(ctx.conn, ctx.profile)? {
         if let Some(song) = res.canon(track) {
             have.entry(song).or_default().push(track);
         }
@@ -50,8 +53,8 @@ fn favorites(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
         if !have.contains_key(song) {
             let added_at = newest_wall_secs(stamps.iter().map(String::as_str));
             ctx.conn.execute(
-                "INSERT OR IGNORE INTO favorites(track_id, added_at) VALUES (?1, ?2)",
-                params![song, added_at],
+                "INSERT OR IGNORE INTO favorites(profile_id, track_id, added_at) VALUES (?1, ?2, ?3)",
+                params![ctx.profile.0, song, added_at],
             )?;
             out.changed = true;
         }
@@ -59,8 +62,10 @@ fn favorites(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
     for (song, tracks) in &have {
         if !wanted.contains_key(song) {
             for track in tracks {
-                ctx.conn
-                    .execute("DELETE FROM favorites WHERE track_id = ?1", [track])?;
+                ctx.conn.execute(
+                    "DELETE FROM favorites WHERE profile_id = ?1 AND track_id = ?2",
+                    params![ctx.profile.0, track],
+                )?;
             }
             out.changed = true;
         }
@@ -71,15 +76,15 @@ fn favorites(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
 // --- playlists ------------------------------------------------------------
 
 fn playlists(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
-    let locals: HashMap<i64, local::LocalPlaylist> = local::playlists(ctx.conn)?
+    let locals: HashMap<i64, local::LocalPlaylist> = local::playlists(ctx.conn, ctx.profile)?
         .into_iter()
         .map(|p| (p.id, p))
         .collect();
-    let by_uuid: HashMap<String, i64> = rows::playlist_map(ctx.conn)?
+    let by_uuid: HashMap<String, i64> = rows::playlist_map(ctx.conn, ctx.profile)?
         .into_iter()
         .map(|(id, uuid)| (uuid, id))
         .collect();
-    for PlaylistRow { rec, reconciled } in rows::all_playlists(ctx.conn)? {
+    for PlaylistRow { rec, reconciled } in rows::all_playlists(ctx.conn, ctx.profile)? {
         // Playlists waiting for first-sync reconciliation are not shown yet.
         if !reconciled {
             continue;
@@ -96,8 +101,10 @@ fn playlists(ctx: &Ctx<'_>, res: &Resolver, out: &mut Outcome) -> Result<()> {
 }
 
 fn delete_local(ctx: &Ctx<'_>, p: &local::LocalPlaylist, out: &mut Outcome) -> Result<()> {
-    ctx.conn
-        .execute("DELETE FROM playlists WHERE id = ?1", [p.id])?;
+    ctx.conn.execute(
+        "DELETE FROM playlists WHERE id = ?1 AND profile_id = ?2",
+        params![p.id, ctx.profile.0],
+    )?;
     rows::delete_map(ctx.conn, p.id)?;
     if cover_view(p.cover.as_deref()) == CoverView::Image
         && let Some(cover) = &p.cover
@@ -116,8 +123,8 @@ fn create_local(
 ) -> Result<()> {
     let cover = rec.cover_preset.as_deref().filter(|c| is_valid_preset(c));
     ctx.conn.execute(
-        "INSERT INTO playlists(name, created_at, cover) VALUES (?1, ?2, ?3)",
-        params![rec.name, rec.created_at, cover],
+        "INSERT INTO playlists(name, created_at, cover, profile_id) VALUES (?1, ?2, ?3, ?4)",
+        params![rec.name, rec.created_at, cover, ctx.profile.0],
     )?;
     let id = ctx.conn.last_insert_rowid();
     rows::set_map(ctx.conn, id, &rec.uuid)?;
@@ -188,11 +195,11 @@ fn listens(ctx: &Ctx<'_>, res: &Resolver, uids: &[String], out: &mut Outcome) ->
     let mut insert = ctx.conn.prepare_cached(
         "INSERT OR IGNORE INTO listen_events(
              uid, track_id, path, title, artist, album, genre, duration_ms,
-             started_at, ended_at, listened_ms, completed, skipped, source
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'sync')",
+             started_at, ended_at, listened_ms, completed, skipped, source, profile_id
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'sync', ?14)",
     )?;
     for uid in uids {
-        let Some(l) = rows::get_listen(ctx.conn, uid)? else {
+        let Some(l) = rows::get_listen(ctx.conn, ctx.profile, uid)? else {
             continue;
         };
         let track = res.resolve(&l.key, l.duration_ms);
@@ -213,6 +220,7 @@ fn listens(ctx: &Ctx<'_>, res: &Resolver, uids: &[String], out: &mut Outcome) ->
             l.listened_ms,
             l.completed,
             l.skipped,
+            ctx.profile.0,
         ])?;
         out.changed |= n > 0;
     }

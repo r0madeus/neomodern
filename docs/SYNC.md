@@ -15,7 +15,8 @@ design every change to `src-tauri/src/sync/` must follow.
 3. **Never lose or corrupt user data.** When in doubt, keep both copies.
 
 Non-goals (later list): sync over the internet, PC controlling the phone,
-streaming PC files to the phone, mDNS discovery, more than ~5 paired devices.
+streaming PC files to the phone, mDNS / Bonjour discovery (the plain UDP
+probe below is used instead), more than ~5 paired devices.
 
 ## Architecture fit
 
@@ -83,7 +84,7 @@ local tables). No existing code path has to change.
 | `sync_listens` | uuid | append-only union (immutable rows) |
 | `sync_playlist_map` | local playlist id ↔ uuid | local only |
 | `sync_peers` | device_id | local only: name, secret, last seq sent/received, last sync |
-| `sync_meta` | key/value | local only: device_id, device name, hlc state, seq; `peer_address:<device_id>` = the paired computer's `ip:port` (phone side) |
+| `sync_meta` | key/value | local only: device_id, device name, hlc state, seq; `peer_address:<device_id>` = the paired computer's `ip:port` (phone side); `device_id:profile:<id>` = the link id of a non-first phone profile (K25); `peer_wire:<key>` = the computer's own id when the pairing row key differs (K25) |
 | `sync_present` | track id | local only: tracks present at the last capture (a song that re-appears gets its synced state back instead of being read as "unfavourited") |
 
 Every replicated row has `seq INTEGER` – a local, strictly increasing
@@ -148,6 +149,144 @@ song the receiving device cannot resolve is never unified. Playlists with a
 new uuid wait (local-only `reconciled = 0`, not shown) until the last page
 of a sync, so the comparison sees all their entries.
 
+## Profiles (schema v15, decision K24)
+
+A pairing is bound to **one local profile** (`sync_peers.profile_id`).
+Only that profile's favourites, playlists and listens travel to the peer,
+and incoming changes are merged into and materialised for that profile
+only; other profiles are never read, sent or changed. See `PROFILES.md`.
+
+- `sync_favorites` (key `(profile_id, key)`), `sync_playlists`,
+  `sync_playlist_entries` and `sync_listens` carry `profile_id` with an
+  index `(profile_id, seq)`; the foreign key cascades, so deleting a profile
+  removes its pairings and sync rows. `sync_playlist_map` (playlist ids are
+  global) and `sync_present` (about the library) stay shared. Old rows
+  become profile 1.
+- The sequence number and the clock stay global; `changes_since(profile,
+  after, limit)` returns that profile's rows (gaps are fine for the
+  watermark). A playlist/entry uuid that already belongs to another profile
+  is never overwritten.
+- **Capture runs for all bound profiles together** (`SELECT DISTINCT
+  profile_id FROM sync_peers`): the presence snapshot ("reappeared songs")
+  is library-wide, so it is read once, favourites/playlists/listens are
+  captured per bound profile, and the snapshot is saved once. `apply`
+  captures the same set inside its transaction, so a profile that is not the
+  peer's still sees a song that reappeared.
+- The desktop binds a phone to the profile that was **active when the
+  pairing code was opened**; the phone binds its active profile. Pairing
+  again re-binds and resets both watermarks (the peer's profile is not
+  announced on the wire, so a full re-send is the safe way to fill a new
+  profile; merging is idempotent).
+- `PeerStatus.profileName` and `PairingInfo/PairingOpen.profileName` tell
+  the UI which local profile is synced. The peer's own profile name is not
+  transmitted.
+- Deleting a profile calls `SyncService::profile_deleted`, which forgets the
+  runtime state (secrets, sessions, the phone's client) of the removed
+  peers.
+- Remote control is unchanged: it drives the computer's player, and listens
+  go to the computer's active profile.
+- Tests: `a_pairing_syncs_only_its_bound_profile`,
+  `every_bound_profile_is_captured_when_a_song_reappears`,
+  `deleting_a_bound_profile_removes_its_pairing_and_sync_rows`,
+  `migration_v14_to_v15_keeps_sync_rows_in_profile_one` (store) and
+  `two_phones_sync_two_different_computer_profiles` (service).
+
+## One pairing per phone profile (decision K25)
+
+A phone keeps **one pairing per phone profile**: each profile can pair with
+the same computer or another one (and with whatever computer profile was
+active there). Only the active profile's pairing is connected.
+
+- **Link identity.** The computer keys `sync_peers` by the phone's device id
+  and checks `batch.from_device`, so each phone profile pairs under its own
+  id. Profile 1 keeps the install's `device_id` (pairings made before K25
+  keep working); every other profile gets a random 128-bit id, created on
+  first use and kept in `sync_meta` (`device_id:profile:<id>`, removed with
+  the profile). It is used in the pairing (`pair_connect`), the Noise
+  session opening (`link::connect`) and `Batch.from_device` of the phone's
+  pages. The computer always uses its own device id.
+- **Phone-side rows.** The phone's `sync_peers` row for a computer is keyed
+  by the computer's id, which is the same for every profile paired with it.
+  The first pairing uses that id as key (so old rows keep working); a
+  further pairing of another profile with the same computer gets a random
+  row key and `sync_meta` `peer_wire:<key>` = the computer's real id (that
+  is what `Batch.from_device` of its pages must equal). `store::pairing_key`
+  picks the key; the session loop (`conn::run`) is told the key because the
+  Noise handshake only reveals the computer's id.
+- **Own-batch check.** A batch whose `from_device` is any of this install's
+  ids (device id or any profile's link id) is refused.
+- **Clock.** The HLC node id stays the install's device id: there is one
+  clock and one sequence per install, stamps stay strictly increasing, and
+  two profiles never share a record, so ties cannot happen. It is not wire
+  identity.
+- **Connection.** `SyncService::start` connects the phone to the computer of
+  the active profile; `profile_switch` calls `SyncService::profile_switched`
+  after the switch, which closes the old session and connects the new
+  profile's pairing (none: just disconnected). Watermarks and pairings of the
+  other profiles are untouched. `SyncStatus.activeProfile` and
+  `PeerStatus.profileId` let the UI show the active profile's pairing.
+- **Pairing and forgetting.** `connect_pair*` replaces only an older pairing
+  of the same profile; "Forget this computer" forgets the active profile's.
+  The computer needs no change: a second phone profile is simply another
+  phone with its own id (the computer lists it under its name; both rows
+  show which computer profile they sync).
+- Tests: `a_phone_with_two_profiles_pairs_with_two_computers_and_follows_the_profile`,
+  `two_phone_profiles_pair_with_the_same_computer_as_two_phones`,
+  `each_phone_profile_has_its_own_link_id_and_a_batch_from_it_is_not_foreign`
+  (service tests), `computerFor` (UI logic).
+
+## Finding the computer (LAN discovery, decision K25)
+
+So the phone does not need the IP typed: it broadcasts a small UDP probe and
+lists the computers that answer; tapping one fills in the address (the code
+is still typed or scanned). Sockets live in `sync/link/server.rs`, the wire
+format and limits in `sync/link/discovery.rs`.
+
+```text
+probe  (phone -> 255.255.255.255:47321 and a.b.c.255:47321 per LAN address):
+  "NMDISCOVER" | link protocol version u16 BE | zero padding  (400 bytes)
+reply  (computer -> the probing address, unicast, < 400 bytes):
+  "NMFOUND" | version u16 BE | TCP port u16 BE | id length u8
+          | device id (ASCII) | device name (UTF-8, rest of the datagram)
+```
+
+- **Responder** (desktop): a UDP socket on the sync port, open exactly while
+  "Allow phone connections" is on (same lifetime as the TCP listener; if the
+  bind fails the app just works without discovery). It answers only a
+  datagram that is **exactly** the probe, from a LAN source address
+  (`is_lan_address`); anything else gets no answer at all. At most 20
+  replies per second overall and 2 per second per source address (one-second
+  windows, at most 256 sources tracked). Replies are at most 400 bytes (the
+  device name is cut to fit) and the probe is padded to 400 bytes, so a
+  reply is never larger than the probe: a spoofed probe cannot be used to
+  amplify traffic, and only LAN sources are answered anyway.
+- **Phone**: `sync_discover` (phone only) sends the probe to the limited
+  broadcast address and to the /24 directed broadcast of each LAN IPv4
+  address, listens for about 1.5 s, accepts only well-formed replies from LAN
+  addresses (magic, version, valid id and name, port ≠ 0), keeps one entry
+  per device id (at most 32) and returns `[{deviceId, name, address}]`.
+  It runs when the Computer card shows the connect form (and on "Search
+  again"); nothing is sent otherwise. Windows or the router may block
+  broadcasts: the list is then empty and the QR code / typed address work as
+  before.
+- **Exposure.** A reply tells any device on the same local network that
+  this computer runs NeoModern with phone connections on, its random device
+  id, the name the user gave it and the sync port. That is what the pairing
+  screen shows and what a port scan of the open port would reveal anyway.
+  It contains no secret, no pairing, profile or library information, and it
+  is never sent to or accepted from addresses outside the local network.
+  Pairing still needs the code shown on the computer. With the switch off
+  the UDP port is closed.
+- Tests (`sync/link/tests.rs`): `discovery_answers_a_valid_probe_from_a_lan_address`,
+  `discovery_ignores_garbage_and_inexact_probes`,
+  `discovery_never_answers_non_lan_sources`,
+  `discovery_replies_are_rate_limited_per_source`,
+  `the_reply_limiter_caps_total_and_per_source_and_recovers`,
+  `replies_are_small_and_strictly_parsed`,
+  `discover_finds_a_responder_end_to_end_on_loopback`,
+  `discover_validates_and_dedups_replies`; service test
+  `the_phone_finds_the_computer_by_itself_and_only_while_it_listens`.
+
 ## Data health
 
 - **Validation before apply**: the whole incoming batch is checked first
@@ -197,7 +336,7 @@ the home network, a stolen phone.
   the secret and closes its session. The phone can "Forget this PC".
 - **Exposure limits**: accept only private/link-local/loopback source
   addresses (RFC 1918, 100.64/10 excluded, fc00::/7, fe80::/10); at most 4
-  sessions; handshake must finish in 5 s; frames ≤ 1 MiB (big batches are
+  sessions, at most 2 from one address; handshake must finish in 5 s; frames ≤ 1 MiB (big batches are
   paged); idle timeout 60 s with keep-alive; 20 commands/s per session.
 - **Whitelist**: the remote protocol is a closed `enum` of messages
   (`deny_unknown_fields`). No message carries a file path that the PC
@@ -266,9 +405,10 @@ shows its own cover for a key (`sync_cover_for_key`).
   (`allowPhoneConnections`, off by default). On: listen on port 47321 (all
   interfaces, LAN sources only). Off: the listener, the pairing window and
   every phone session close.
-- Phone: one paired computer. Pairing stores it in `sync_peers` plus its
-  address in `sync_meta`; pairing with another computer forgets the old
-  one. While the app runs the phone keeps a session to it, reconnecting
+- Phone: one paired computer per phone profile (K25). Pairing stores it in
+  `sync_peers` plus its address in `sync_meta`; pairing the same profile
+  with another computer forgets that profile's old one. While the app runs
+  the phone keeps a session to the active profile's computer, reconnecting
   with backoff 2 s → 60 s.
 - Local changes are also captured 5 s after the library last changed (not
   during a scan, only with paired devices), so stamps are timely.
@@ -281,7 +421,10 @@ shows its own cover for a key (`sync_cover_for_key`).
 - Desktop Settings › "Phone": switch "Allow phone connections", address,
   "Pair a phone" (shows the code), paired phones with last sync and Remove,
   "Sync now" per phone not needed (the phone starts syncs).
-- Phone Settings › "Computer": "Connect to a computer" (address + code),
+- Phone Settings › "Computer" shows the active profile's pairing, or the
+  connect form when this profile has none: "Computers on this Wi-Fi" (found
+  by discovery; tap one to fill in the address), "Scan the QR code",
+  "Connect to a computer" (address + code),
   connected state, "Sync now", "Forget", last sync result. A "Remote" screen
   (from the mini-player area / Settings) with the PC's now playing and
   controls. Sync runs on connect and every 10 min while connected.

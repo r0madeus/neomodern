@@ -29,6 +29,9 @@ are the ones every coding session must follow.
    cache folder and loaded with `convertFileSrc` – never base64 over IPC.
 5. **Throttle chatty data.** Playback position is sent at most ~4×/s; the UI
    interpolates between updates.
+   Events sent several times a second are listed in `src-tauri/src/ui.rs`
+   and are not sent while the page is hidden (the webview freezes hidden
+   pages and would queue them).
 6. Audio plays in Rust, never through an HTML `<audio>` element.
 
 ## Scope

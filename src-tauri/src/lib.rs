@@ -10,12 +10,15 @@ pub mod metadata;
 pub mod net;
 pub mod online;
 pub mod player;
+mod profiles;
 pub mod queue;
 pub mod session;
 // PC <-> phone sync and remote control (docs/SYNC.md).
 pub mod sync;
 pub mod tray;
+mod ui;
 pub mod update;
+mod webview_guard;
 
 #[cfg(not(target_os = "android"))]
 use audio::mpv::{MpvEngine, MpvOptions};
@@ -37,6 +40,9 @@ struct PositionPayload {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything starts a thread or creates the webview.
+    #[cfg(target_os = "linux")]
+    webview_guard::linux_renderer_workaround();
     let builder = tauri::Builder::default();
     // Register single-instance first so a second desktop launch focuses the
     // existing window (also recovers hidden windows when close-to-tray is on
@@ -53,6 +59,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_audio::init());
+    // The pairing QR code (K23): the phone scans the computer's screen.
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     builder
         .setup(|app| {
             // Logs go to stdout and to a file in the app log folder (shown in
@@ -95,6 +104,13 @@ pub fn run() {
             // The phone remote's view of the player (docs/SYNC.md).
             let remote_feed = sync::RemoteFeed::new();
             let observer_feed = remote_feed.clone();
+            let ui_visibility = Arc::new(ui::UiVisibility::default());
+            app.manage(Arc::clone(&ui_visibility));
+            ui::spawn_watchdog(Arc::clone(&ui_visibility));
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                webview_guard::install(&window);
+            }
             let player = Arc::new(Player::new(
                 Box::new(audio::NetGuardedEngine::new(
                     Box::new(engine),
@@ -139,7 +155,16 @@ pub fn run() {
                                 observer_session
                                     .maybe_save_progress(qv, idx, pos, || p.export_session());
                             }
-                            handle.emit("player://position", PositionPayload { seconds, duration })
+                            // Not while the page is hidden: the webview would
+                            // queue them and run them all on return (see `ui`).
+                            if ui_visibility.visible() {
+                                handle.emit(
+                                    "player://position",
+                                    PositionPayload { seconds, duration },
+                                )
+                            } else {
+                                Ok(())
+                            }
                         }
                         PlayerEvent::Listen(rec) => {
                             if let Some(lib) = handle.try_state::<Arc<Library>>() {
@@ -248,6 +273,24 @@ pub fn run() {
                     backup_dir: data_dir.join("sync-backups"),
                 },
             );
+            // Profiles (K24): open in the profile used last. If it is gone,
+            // the session's player state goes to the library's first one.
+            {
+                let store = app.state::<Arc<SessionStore>>();
+                let wanted = library::ProfileId(store.active_profile());
+                if let Err(e) = library.set_active_profile(wanted) {
+                    log::warn!("profile {} not found ({e}); using the first one", wanted.0);
+                    store.adopt_active_profile(library.active_profile().0);
+                }
+            }
+            // A profile with a PIN opens behind the lock screen (K25).
+            let lock = profiles::ProfileLock::default();
+            lock.set(
+                library
+                    .profile_has_pin(library.active_profile())
+                    .unwrap_or(false),
+            );
+            app.manage(lock);
             app.manage(library);
             app.manage(sync_service.clone());
             let allow_phones = app.state::<Arc<SessionStore>>().allow_phone_connections();
@@ -322,6 +365,17 @@ pub fn run() {
         })
         .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            ui::app_set_visible,
+            profiles::profiles_list,
+            profiles::profile_create,
+            profiles::profile_rename,
+            profiles::profile_set_color,
+            profiles::profile_summary,
+            profiles::profile_delete,
+            profiles::profile_switch,
+            profiles::profile_unlock,
+            profiles::profile_set_pin,
+            ui::app_heartbeat,
             commands::queue_replace,
             commands::queue_append,
             commands::queue_play_next,
@@ -331,6 +385,7 @@ pub fn run() {
             commands::queue_remove,
             commands::queue_move,
             commands::queue_page,
+            commands::queue_up_next,
             commands::player_play_index,
             commands::player_play,
             commands::player_pause,
@@ -467,6 +522,8 @@ pub fn run() {
             sync::commands::sync_pair_close,
             sync::commands::sync_remove_peer,
             sync::commands::sync_connect_pair,
+            sync::commands::sync_connect_pair_link,
+            sync::commands::sync_discover,
             sync::commands::sync_now,
             sync::commands::sync_forget,
             sync::commands::sync_guard_decide,

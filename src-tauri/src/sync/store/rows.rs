@@ -1,6 +1,7 @@
 //! Reading and writing the `sync_*` tables. Every write sets `seq`.
 
 use super::{EntryRecord, FavoriteRecord, ListenRecord, PlaylistRecord, Result};
+use crate::library::ProfileId;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::collections::HashMap;
 
@@ -74,26 +75,36 @@ pub(super) fn listen(r: &Row<'_>) -> rusqlite::Result<ListenRecord> {
 
 // --- favourites ---------------------------------------------------------
 
-pub(super) fn all_favorites(conn: &Connection) -> Result<Vec<FavoriteRecord>> {
+pub(super) fn all_favorites(conn: &Connection, p: ProfileId) -> Result<Vec<FavoriteRecord>> {
     let mut st = conn.prepare(&format!(
-        "SELECT {FAVORITE_COLS} FROM sync_favorites ORDER BY key"
+        "SELECT {FAVORITE_COLS} FROM sync_favorites WHERE profile_id = ?1 ORDER BY key"
     ))?;
-    let rows = st.query_map([], favorite)?;
+    let rows = st.query_map([p.0], favorite)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-pub(super) fn get_favorite(conn: &Connection, key: &str) -> Result<Option<FavoriteRecord>> {
+pub(super) fn get_favorite(
+    conn: &Connection,
+    p: ProfileId,
+    key: &str,
+) -> Result<Option<FavoriteRecord>> {
     let mut st = conn.prepare_cached(&format!(
-        "SELECT {FAVORITE_COLS} FROM sync_favorites WHERE key = ?1"
+        "SELECT {FAVORITE_COLS} FROM sync_favorites WHERE profile_id = ?1 AND key = ?2"
     ))?;
-    Ok(st.query_row([key], favorite).optional()?)
+    Ok(st.query_row(params![p.0, key], favorite).optional()?)
 }
 
-pub(super) fn put_favorite(conn: &Connection, f: &FavoriteRecord, seq: i64) -> Result<()> {
+pub(super) fn put_favorite(
+    conn: &Connection,
+    p: ProfileId,
+    f: &FavoriteRecord,
+    seq: i64,
+) -> Result<()> {
     let mut st = conn.prepare_cached(
-        "INSERT INTO sync_favorites(key, title, artist, album, duration_ms, is_on, hlc, seq)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-         ON CONFLICT(key) DO UPDATE SET
+        "INSERT INTO sync_favorites(key, title, artist, album, duration_ms, is_on, hlc, seq,
+                                    profile_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(profile_id, key) DO UPDATE SET
             title = excluded.title, artist = excluded.artist, album = excluded.album,
             duration_ms = excluded.duration_ms, is_on = excluded.is_on,
             hlc = excluded.hlc, seq = excluded.seq",
@@ -106,7 +117,8 @@ pub(super) fn put_favorite(conn: &Connection, f: &FavoriteRecord, seq: i64) -> R
         f.duration_ms,
         f.on,
         f.hlc,
-        seq
+        seq,
+        p.0
     ])?;
     Ok(())
 }
@@ -121,11 +133,12 @@ pub(super) struct PlaylistRow {
     pub reconciled: bool,
 }
 
-pub(super) fn all_playlists(conn: &Connection) -> Result<Vec<PlaylistRow>> {
+pub(super) fn all_playlists(conn: &Connection, p: ProfileId) -> Result<Vec<PlaylistRow>> {
     let mut st = conn.prepare(&format!(
-        "SELECT {PLAYLIST_COLS}, reconciled FROM sync_playlists ORDER BY uuid"
+        "SELECT {PLAYLIST_COLS}, reconciled FROM sync_playlists WHERE profile_id = ?1
+         ORDER BY uuid"
     ))?;
-    let rows = st.query_map([], |r| {
+    let rows = st.query_map([p.0], |r| {
         Ok(PlaylistRow {
             rec: playlist(r)?,
             reconciled: r.get(8)?,
@@ -134,12 +147,17 @@ pub(super) fn all_playlists(conn: &Connection) -> Result<Vec<PlaylistRow>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-pub(super) fn get_playlist(conn: &Connection, uuid: &str) -> Result<Option<PlaylistRow>> {
+pub(super) fn get_playlist(
+    conn: &Connection,
+    p: ProfileId,
+    uuid: &str,
+) -> Result<Option<PlaylistRow>> {
     let mut st = conn.prepare_cached(&format!(
-        "SELECT {PLAYLIST_COLS}, reconciled FROM sync_playlists WHERE uuid = ?1"
+        "SELECT {PLAYLIST_COLS}, reconciled FROM sync_playlists
+         WHERE profile_id = ?1 AND uuid = ?2"
     ))?;
     Ok(st
-        .query_row([uuid], |r| {
+        .query_row(params![p.0, uuid], |r| {
             Ok(PlaylistRow {
                 rec: playlist(r)?,
                 reconciled: r.get(8)?,
@@ -148,22 +166,27 @@ pub(super) fn get_playlist(conn: &Connection, uuid: &str) -> Result<Option<Playl
         .optional()?)
 }
 
+/// Inserts or updates a playlist of profile `profile`. A uuid that already
+/// belongs to another profile is left alone (uuids are random, so this only
+/// guards against a hostile or broken peer reusing one).
 pub(super) fn put_playlist(
     conn: &Connection,
+    profile: ProfileId,
     p: &PlaylistRecord,
     reconciled: bool,
     seq: i64,
 ) -> Result<()> {
     let mut st = conn.prepare_cached(
         "INSERT INTO sync_playlists(uuid, name, name_hlc, cover_preset, cover_hlc, deleted,
-                                    deleted_hlc, created_at, reconciled, seq)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                                    deleted_hlc, created_at, reconciled, seq, profile_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(uuid) DO UPDATE SET
             name = excluded.name, name_hlc = excluded.name_hlc,
             cover_preset = excluded.cover_preset, cover_hlc = excluded.cover_hlc,
             deleted = excluded.deleted, deleted_hlc = excluded.deleted_hlc,
             created_at = excluded.created_at, reconciled = excluded.reconciled,
-            seq = excluded.seq",
+            seq = excluded.seq
+         WHERE sync_playlists.profile_id = excluded.profile_id",
     )?;
     st.execute(params![
         p.uuid,
@@ -175,7 +198,8 @@ pub(super) fn put_playlist(
         p.deleted_hlc,
         p.created_at,
         reconciled,
-        seq
+        seq,
+        profile.0
     ])?;
     Ok(())
 }
@@ -192,22 +216,32 @@ pub(super) fn live_entries(conn: &Connection, playlist_uuid: &str) -> Result<Vec
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-pub(super) fn get_entry(conn: &Connection, uuid: &str) -> Result<Option<EntryRecord>> {
+pub(super) fn get_entry(
+    conn: &Connection,
+    p: ProfileId,
+    uuid: &str,
+) -> Result<Option<EntryRecord>> {
     let mut st = conn.prepare_cached(&format!(
-        "SELECT {ENTRY_COLS} FROM sync_playlist_entries WHERE uuid = ?1"
+        "SELECT {ENTRY_COLS} FROM sync_playlist_entries WHERE profile_id = ?1 AND uuid = ?2"
     ))?;
-    Ok(st.query_row([uuid], entry).optional()?)
+    Ok(st.query_row(params![p.0, uuid], entry).optional()?)
 }
 
-pub(super) fn put_entry(conn: &Connection, e: &EntryRecord, seq: i64) -> Result<()> {
+pub(super) fn put_entry(
+    conn: &Connection,
+    profile: ProfileId,
+    e: &EntryRecord,
+    seq: i64,
+) -> Result<()> {
     let mut st = conn.prepare_cached(
         "INSERT INTO sync_playlist_entries(uuid, playlist_uuid, key, title, artist, album,
-                duration_ms, added_at, pos, pos_hlc, deleted, deleted_hlc, seq)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                duration_ms, added_at, pos, pos_hlc, deleted, deleted_hlc, seq, profile_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
          ON CONFLICT(uuid) DO UPDATE SET
             pos = excluded.pos, pos_hlc = excluded.pos_hlc,
             deleted = excluded.deleted, deleted_hlc = excluded.deleted_hlc,
-            seq = excluded.seq",
+            seq = excluded.seq
+         WHERE sync_playlist_entries.profile_id = excluded.profile_id",
     )?;
     st.execute(params![
         e.uuid,
@@ -222,7 +256,8 @@ pub(super) fn put_entry(conn: &Connection, e: &EntryRecord, seq: i64) -> Result<
         e.pos_hlc,
         e.deleted,
         e.deleted_hlc,
-        seq
+        seq,
+        profile.0
     ])?;
     Ok(())
 }
@@ -230,11 +265,16 @@ pub(super) fn put_entry(conn: &Connection, e: &EntryRecord, seq: i64) -> Result<
 // --- listens --------------------------------------------------------------
 
 /// Inserts a history row unless it is already there; true when inserted.
-pub(super) fn insert_listen(conn: &Connection, l: &ListenRecord, seq: i64) -> Result<bool> {
+pub(super) fn insert_listen(
+    conn: &Connection,
+    p: ProfileId,
+    l: &ListenRecord,
+    seq: i64,
+) -> Result<bool> {
     let mut st = conn.prepare_cached(
         "INSERT OR IGNORE INTO sync_listens(uid, key, title, artist, album, genre, duration_ms,
-                path, started_at, ended_at, listened_ms, completed, skipped, seq)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                path, started_at, ended_at, listened_ms, completed, skipped, seq, profile_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
     )?;
     let n = st.execute(params![
         l.uid,
@@ -250,28 +290,39 @@ pub(super) fn insert_listen(conn: &Connection, l: &ListenRecord, seq: i64) -> Re
         l.listened_ms,
         l.completed,
         l.skipped,
-        seq
+        seq,
+        p.0
     ])?;
     Ok(n > 0)
 }
 
+/// Listen uids are global: a uid already stored for any profile counts.
 pub(super) fn listen_exists(conn: &Connection, uid: &str) -> Result<bool> {
     let mut st = conn.prepare_cached("SELECT EXISTS(SELECT 1 FROM sync_listens WHERE uid = ?1)")?;
     Ok(st.query_row([uid], |r| r.get(0))?)
 }
 
-pub(super) fn get_listen(conn: &Connection, uid: &str) -> Result<Option<ListenRecord>> {
+pub(super) fn get_listen(
+    conn: &Connection,
+    p: ProfileId,
+    uid: &str,
+) -> Result<Option<ListenRecord>> {
     let mut st = conn.prepare_cached(&format!(
-        "SELECT {LISTEN_COLS} FROM sync_listens WHERE uid = ?1"
+        "SELECT {LISTEN_COLS} FROM sync_listens WHERE profile_id = ?1 AND uid = ?2"
     ))?;
-    Ok(st.query_row([uid], listen).optional()?)
+    Ok(st.query_row(params![p.0, uid], listen).optional()?)
 }
 
 // --- local playlist id <-> uuid -------------------------------------------
 
-pub(super) fn playlist_map(conn: &Connection) -> Result<HashMap<i64, String>> {
-    let mut st = conn.prepare("SELECT playlist_id, uuid FROM sync_playlist_map")?;
-    let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+/// The local playlist id <-> uuid pairs of profile `p` (the map itself is
+/// shared; the sync playlist row says which profile a uuid belongs to).
+pub(super) fn playlist_map(conn: &Connection, p: ProfileId) -> Result<HashMap<i64, String>> {
+    let mut st = conn.prepare(
+        "SELECT m.playlist_id, m.uuid FROM sync_playlist_map m
+         JOIN sync_playlists s ON s.uuid = m.uuid WHERE s.profile_id = ?1",
+    )?;
+    let rows = st.query_map([p.0], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 

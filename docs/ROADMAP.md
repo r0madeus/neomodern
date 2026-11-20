@@ -1,6 +1,6 @@
 # NeoModern – status and roadmap
 
-Last updated: 2026-11-14 (evening). The owner's decision notes live in the 2ncibeyn
+Last updated: 2026-11-20. The owner's decision notes live in the 2ncibeyn
 vault (`projects/muzik-calar/`); this file is the in-repo summary for
 contributors and agents.
 
@@ -195,7 +195,7 @@ contributors and agents.
 - **Data**: downloaded album covers, artist pictures and lyrics are kept
   in the data folder (docs/DATA-LAYOUT.md), not lost with the cache.
 
-### PC ↔ phone sync and remote control (K21, experimental, in review)
+### PC ↔ phone sync and remote control (K21, experimental)
 
 - Same Wi-Fi only, off by default (desktop Settings › Phone). Pair once
   with a 6-digit code (SPAKE2), then Noise-encrypted sessions per device.
@@ -205,11 +205,36 @@ contributors and agents.
   validation, one transaction per page, backups, mass-delete question.
 - The phone controls the PC: play/pause, seek, volume, shuffle/repeat,
   "Up next". Design and limits: `docs/SYNC.md`.
-- Not yet tried on real devices (Windows firewall prompt, Android
-  local-network access).
+- Tried on real devices by the owner (2026-11-20): works.
+- Pairing by QR code (K23): the PC shows the code as a QR code with its
+  LAN addresses; the phone scans it (Android, camera asked when scanning).
+  Typing the address and code still works.
+- "Next up" follows the shuffle order (desktop, phone, remote).
+
+### Profiles (K24, K25; v0.9.6)
+- Several people on one device, each with their own favourites, playlists,
+  history and stats, home feed, pins and queue (`docs/PROFILES.md`).
+  Switch from the sidebar (desktop) or the Home header (phone); optional
+  4–8 digit PIN with a "Who is listening?" lock screen.
+- Sync is per profile: each pairing binds one profile on each side; each
+  phone profile can have its own pairing. The phone finds the computer on
+  the Wi-Fi by itself (LAN discovery), or pairs by QR code.
+- Large libraries: stats, home feed, artist directory and deep song pages
+  are fast again (`docs/PERFORMANCE.md`).
+- The Windows libmpv build is pinned and its SHA-256 checked.
+
+### Desktop stability (K22: keep the system webview)
+- No high-rate events while the page is hidden (WebView2 freezes it);
+  a UI watchdog logs stalls; on Windows a failed or hung page renderer is
+  reloaded; on Linux the DMA-BUF renderer is off with the NVIDIA driver.
+- Library commands run off the main thread.
+- HTTP responses are size-capped; at most 2 sync connections per address.
 
 ## Next
 
+0. **Large-library leftovers** (`docs/PERFORMANCE.md`): stats for 90 days
+   and all time (0.3 / 0.9 s at 200k listens) and ~0.6 s of sync work per
+   idle round.
 1. **Try metadata matching on real albums** (desktop and phone): the
    MusicBrainz responses so far are recorded fixtures. A live check:
    `cd src-tauri && cargo test live_musicbrainz -- --ignored --nocapture`.

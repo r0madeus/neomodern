@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
-use super::Result;
+use super::{ProfileId, Result};
 
 /// A picked song, ready for the queue.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,13 +42,14 @@ struct Candidate {
 /// Up to `n` songs that fit `seeds` (paths, most recent last).
 pub fn pick(
     conn: &Connection,
+    profile: ProfileId,
     seeds: &[String],
     exclude: &HashSet<String>,
     n: usize,
     now: i64,
     random_seed: u64,
 ) -> Result<Vec<AutoTrack>> {
-    let all = candidates(conn)?;
+    let all = candidates(conn, profile)?;
     if n == 0 || all.is_empty() {
         return Ok(Vec::new());
     }
@@ -80,7 +81,7 @@ pub fn pick(
             seed_albums.insert(a);
         }
     }
-    let together = listened_together(conn, &seed_artists, now)?;
+    let together = listened_together(conn, profile, &seed_artists, now)?;
 
     let mut scored: Vec<(f64, &Candidate)> = all
         .iter()
@@ -164,7 +165,7 @@ fn unit(state: &mut u64) -> f64 {
     ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
 }
 
-fn candidates(conn: &Connection) -> Result<Vec<Candidate>> {
+fn candidates(conn: &Connection, profile: ProfileId) -> Result<Vec<Candidate>> {
     let mut artists: HashMap<i64, Vec<String>> = HashMap::new();
     {
         let mut st =
@@ -175,21 +176,22 @@ fn candidates(conn: &Connection) -> Result<Vec<Candidate>> {
             artists.entry(id).or_default().push(a.to_lowercase());
         }
     }
-    let mut st = conn.prepare(
+    let p = profile.0;
+    let mut st = conn.prepare(&format!(
         "SELECT t.id, t.path, t.title, t.artist, COALESCE(t.genre, ''), t.year, t.album_id,
                 ((SELECT COUNT(*) FROM listen_events le
-                   WHERE le.track_id = t.id
+                   WHERE le.profile_id = {p} AND le.track_id = t.id
                      AND (le.completed = 1 OR le.listened_ms >= 15000))
                  + (SELECT COUNT(*) FROM listen_events le
-                   WHERE le.track_id IS NULL AND le.path = t.path
+                   WHERE le.profile_id = {p} AND le.track_id IS NULL AND le.path = t.path
                      AND (le.completed = 1 OR le.listened_ms >= 15000))),
                 NULLIF(MAX(
-                    COALESCE((SELECT MAX(le.started_at) FROM listen_events le WHERE le.track_id = t.id), 0),
-                    COALESCE((SELECT MAX(le.started_at) FROM listen_events le WHERE le.track_id IS NULL AND le.path = t.path), 0)
+                    COALESCE((SELECT MAX(le.started_at) FROM listen_events le WHERE le.profile_id = {p} AND le.track_id = t.id), 0),
+                    COALESCE((SELECT MAX(le.started_at) FROM listen_events le WHERE le.profile_id = {p} AND le.track_id IS NULL AND le.path = t.path), 0)
                 ), 0),
-                EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
-         FROM tracks t",
-    )?;
+                EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id AND f.profile_id = {p})
+         FROM tracks t"
+    ))?;
     let rows = st.query_map([], |r| {
         let id: i64 = r.get(0)?;
         let artist: String = r.get(3)?;
@@ -216,6 +218,7 @@ fn candidates(conn: &Connection) -> Result<Vec<Candidate>> {
 /// days), as a weight in 0..=1 (three such listens count fully).
 fn listened_together(
     conn: &Connection,
+    profile: ProfileId,
     seed_artists: &HashMap<String, f64>,
     now: i64,
 ) -> Result<HashMap<String, f64>> {
@@ -227,16 +230,18 @@ fn listened_together(
         "SELECT LOWER(b.artist), COUNT(*)
          FROM listen_events a
          JOIN listen_events b
-           ON b.started_at BETWEEN a.started_at - 2700 AND a.started_at + 2700
+           ON b.profile_id = a.profile_id
+          AND b.started_at BETWEEN a.started_at - 2700 AND a.started_at + 2700
           AND b.id <> a.id
-         WHERE a.started_at > ?1 AND LOWER(a.artist) LIKE '%' || ?2 || '%'
+         WHERE a.profile_id = ?3 AND a.started_at > ?1 AND LOWER(a.artist) LIKE '%' || ?2 || '%'
            AND LOWER(b.artist) NOT LIKE '%' || ?2 || '%'
          GROUP BY LOWER(b.artist)",
     )?;
     for (seed, weight) in seed_artists {
-        let rows = st.query_map(rusqlite::params![now - 180 * 86_400, seed], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-        })?;
+        let rows = st.query_map(
+            rusqlite::params![now - 180 * 86_400, seed, profile.0],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+        )?;
         for row in rows {
             let (artist, n) = row?;
             let w = (n as f64 / 3.0).min(1.0) * weight;
@@ -252,4 +257,20 @@ fn listened_together(
         }
     }
     Ok(out)
+}
+
+/// Test hook: what the active profile's history says about each song
+/// (`path -> (plays, favourite, last played)`).
+#[cfg(test)]
+pub(super) type SongStats = (i64, bool, Option<i64>);
+
+#[cfg(test)]
+pub(super) fn profile_stats(
+    conn: &Connection,
+    profile: ProfileId,
+) -> Result<HashMap<String, SongStats>> {
+    Ok(candidates(conn, profile)?
+        .into_iter()
+        .map(|c| (c.path, (c.plays, c.favorite, c.last_played)))
+        .collect())
 }

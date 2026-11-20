@@ -12,6 +12,13 @@
   import { player } from '../player.svelte'
   import { pinned } from '../pinned.svelte'
   import type { TrackRow } from '../library.svelte'
+  import { invoke } from '@tauri-apps/api/core'
+  import { formatTime } from '../player.svelte'
+  import type { Rgb } from '../nowCover.svelte'
+  import { tintFrom } from '../tint'
+  import TintedBackdrop from '../TintedBackdrop.svelte'
+  import ProfileAvatar from '../ProfileAvatar.svelte'
+  import { profiles } from '../profiles.svelte'
 
   let { id, onBack }: { id: number; onBack: () => void } = $props()
 
@@ -38,6 +45,40 @@
     return () => (stale = true)
   })
 
+  // Rename in a bottom sheet (Spotify's "Name & details").
+  let renaming = $state(false)
+  let nameDraft = $state('')
+  function startRename() {
+    nameDraft = info?.name ?? ''
+    renaming = true
+  }
+  async function saveRename(e: SubmitEvent) {
+    e.preventDefault()
+    const name = nameDraft.trim()
+    if (!name || !info) return
+    if (name === info.name || (await playlists.rename(id, name))) renaming = false
+  }
+
+  const totalSeconds = $derived(tracks.reduce((sum, tr) => sum + (tr.durationMs ?? 0), 0) / 1000)
+
+  // The page is tinted with the colour of its cover (a chosen image, else
+  // the first album cover of the collage), like Spotify.
+  let color = $state<Rgb | null>(null)
+  $effect(() => {
+    const custom = info?.cover && !info.cover.startsWith('preset:') ? info.cover : null
+    const cover = custom ?? info?.albumCovers[0] ?? null
+    color = null
+    if (cover === null) return
+    let stale = false
+    invoke<Rgb | null>('library_cover_color', { cover })
+      .then((c) => {
+        if (!stale) color = c
+      })
+      .catch(() => {})
+    return () => (stale = true)
+  })
+  const tint = $derived(tintFrom(color))
+
   async function shufflePlay() {
     if (tracks.length === 0) return
     await player.setShuffle(true)
@@ -54,7 +95,7 @@
     <button class="rounded-full bg-black/30 p-2.5 text-white active:bg-black/50" aria-label={t('Back')} onclick={onBack}>
       <Icon name="back" class="size-6" />
     </button>
-    <h1 class={['min-w-0 flex-1 truncate text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
+    <h1 class={['min-w-0 flex-1 truncate pr-14 text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
       {info?.name ?? ''}
     </h1>
     {#if info}
@@ -64,6 +105,18 @@
         iconClass="size-6"
       >
         {#snippet children(close)}
+          <button
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+            onclick={() => {
+              close()
+              startRename()
+            }}
+          >
+            <Icon name="sliders" class="size-5 text-zinc-500" />
+            {t('Rename')}
+          </button>
           <button
             type="button"
             role="menuitem"
@@ -104,12 +157,13 @@
       </ActionsMenu>
     {/if}
   </header>
-  <div class="min-h-0 flex-1 overflow-y-auto pt-14 pb-[var(--mobile-bar-clear,5rem)]">
+  <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
     {#if info}
-      <div class="flex flex-col items-center px-4 pt-2 pb-4">
+      <div class="relative isolate overflow-hidden px-4 pt-16 pb-3">
+        <TintedBackdrop background="linear-gradient(180deg, {tint.top} 0%, {tint.surface} 60%, var(--color-zinc-950) 100%)" />
         <button
           type="button"
-          class="group relative aspect-square w-1/2 max-w-56 overflow-hidden rounded-xl shadow-2xl shadow-black/60 active:scale-[0.98]"
+          class="mx-auto block aspect-square w-[62%] max-w-72 overflow-hidden rounded-sm shadow-2xl shadow-black/60 active:scale-[0.98]"
           aria-label={t('Playlist cover')}
           onclick={() => (editingCover = true)}
         >
@@ -117,43 +171,78 @@
             cover={info.cover}
             albumCovers={info.albumCovers}
             name={info.name}
-            class="size-full rounded-xl text-5xl"
+            class="size-full rounded-sm text-5xl"
             iconClass="size-20"
           />
-          <span class="absolute right-2 bottom-2 flex items-center gap-1 rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-xs">
-            <Icon name="image" class="size-3.5" />
-            {t('Cover')}
-          </span>
         </button>
-        <h2 class="mt-4 self-start text-2xl font-bold" {@attach underTopBar((hidden) => (titleHidden = hidden))}>{info.name}</h2>
-        <p class="self-start text-xs text-zinc-400">
-          {t('Playlist · {count}', { count: count(info.trackCount, '{n} song', '{n} songs') })}
+        <h2 class="mt-6 text-[1.7rem] leading-tight font-bold tracking-tight" {@attach underTopBar((hidden) => (titleHidden = hidden))}>
+          {info.name}
+        </h2>
+        {#if profiles.current}
+          <!-- Spotify shows the owner: here, the profile it belongs to. -->
+          <p class="mt-2.5 flex min-w-0 items-center gap-2 text-sm font-bold text-zinc-50">
+            <ProfileAvatar profile={profiles.current} class="size-6 text-[10px]" />
+            <span class="truncate">{profiles.current.name}</span>
+          </p>
+        {/if}
+        <p class="mt-2 text-[13px] text-zinc-400">
+          {[t('Playlist'), count(info.trackCount, '{n} song', '{n} songs'), totalSeconds > 0 ? formatTime(totalSeconds) : '']
+            .filter(Boolean)
+            .join(' • ')}
         </p>
       </div>
       {#if tracks.length > 0}
-        <!-- The list's pt-14 (bar height) counts for sticky too: -12px lets
-             the button overlap the bar's lower edge (clear of "Export"). -->
+        <!-- The play button sticks at the bar's lower edge once scrolled. -->
         <StickyPlay
-          top="-12px"
+          dockShift={52}
           playing={player.isActiveFrom(`playlist:${id}`)}
           onclick={() => player.playOrToggle(`playlist:${id}`, () => playlists.play(id, 0))}
         />
-        <div class="flex h-16 items-center gap-2 px-4 pb-2">
-          <button
-            class={['rounded-full p-2.5 active:bg-white/10', pinned.isPinned('playlist', id) ? 'text-accent-400' : 'text-zinc-300']}
-            aria-label={t(pinned.isPinned('playlist', id) ? 'Unpin' : 'Pin')}
-            aria-pressed={pinned.isPinned('playlist', id)}
-            onclick={() => void pinned.toggle('playlist', id)}
-          >
-            <Icon name="pin" class="size-6" />
-          </button>
-          <span class="flex-1"></span>
-          <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t("Shuffle play")} onclick={shufflePlay}>
+      {/if}
+      <div class="flex h-16 items-center gap-1 px-2.5 pb-2">
+        <button
+          class={['rounded-full p-2.5 active:bg-white/10', pinned.isPinned('playlist', id) ? 'text-accent-400' : 'text-zinc-300']}
+          aria-label={t(pinned.isPinned('playlist', id) ? 'Unpin' : 'Pin')}
+          aria-pressed={pinned.isPinned('playlist', id)}
+          onclick={() => void pinned.toggle('playlist', id)}
+        >
+          <Icon name="pin" class="size-6" />
+        </button>
+        <button
+          class="rounded-full p-2.5 text-zinc-300 active:bg-white/10"
+          aria-label={t('Export…')}
+          onclick={() => info && void playlists.exportM3u(info)}
+        >
+          <Icon name="share" class="size-6" />
+        </button>
+        <span class="flex-1"></span>
+        {#if tracks.length > 0}
+          <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t('Shuffle play')} onclick={shufflePlay}>
             <Icon name="shuffle" class="size-6" />
           </button>
-          <span class="size-14 shrink-0" aria-hidden="true"></span>
-        </div>
-      {:else}
+          <span class="mr-1.5 size-14 shrink-0" aria-hidden="true"></span>
+        {/if}
+      </div>
+      <!-- Spotify-style chips under the action row. -->
+      <div class="flex gap-2 overflow-x-auto px-4 pb-3 no-scrollbar">
+        <button
+          type="button"
+          class="flex shrink-0 items-center gap-2 rounded-full bg-zinc-800/90 px-4 py-2 text-sm font-semibold text-zinc-100 active:bg-zinc-700"
+          onclick={startRename}
+        >
+          <Icon name="sliders" class="size-4" />
+          {t('Rename')}
+        </button>
+        <button
+          type="button"
+          class="flex shrink-0 items-center gap-2 rounded-full bg-zinc-800/90 px-4 py-2 text-sm font-semibold text-zinc-100 active:bg-zinc-700"
+          onclick={() => (editingCover = true)}
+        >
+          <Icon name="image" class="size-4" />
+          {t('Cover')}
+        </button>
+      </div>
+      {#if tracks.length === 0}
         <p class="px-8 pt-6 text-center text-sm text-zinc-400">
           {t("This playlist is empty. Use the ⋯ menu on a song or album to add tracks.")}
         </p>
@@ -161,11 +250,12 @@
       {#each tracks as track, i (`${i}:${track.id}`)}
         <TrackItem
           title={track.title}
-          subtitle={[track.artist, track.album].filter(Boolean).join(' · ')}
+          subtitle={track.artist}
           path={track.path}
           cover={track.cover}
           trackId={track.id}
           {track}
+          album=""
           onPlay={() => playlists.play(id, i)}
           onRemoveFromPlaylist={() => void playlists.removeAt(id, [i])}
         />
@@ -173,6 +263,41 @@
     {/if}
   </div>
 </div>
+
+{#if renaming && info}
+  <div use:portal class="fixed inset-0 z-[90] flex items-end bg-black/60" role="presentation" onclick={() => (renaming = false)}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('Rename')}
+      tabindex="-1"
+      class="w-full rounded-t-2xl bg-zinc-900 px-4 pt-5 pb-[calc(1rem+var(--inset-bottom,0px))] text-zinc-100"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && (renaming = false)}
+    >
+    <form onsubmit={saveRename}>
+      <label class="flex flex-col gap-2">
+        <span class="text-lg font-bold">{t('Playlist name')}</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          class="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-base focus:border-accent-500 focus:outline-none"
+          maxlength="200"
+          autofocus
+          bind:value={nameDraft}
+        />
+      </label>
+      <div class="mt-5 flex gap-3">
+        <button type="button" class="flex-1 rounded-full bg-zinc-800 py-3 font-semibold active:bg-zinc-700" onclick={() => (renaming = false)}>
+          {t('Cancel')}
+        </button>
+        <button type="submit" class="flex-1 rounded-full bg-accent-500 py-3 font-semibold text-zinc-950 active:bg-accent-400 disabled:opacity-50" disabled={nameDraft.trim() === ''}>
+          {t('Save')}
+        </button>
+      </div>
+    </form>
+    </div>
+  </div>
+{/if}
 
 {#if editingCover && info}
   <PlaylistCoverModal playlist={info} onClose={() => (editingCover = false)} />

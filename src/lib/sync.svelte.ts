@@ -4,8 +4,8 @@
 // commands land in `error` / `remoteError`, shown inline by the views.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { GuardSummary, RepeatMode } from './syncLogic'
-import { interpolatePosition, remoteErrorKind, throttleLatest } from './syncLogic'
+import type { FoundComputer, GuardSummary, RepeatMode } from './syncLogic'
+import { cleanFound, computerFor, interpolatePosition, remoteErrorKind, throttleLatest } from './syncLogic'
 
 export interface SyncResult {
   peerId: string
@@ -28,6 +28,10 @@ export interface PeerStatus {
   syncing: boolean
   /** Unix milliseconds. */
   lastSyncAt: number | null
+  /** The local profile this pairing syncs (K24). */
+  profileName: string
+  /** Its id: the phone shows the pairing of its active profile (K25). */
+  profileId: number
   lastError: string | null
   pendingGuard: GuardSummary | null
   lastResult: SyncResult | null
@@ -40,11 +44,20 @@ export interface SyncStatus {
   role: 'desktop' | 'phone'
   deviceId: string
   deviceName: string
+  /** The library's active profile. */
+  activeProfile: number
   allowPhoneConnections: boolean
   listening: { port: number; addresses: string[] } | null
-  pairing: { state: PairingState; code: string | null; remainingSecs: number | null }
+  pairing: { state: PairingState; code: string | null; remainingSecs: number | null; profileName: string | null }
   peers: PeerStatus[]
   lastResult: SyncResult | null
+}
+
+/** A QR code to draw: `size`×`size` modules, row by row, '1' = dark. */
+export interface PairQr {
+  link: string
+  size: number
+  modules: string
 }
 
 export interface PairingOpen {
@@ -52,6 +65,10 @@ export interface PairingOpen {
   addresses: string[]
   port: number
   remainingSecs: number
+  /** The local profile a phone paired with this code will sync with. */
+  profileName: string
+  /** The same code as a QR code with the addresses (K23). */
+  qr: PairQr | null
 }
 
 export type RemoteStatus = 'playing' | 'paused' | 'stopped'
@@ -108,6 +125,7 @@ export type SyncAction =
   | 'connect'
   | 'syncNow'
   | 'forget'
+  | 'discover'
   | 'remove'
   | 'guard'
 
@@ -139,8 +157,15 @@ class SyncStore {
   #started = false
   #openRemote: (() => void) | null = null
 
-  /** This phone's computer (role phone), if paired. */
-  computer = $derived(this.status?.peers.find((p) => p.kind === 'computer') ?? null)
+  /** Computers found on the network by the last search (phone). */
+  found = $state<FoundComputer[]>([])
+  searching = $state(false)
+  /** A search has finished since the app started (so "none found" is true). */
+  searched = $state(false)
+
+  /** The computer the active profile is paired with (role phone), if any.
+   *  Each phone profile has its own pairing (K25). */
+  computer = $derived(computerFor(this.status?.peers ?? [], this.status?.activeProfile ?? null))
   /** The phones paired with this computer (role desktop). */
   phones = $derived(this.status?.peers.filter((p) => p.kind === 'phone') ?? [])
   duration = $derived(this.#durationOverride ?? this.remote?.current?.duration ?? null)
@@ -196,6 +221,41 @@ class SyncStore {
   /** Phone: pairs with the computer; true when it worked. */
   connectPair = (address: string, code: string) =>
     this.#status('connect', 'sync_connect_pair', { address, code })
+  /** Phone: scans the computer's pairing QR code and pairs (K23); true
+   *  when it worked. The camera is only used while the scanner is open. */
+  scanPair = async (): Promise<boolean> => {
+    let link: string
+    try {
+      const scanner = await import('@tauri-apps/plugin-barcode-scanner')
+      let permission = await scanner.checkPermissions()
+      if (permission !== 'granted') permission = await scanner.requestPermissions()
+      if (permission !== 'granted') {
+        this.error = { action: 'connect', message: 'camera permission was not given' }
+        return false
+      }
+      link = (await scanner.scan({ windowed: false, formats: [scanner.Format.QRCode] })).content
+    } catch (e) {
+      // Closing the scanner is not an error.
+      if (!/cancel/i.test(String(e))) this.error = { action: 'connect', message: String(e) }
+      return false
+    }
+    return this.#status('connect', 'sync_connect_pair_link', { link })
+  }
+  /** Phone: looks for computers on the Wi-Fi (about 1.5 s). */
+  discover = async (): Promise<void> => {
+    if (this.searching) return
+    this.searching = true
+    if (this.error?.action === 'discover') this.error = null
+    try {
+      this.found = cleanFound(await invoke<FoundComputer[]>('sync_discover'))
+    } catch (e) {
+      this.found = []
+      this.error = { action: 'discover', message: String(e) }
+    } finally {
+      this.searching = false
+      this.searched = true
+    }
+  }
   syncNow = () => this.#status('syncNow', 'sync_now')
   forget = () =>
     this.#status('forget', 'sync_forget').then((ok) => {
@@ -261,12 +321,12 @@ class SyncStore {
     return this.queueVersion >= 0 && this.queueStart + this.queue.length < this.queueTotal
   }
 
-  /** Loads the next page of the remote queue, or (`reset`) the first one
-   *  from the song playing now. */
+  /** Loads the next page of the computer's "Next up" list (the songs after
+   *  the current one, in play order with shuffle applied), or (`reset`) the
+   *  first page. Offsets count from the next song. */
   async loadQueue(reset = false): Promise<void> {
     if (this.queueLoading && !reset) return
-    const start = Math.max(0, this.remote?.currentIndex ?? 0)
-    const offset = reset ? start : this.queueStart + this.queue.length
+    const offset = reset ? 0 : this.queueStart + this.queue.length
     if (!reset && !this.queueHasMore) return
     this.queueLoading = true
     try {
@@ -335,7 +395,8 @@ class SyncStore {
   }
 
   #applyRemote(next: RemoteState | null): void {
-    const prevKey = this.remote?.current?.key
+    const prev = this.remote
+    const prevKey = prev?.current?.key
     this.remote = next
     if (!next) {
       this.queue = []
@@ -346,11 +407,12 @@ class SyncStore {
     }
     if (next.current?.key !== prevKey) this.#durationOverride = null
     this.#setAnchor(next.position)
-    // A changed queue, or "previous" went back before the loaded rows.
+    // "Next up" depends on the queue, the current song and shuffle.
     if (
       this.queueVersion >= 0 &&
       (next.queueVersion !== this.queueVersion ||
-        (next.currentIndex !== null && next.currentIndex < this.queueStart))
+        next.currentIndex !== prev?.currentIndex ||
+        next.shuffle !== prev?.shuffle)
     ) {
       void this.loadQueue(true)
     }

@@ -7,7 +7,7 @@ use super::protocol::{ErrorCode, Msg, SYNC_VERSION};
 use super::remote::{RemoteCmd, RemoteFeed, RemoteStatus};
 use super::service::{EventSink, PeerStatus, SyncConfig, SyncService};
 use super::store;
-use crate::library::{Hooks, Library, db};
+use crate::library::{Hooks, Library, ProfileId, db};
 use crate::player::bulk_tests::Silent;
 use crate::player::{Player, Status};
 use std::collections::{BTreeMap, BTreeSet};
@@ -147,14 +147,27 @@ impl Dev {
 
     fn favorite(&self, songs: &[usize], on: bool) {
         let ids: Vec<i64> = songs.iter().map(|&i| self.id_of(i)).collect();
-        db::set_favorites(&mut self.lib.conn(), &ids, on, 1_700_000_000).unwrap();
+        db::set_favorites(
+            &mut self.lib.conn(),
+            ProfileId::FIRST,
+            &ids,
+            on,
+            1_700_000_000,
+        )
+        .unwrap();
     }
 
     fn create(&self, name: &str, songs: &[usize]) -> i64 {
         let ids: Vec<i64> = songs.iter().map(|&i| self.id_of(i)).collect();
-        db::create_playlist(&mut self.lib.conn(), name, &ids, 1_700_000_000)
-            .unwrap()
-            .id
+        db::create_playlist(
+            &mut self.lib.conn(),
+            ProfileId::FIRST,
+            name,
+            &ids,
+            1_700_000_000,
+        )
+        .unwrap()
+        .id
     }
 
     fn favorites(&self) -> BTreeSet<String> {
@@ -359,14 +372,14 @@ fn favourites_and_playlists_converge_both_ways() {
         p.pc.favorite(&[0], false);
         let road = p.pc.playlists().len();
         assert_eq!(road, 2);
-        let road_id = db::playlists(&p.pc.lib.conn())
+        let road_id = db::playlists(&p.pc.lib.conn(), ProfileId::FIRST)
             .unwrap()
             .into_iter()
             .find(|l| l.name == "Road")
             .unwrap()
             .id;
         let five = p.pc.id_of(5);
-        db::playlist_add_tracks(&mut p.pc.lib.conn(), road_id, &[five]).unwrap();
+        db::playlist_add_tracks(&mut p.pc.lib.conn(), ProfileId::FIRST, road_id, &[five]).unwrap();
         p.phone.favorite(&[3], true);
         p.phone.create("Chill", &[6]);
         p.sync().await;
@@ -505,11 +518,34 @@ fn remote_commands_reach_the_computers_player() {
                 .is_err()
         );
 
-        let page = p.phone.svc.remote_queue_page(1, 10).await.unwrap();
-        assert_eq!((page.offset, page.total, page.entries.len()), (1, 3, 2));
+        // "Next up": the songs after the current one, `offset` counted from
+        // the next song; entries keep their queue index.
+        let page = p.phone.svc.remote_queue_page(0, 10).await.unwrap();
+        assert_eq!((page.offset, page.total, page.entries.len()), (0, 2, 2));
         assert_eq!(page.entries[0].index, 1);
         assert_eq!(page.entries[0].title, title(1));
+        let second = p.phone.svc.remote_queue_page(1, 10).await.unwrap();
+        assert_eq!((second.offset, second.entries.len()), (1, 1));
+        assert_eq!(second.entries[0].index, 2);
         assert!(p.phone.svc.remote_queue_page(0, 101).await.is_err());
+
+        // With shuffle on, the list is the order the computer will play.
+        p.phone
+            .svc
+            .remote_send(RemoteCmd::SetShuffle { on: true })
+            .await
+            .unwrap();
+        let shuffled = p.phone.svc.remote_queue_page(0, 10).await.unwrap();
+        let (_, expected) = p.pc.player.up_next_page(0, 10);
+        assert_eq!(
+            shuffled.entries.iter().map(|e| e.index).collect::<Vec<_>>(),
+            expected.iter().map(|(i, _)| *i).collect::<Vec<_>>()
+        );
+        p.phone
+            .svc
+            .remote_send(RemoteCmd::SetShuffle { on: false })
+            .await
+            .unwrap();
 
         // A stale queue version is refused; the current one works.
         let stale = RemoteCmd::PlayIndex {
@@ -641,14 +677,32 @@ fn a_page_shrinks_until_it_fits_the_size_limit() {
         let pc = device("Desk PC", true).await;
         pc.favorite(&(0..SONGS).collect::<Vec<_>>(), true);
         let conn = pc.lib.conn();
-        store::upsert_peer(&conn, "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "Pixel", &[1; 32]).unwrap();
-        store::capture(&conn, 1_700_000_000_000).unwrap();
-        let whole =
-            super::conn::build_page(&conn, "0f1e2d3c4b5a69788796a5b4c3d2e1f0", 2000, 1 << 20)
-                .unwrap();
+        store::upsert_peer(
+            &conn,
+            "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+            "Pixel",
+            &[1; 32],
+            ProfileId::FIRST,
+        )
+        .unwrap();
+        store::capture(&conn, 1_700_000_000_000, &[ProfileId::FIRST]).unwrap();
+        let whole = super::conn::build_page(
+            &conn,
+            "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+            2000,
+            1 << 20,
+            super::conn::Role::Server,
+        )
+        .unwrap();
         assert_eq!((whole.len, whole.more), (SONGS, false));
-        let small =
-            super::conn::build_page(&conn, "0f1e2d3c4b5a69788796a5b4c3d2e1f0", 2000, 1500).unwrap();
+        let small = super::conn::build_page(
+            &conn,
+            "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+            2000,
+            1500,
+            super::conn::Role::Server,
+        )
+        .unwrap();
         assert!(small.bytes.len() <= 1500, "{}", small.bytes.len());
         assert!(small.more && small.len < SONGS && small.len > 0);
         assert_eq!(small.limit, small.len);
@@ -694,4 +748,463 @@ fn messages_are_a_closed_list() {
     assert_eq!(json, r#"{"type":"syncAck","uptoSeq":5}"#);
     let err = String::from_utf8(Msg::error(ErrorCode::MassDelete, "x").to_bytes()).unwrap();
     assert!(err.contains(r#""code":"mass_delete""#), "{err}");
+}
+
+#[test]
+fn the_phone_pairs_from_the_qr_code() {
+    rt(async {
+        let pc = device("Desk PC", true).await;
+        let phone = device("Pixel", false).await;
+        let port = pc
+            .svc
+            .set_allow_phone_connections(true)
+            .await
+            .unwrap()
+            .listening
+            .unwrap()
+            .port;
+        let open = pc.svc.pair_open().await.unwrap();
+        let qr = open.qr.as_ref().expect("a QR code with the pairing code");
+        assert!(qr.link.contains(&format!("c={}", open.code)));
+        assert_eq!(qr.modules.len(), qr.size * qr.size);
+
+        // The first address in the code does not answer (another adapter);
+        // the phone moves on to the next one.
+        // Port 1 has no listener here: the connection is refused at once.
+        let closed: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let good: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        let link = crate::sync::pair_link::build_link(&open.code, &[closed, good]);
+        phone.svc.connect_pair_link(&link).await.unwrap();
+        let pc_id = pc.id().await;
+        wait_for!("the first sync", phone.rounds(&pc_id).await >= 1);
+
+        // Something else in front of the camera is refused at once.
+        assert!(
+            phone
+                .svc
+                .connect_pair_link("https://example.com")
+                .await
+                .is_err()
+        );
+        phone.svc.shutdown().await;
+        pc.svc.shutdown().await;
+    });
+}
+
+/// Titles of the favourites of one profile on a device.
+fn profile_favorites(dev: &Dev, profile: ProfileId) -> BTreeSet<String> {
+    let conn = dev.lib.conn();
+    let mut st = conn
+        .prepare(
+            "SELECT t.title FROM favorites f JOIN tracks t ON t.id = f.track_id
+             WHERE f.profile_id = ?1",
+        )
+        .unwrap();
+    st.query_map([profile.0], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+fn favorite_in(dev: &Dev, profile: ProfileId, songs: &[usize]) {
+    let ids: Vec<i64> = songs.iter().map(|&i| dev.id_of(i)).collect();
+    db::set_favorites(&mut dev.lib.conn(), profile, &ids, true, 1_700_000_000).unwrap();
+}
+
+/// Pairs `phone` with `pc` while `profile` is the computer's active one.
+async fn pair_with_profile(pc: &Dev, phone: &Dev, port: u16, profile: ProfileId) {
+    pc.lib.set_active_profile(profile).unwrap();
+    let open = pc.svc.pair_open().await.unwrap();
+    assert_eq!(
+        open.profile_name,
+        pc.lib
+            .profiles()
+            .unwrap()
+            .into_iter()
+            .find(|p| p.id == profile)
+            .unwrap()
+            .name
+    );
+    phone
+        .svc
+        .connect_pair(&format!("127.0.0.1:{port}"), &open.code)
+        .await
+        .unwrap();
+    let pc_id = pc.id().await;
+    wait_for!("the first sync", phone.rounds(&pc_id).await >= 1);
+    pc.svc.pair_close();
+}
+
+#[test]
+fn two_phones_sync_two_different_computer_profiles() {
+    rt(async {
+        let pc = device("Desk PC", true).await;
+        let (one, two) = (device("Pixel", false).await, device("Galaxy", false).await);
+        let second = pc.lib.create_profile("Second").unwrap().id;
+        let first = ProfileId::FIRST;
+        favorite_in(&pc, first, &[0, 1]);
+        favorite_in(&pc, second, &[5]);
+        favorite_in(&one, first, &[2]);
+        favorite_in(&two, first, &[6]);
+        let port = pc
+            .svc
+            .set_allow_phone_connections(true)
+            .await
+            .unwrap()
+            .listening
+            .unwrap()
+            .port;
+        pair_with_profile(&pc, &one, port, first).await;
+        pair_with_profile(&pc, &two, port, second).await;
+        let (one_id, two_id) = (one.id().await, two.id().await);
+
+        // Each phone sees only its profile's favourites.
+        assert_eq!(one.favorites(), title_set(&[0, 1, 2]));
+        assert_eq!(two.favorites(), title_set(&[5, 6]));
+        assert_eq!(profile_favorites(&pc, first), title_set(&[0, 1, 2]));
+        assert_eq!(profile_favorites(&pc, second), title_set(&[5, 6]));
+
+        // The binding is shown by name.
+        let names: BTreeMap<String, String> = pc
+            .svc
+            .status()
+            .await
+            .unwrap()
+            .peers
+            .into_iter()
+            .map(|p| (p.id, p.profile_name))
+            .collect();
+        assert_eq!(names[&two_id], "Second");
+        assert_ne!(names[&one_id], "Second");
+
+        // Later edits stay in their own profile.
+        favorite_in(&one, first, &[3]);
+        let before = one.rounds(&pc.id().await).await;
+        one.svc.sync_now().await.unwrap();
+        wait_for!("a round", one.rounds(&pc.id().await).await > before);
+        assert_eq!(profile_favorites(&pc, first), title_set(&[0, 1, 2, 3]));
+        assert_eq!(profile_favorites(&pc, second), title_set(&[5, 6]));
+        assert_eq!(two.favorites(), title_set(&[5, 6]));
+
+        // Deleting the bound profile drops its pairing and closes the session.
+        pc.lib.set_active_profile(first).unwrap();
+        pc.lib.delete_profile(second).unwrap();
+        pc.svc.profile_deleted(second).await.unwrap();
+        assert!(pc.peer(&two_id).await.is_none());
+        assert!(pc.peer(&one_id).await.is_some());
+        wait_for!(
+            "the phone to be dropped",
+            !two.connected(&pc.id().await).await
+        );
+        pc.svc.shutdown().await;
+        one.svc.shutdown().await;
+        two.svc.shutdown().await;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// LAN discovery (K25)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_phone_finds_the_computer_by_itself_and_only_while_it_listens() {
+    rt(async {
+        let pc = device("Desk PC", true).await;
+        let phone = device("Pixel", false).await;
+        // Not listening: nobody answers.
+        let loopback = |port: u16| {
+            vec![std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                port,
+            )]
+        };
+        let port = pc
+            .svc
+            .set_allow_phone_connections(true)
+            .await
+            .unwrap()
+            .listening
+            .unwrap()
+            .port;
+        // Only a phone looks for computers.
+        assert!(pc.svc.discover().await.is_err());
+
+        let found = phone.svc.discover_at(&loopback(port)).await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].device_id, pc.id().await);
+        assert_eq!(found[0].name, "Desk PC");
+        assert_eq!(found[0].address, format!("127.0.0.1:{port}"));
+
+        // A rename is announced.
+        pc.svc.set_device_name("Study PC").await.unwrap();
+        let found = phone.svc.discover_at(&loopback(port)).await.unwrap();
+        assert_eq!(found[0].name, "Study PC");
+
+        // The found address pairs (the code is still typed or scanned).
+        let open = pc.svc.pair_open().await.unwrap();
+        phone
+            .svc
+            .connect_pair(&found[0].address, &open.code)
+            .await
+            .unwrap();
+        let pc_id = pc.id().await;
+        wait_for!("the first sync", phone.rounds(&pc_id).await >= 1);
+
+        // Turning phone connections off stops the answers.
+        pc.svc.set_allow_phone_connections(false).await.unwrap();
+        assert!(
+            phone
+                .svc
+                .discover_at(&loopback(port))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        pc.svc.shutdown().await;
+        phone.svc.shutdown().await;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Several pairings on one phone, one per phone profile (K25)
+// ---------------------------------------------------------------------------
+
+/// The phone's pairing row of `profile`, if any.
+async fn computer_peer(phone: &Dev, profile: ProfileId) -> Option<PeerStatus> {
+    phone
+        .svc
+        .status()
+        .await
+        .unwrap()
+        .peers
+        .into_iter()
+        .find(|p| p.kind == "computer" && p.profile_id == profile.0)
+}
+
+/// Switches the phone's active profile and tells the sync service, as
+/// `profile_switch` does.
+async fn switch_phone(phone: &Dev, to: ProfileId) {
+    phone.lib.set_active_profile(to).unwrap();
+    phone.svc.profile_switched().await.unwrap();
+}
+
+/// Pairs the phone's active profile with `pc` (whose active profile is the
+/// one that gets bound) and waits for the first round.
+async fn pair_phone(phone: &Dev, pc: &Dev, port: u16, pc_profile: ProfileId) -> PeerStatus {
+    pc.lib.set_active_profile(pc_profile).unwrap();
+    let open = pc.svc.pair_open().await.unwrap();
+    phone
+        .svc
+        .connect_pair(&format!("127.0.0.1:{port}"), &open.code)
+        .await
+        .unwrap();
+    pc.svc.pair_close();
+    let profile = phone.lib.active_profile();
+    wait_for!(
+        "the first sync",
+        computer_peer(phone, profile)
+            .await
+            .is_some_and(|p| p.rounds >= 1)
+    );
+    computer_peer(phone, profile).await.unwrap()
+}
+
+async fn listen(pc: &Dev) -> u16 {
+    pc.svc
+        .set_allow_phone_connections(true)
+        .await
+        .unwrap()
+        .listening
+        .unwrap()
+        .port
+}
+
+#[test]
+fn a_phone_with_two_profiles_pairs_with_two_computers_and_follows_the_profile() {
+    rt(async {
+        let (pc_a, pc_b) = (device("Desk PC", true).await, device("Laptop", true).await);
+        let phone = device("Pixel", false).await;
+        let (one, two) = (
+            ProfileId::FIRST,
+            phone.lib.create_profile("Second").unwrap().id,
+        );
+        favorite_in(&pc_a, ProfileId::FIRST, &[0, 1]);
+        favorite_in(&pc_b, ProfileId::FIRST, &[5]);
+        favorite_in(&phone, one, &[2]);
+        favorite_in(&phone, two, &[6]);
+        let (port_a, port_b) = (listen(&pc_a).await, listen(&pc_b).await);
+
+        // Profile 1 <-> computer A, profile 2 <-> computer B.
+        let to_a = pair_phone(&phone, &pc_a, port_a, ProfileId::FIRST).await;
+        switch_phone(&phone, two).await;
+        // The new profile has no pairing yet; the old connection is gone.
+        assert!(computer_peer(&phone, two).await.is_none());
+        wait_for!("the old session to close", !phone.connected(&to_a.id).await);
+        let to_b = pair_phone(&phone, &pc_b, port_b, ProfileId::FIRST).await;
+        assert_ne!(to_a.id, to_b.id);
+
+        // Pairing profile 2 did not remove profile 1's pairing, and each
+        // profile synced only its own data with its own computer.
+        assert!(computer_peer(&phone, one).await.is_some());
+        assert_eq!(profile_favorites(&phone, one), title_set(&[0, 1, 2]));
+        assert_eq!(profile_favorites(&phone, two), title_set(&[5, 6]));
+        assert_eq!(
+            profile_favorites(&pc_a, ProfileId::FIRST),
+            title_set(&[0, 1, 2])
+        );
+        assert_eq!(
+            profile_favorites(&pc_b, ProfileId::FIRST),
+            title_set(&[5, 6])
+        );
+
+        // Switching profile switches the connection.
+        switch_phone(&phone, one).await;
+        wait_for!("computer A", phone.connected(&to_a.id).await);
+        wait_for!("computer B to be left", !phone.connected(&to_b.id).await);
+        favorite_in(&phone, one, &[3]);
+        phone.svc.sync_now().await.unwrap();
+        // Wait for the edit, not for "a round": the reconnect's round can end
+        // after the edit without carrying it.
+        wait_for!(
+            "the edit on computer A",
+            profile_favorites(&pc_a, ProfileId::FIRST) == title_set(&[0, 1, 2, 3])
+        );
+        assert_eq!(
+            profile_favorites(&pc_b, ProfileId::FIRST),
+            title_set(&[5, 6])
+        );
+
+        // Back to profile 2: B again, A is left.
+        switch_phone(&phone, two).await;
+        wait_for!("computer B", phone.connected(&to_b.id).await);
+        wait_for!("computer A to be left", !phone.connected(&to_a.id).await);
+
+        // Forgetting is for the active profile only.
+        phone.svc.forget().await.unwrap();
+        assert!(computer_peer(&phone, two).await.is_none());
+        assert!(computer_peer(&phone, one).await.is_some());
+        assert!(phone.svc.forget().await.is_err());
+        switch_phone(&phone, one).await;
+        wait_for!("computer A", phone.connected(&to_a.id).await);
+        // The synced data stays.
+        assert_eq!(profile_favorites(&phone, two), title_set(&[5, 6]));
+
+        for d in [&phone, &pc_a, &pc_b] {
+            d.svc.shutdown().await;
+        }
+    });
+}
+
+#[test]
+fn two_phone_profiles_pair_with_the_same_computer_as_two_phones() {
+    rt(async {
+        let pc = device("Desk PC", true).await;
+        let phone = device("Pixel", false).await;
+        let pc_two = pc.lib.create_profile("Second").unwrap().id;
+        let phone_two = phone.lib.create_profile("Second").unwrap().id;
+        let (pc_one, phone_one) = (ProfileId::FIRST, ProfileId::FIRST);
+        favorite_in(&pc, pc_one, &[0]);
+        favorite_in(&pc, pc_two, &[7]);
+        favorite_in(&phone, phone_one, &[1]);
+        favorite_in(&phone, phone_two, &[8]);
+        let port = listen(&pc).await;
+        let pc_id = pc.id().await;
+        let phone_id = phone.id().await;
+
+        let first = pair_phone(&phone, &pc, port, pc_one).await;
+        // Profile 1 keeps the id every pairing before K25 used, on both sides.
+        assert_eq!(first.id, pc_id);
+        assert!(pc.peer(&phone_id).await.is_some());
+
+        switch_phone(&phone, phone_two).await;
+        let second = pair_phone(&phone, &pc, port, pc_two).await;
+        assert_ne!(first.id, second.id, "one row per pairing on the phone");
+
+        // The computer sees two different phones, bound to its two profiles.
+        let peers = pc.svc.status().await.unwrap().peers;
+        assert_eq!(peers.len(), 2);
+        let ids: BTreeSet<_> = peers.iter().map(|p| p.id.clone()).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&phone_id));
+        assert_eq!(peers.iter().filter(|p| p.connected).count(), 1);
+
+        assert_eq!(profile_favorites(&phone, phone_one), title_set(&[0, 1]));
+        assert_eq!(profile_favorites(&phone, phone_two), title_set(&[7, 8]));
+        assert_eq!(profile_favorites(&pc, pc_one), title_set(&[0, 1]));
+        assert_eq!(profile_favorites(&pc, pc_two), title_set(&[7, 8]));
+
+        // Switch back and forth: each profile reconnects with its own link
+        // identity, and an edit goes only to its own computer profile.
+        switch_phone(&phone, phone_one).await;
+        wait_for!("profile 1's session", phone.connected(&first.id).await);
+        wait_for!(
+            "profile 2's session to end",
+            !phone.connected(&second.id).await
+        );
+        favorite_in(&phone, phone_one, &[2]);
+        phone.svc.sync_now().await.unwrap();
+        // Not "the next round ended": the round started by the reconnect can
+        // end after the edit without carrying it; the one asked for here
+        // follows it.
+        wait_for!(
+            "the edit on the computer",
+            profile_favorites(&pc, pc_one) == title_set(&[0, 1, 2])
+        );
+        assert_eq!(profile_favorites(&pc, pc_two), title_set(&[7, 8]));
+
+        // The computer removes profile 2's phone: profile 1 keeps syncing.
+        let gone = pc
+            .svc
+            .status()
+            .await
+            .unwrap()
+            .peers
+            .into_iter()
+            .find(|p| p.id != phone_id)
+            .unwrap();
+        pc.svc.remove_peer(&gone.id).await.unwrap();
+        assert!(pc.peer(&phone_id).await.is_some());
+        assert!(phone.connected(&first.id).await);
+
+        pc.svc.shutdown().await;
+        phone.svc.shutdown().await;
+    });
+}
+
+#[test]
+fn each_phone_profile_has_its_own_link_id_and_a_batch_from_it_is_not_foreign() {
+    rt(async {
+        let phone = device("Pixel", false).await;
+        let two = phone.lib.create_profile("Second").unwrap().id;
+        let conn = phone.lib.conn();
+        let base = store::device_id(&conn).unwrap();
+        // Profile 1 is the install's id; others get a stable id of their own.
+        assert_eq!(
+            store::link_device_id(&conn, ProfileId::FIRST).unwrap(),
+            base
+        );
+        let id2 = store::link_device_id(&conn, two).unwrap();
+        assert_ne!(id2, base);
+        assert_eq!(store::link_device_id(&conn, two).unwrap(), id2);
+        // A batch carrying any of this phone's own ids is refused.
+        let own = |from: &str| store::Batch {
+            from_device: from.into(),
+            ..store::Batch::default()
+        };
+        let opts = store::ApplyOptions {
+            profile: ProfileId::FIRST,
+            peer_id: None,
+            peer_name: "x".into(),
+            allow_mass_delete: false,
+            backup_dir: None,
+            now_ms: 1_700_000_000_000,
+        };
+        assert!(store::apply(&conn, &own(&id2), &opts).is_err());
+        assert!(store::apply(&conn, &own(&base), &opts).is_err());
+        let stranger = "00112233445566778899aabbccddeeff";
+        assert!(store::apply(&conn, &own(stranger), &opts).is_ok());
+        // Deleting the profile forgets its id.
+        store::forget_link_device_id(&conn, two).unwrap();
+        assert_ne!(store::link_device_id(&conn, two).unwrap(), id2);
+    });
 }

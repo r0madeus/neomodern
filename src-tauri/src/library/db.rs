@@ -1,6 +1,7 @@
 //! SQLite schema and queries. All functions take a plain `&Connection` so
 //! they can be tested without the [`super::Library`] facade.
 
+use super::profiles::{DEFAULT_FIRST_PROFILE_NAME, PROFILE_COLORS, ProfileId};
 use super::{
     AlbumDetail, AlbumRow, ArtistMeta, ArtistProfile, ArtistRow, ArtistTopTrack, BucketStat,
     DynamicMix, FavoriteRef, FolderInfo, GenreDetail, GenreRow, HomeFeed, HomeMixDetail,
@@ -13,7 +14,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 13;
+const SCHEMA_VERSION: i64 = 16;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -174,7 +175,7 @@ CREATE INDEX IF NOT EXISTS tag_history_batch ON tag_history(batch_id);
 /// playlists and listening history, plus local-only bookkeeping. Sync rows
 /// store track *keys*, never `tracks.id`, so they have no foreign keys into
 /// the library: a song missing on this device must not cascade them away.
-const SCHEMA_V13: &str = "
+pub(crate) const SCHEMA_V13: &str = "
 CREATE TABLE IF NOT EXISTS sync_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -256,8 +257,159 @@ CREATE TABLE IF NOT EXISTS sync_present (
 );
 ";
 
-/// Opens-time setup: pragmas and migrations.
+/// Profiles (K24): the `profiles` table and the `profile_id` columns. Runs
+/// with `foreign_keys = OFF` (a column with a REFERENCES clause and a
+/// non-NULL default cannot be added otherwise, and `favorites` is rebuilt).
+/// The `DEFAULT 1` only lets ALTER TABLE work and keeps old sync SQL on
+/// profile 1; every library INSERT sets `profile_id` explicitly.
+const SCHEMA_V14: &str = "
+CREATE TABLE IF NOT EXISTS profiles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    color      TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+";
+
+const SCHEMA_V14_FAVORITES: &str = "
+CREATE TABLE favorites_v14 (
+    profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    track_id   INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    added_at   INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, track_id)
+);
+INSERT INTO favorites_v14(profile_id, track_id, added_at)
+SELECT 1, track_id, added_at FROM favorites;
+DROP TABLE favorites;
+ALTER TABLE favorites_v14 RENAME TO favorites;
+";
+
+/// The listening indexes the profile-scoped ones replace.
+const SCHEMA_V14_DROP_INDEXES: &str = "
+DROP INDEX IF EXISTS listen_events_started;
+DROP INDEX IF EXISTS listen_events_artist;
+DROP INDEX IF EXISTS listen_events_track;
+DROP INDEX IF EXISTS listen_events_path;
+DROP INDEX IF EXISTS idx_listen_events_artist_nocase;
+DROP INDEX IF EXISTS idx_listen_events_track_play;
+DROP INDEX IF EXISTS idx_listen_events_unlinked_path_play;
+DROP INDEX IF EXISTS idx_listen_events_started_at;
+";
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2",
+        [table, column],
+        |r| r.get(0),
+    )?)
+}
+
+/// Schema v14, written so a repeated run is harmless (like v13).
+fn migrate_v14(conn: &Connection, first_profile_name: &str) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(SCHEMA_V14)?;
+    tx.execute(
+        "INSERT OR IGNORE INTO profiles(id, name, color, created_at) VALUES (1, ?1, ?2, ?3)",
+        rusqlite::params![first_profile_name, PROFILE_COLORS[0], now_secs()],
+    )?;
+    for table in ["playlists", "listen_events"] {
+        if !has_column(&tx, table, "profile_id")? {
+            tx.execute_batch(&format!(
+                "ALTER TABLE {table}
+                 ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1 REFERENCES profiles(id) ON DELETE CASCADE;"
+            ))?;
+        }
+    }
+    if !has_column(&tx, "favorites", "profile_id")? {
+        tx.execute_batch(SCHEMA_V14_FAVORITES)?;
+    }
+    tx.execute_batch(SCHEMA_V14_DROP_INDEXES)?;
+    tx.pragma_update(None, "user_version", 14)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Per-profile sync (K24, `docs/PROFILES.md`): every pairing is bound to one
+/// profile and the replicated rows carry the profile they belong to.
+/// `sync_playlist_map` (playlist ids are global) and `sync_present`
+/// (presence is about the library) stay shared. Runs with
+/// `foreign_keys = OFF`, like v14.
+const SCHEMA_V15_FAVORITES: &str = "
+CREATE TABLE sync_favorites_v15 (
+    profile_id  INTEGER NOT NULL DEFAULT 1 REFERENCES profiles(id) ON DELETE CASCADE,
+    key         TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    artist      TEXT NOT NULL,
+    album       TEXT NOT NULL,
+    duration_ms INTEGER,
+    is_on       INTEGER NOT NULL,
+    hlc         TEXT NOT NULL,
+    seq         INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, key)
+);
+INSERT INTO sync_favorites_v15(profile_id, key, title, artist, album, duration_ms, is_on, hlc, seq)
+SELECT 1, key, title, artist, album, duration_ms, is_on, hlc, seq FROM sync_favorites;
+DROP TABLE sync_favorites;
+ALTER TABLE sync_favorites_v15 RENAME TO sync_favorites;
+";
+
+const SCHEMA_V15_INDEXES: &str = "
+DROP INDEX IF EXISTS sync_favorites_seq;
+DROP INDEX IF EXISTS sync_playlists_seq;
+DROP INDEX IF EXISTS sync_playlist_entries_seq;
+DROP INDEX IF EXISTS sync_listens_seq;
+CREATE INDEX IF NOT EXISTS sync_favorites_profile_seq ON sync_favorites(profile_id, seq);
+CREATE INDEX IF NOT EXISTS sync_playlists_profile_seq ON sync_playlists(profile_id, seq);
+CREATE INDEX IF NOT EXISTS sync_playlist_entries_profile_seq ON sync_playlist_entries(profile_id, seq);
+CREATE INDEX IF NOT EXISTS sync_listens_profile_seq ON sync_listens(profile_id, seq);
+";
+
+/// Schema v15, written so a repeated run is harmless (like v13 and v14).
+fn migrate_v15(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    for table in [
+        "sync_peers",
+        "sync_playlists",
+        "sync_playlist_entries",
+        "sync_listens",
+    ] {
+        if !has_column(&tx, table, "profile_id")? {
+            tx.execute_batch(&format!(
+                "ALTER TABLE {table}
+                 ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1 REFERENCES profiles(id) ON DELETE CASCADE;"
+            ))?;
+        }
+    }
+    if !has_column(&tx, "sync_favorites", "profile_id")? {
+        tx.execute_batch(SCHEMA_V15_FAVORITES)?;
+    }
+    tx.execute_batch(SCHEMA_V15_INDEXES)?;
+    tx.pragma_update(None, "user_version", 15)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Schema v16: an optional PIN per profile (K25), stored salted and hashed
+/// (see `library::profiles`). Repeating it is harmless.
+fn migrate_v16(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    if !has_column(&tx, "profiles", "pin")? {
+        tx.execute_batch("ALTER TABLE profiles ADD COLUMN pin TEXT;")?;
+    }
+    tx.pragma_update(None, "user_version", 16)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Opens-time setup: pragmas and migrations. A database that gets its first
+/// profile in this call names it [`DEFAULT_FIRST_PROFILE_NAME`].
 pub fn init(conn: &Connection) -> Result<()> {
+    init_with_first_profile(conn, DEFAULT_FIRST_PROFILE_NAME)
+}
+
+/// Like [`init`]; `first_profile_name` names profile 1 when the v14
+/// migration creates it.
+pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -402,13 +554,37 @@ pub fn init(conn: &Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
+    if version < 14 {
+        conn.pragma_update(None, "foreign_keys", false)?;
+        let res = migrate_v14(conn, first_profile_name);
+        conn.pragma_update(None, "foreign_keys", true)?;
+        res?;
+    }
+    if version < 15 {
+        conn.pragma_update(None, "foreign_keys", false)?;
+        let res = migrate_v15(conn);
+        conn.pragma_update(None, "foreign_keys", true)?;
+        res?;
+    }
+    if version < 16 {
+        migrate_v16(conn)?;
+    }
+    // Indexes of the profile-scoped queries lead with `profile_id`.
     conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_listen_events_artist_nocase ON listen_events(artist COLLATE NOCASE);
-         CREATE INDEX IF NOT EXISTS idx_tracks_genre_norm ON tracks(LOWER(TRIM(genre)));
+        "CREATE INDEX IF NOT EXISTS idx_tracks_genre_norm ON tracks(LOWER(TRIM(genre)));
          CREATE INDEX IF NOT EXISTS idx_tracks_album_added ON tracks(album_id, added_at DESC);
-         CREATE INDEX IF NOT EXISTS idx_listen_events_track_play ON listen_events(track_id, completed, listened_ms);
-         CREATE INDEX IF NOT EXISTS idx_listen_events_unlinked_path_play ON listen_events(path, completed, listened_ms) WHERE track_id IS NULL;
-         CREATE INDEX IF NOT EXISTS idx_listen_events_started_at ON listen_events(started_at);",
+         CREATE INDEX IF NOT EXISTS favorites_added ON favorites(profile_id, added_at DESC);
+         CREATE INDEX IF NOT EXISTS playlists_profile ON playlists(profile_id, name COLLATE NOCASE);
+         CREATE INDEX IF NOT EXISTS listen_events_profile_started ON listen_events(profile_id, started_at);
+         CREATE INDEX IF NOT EXISTS listen_events_profile_artist ON listen_events(profile_id, artist COLLATE NOCASE, started_at);
+         CREATE INDEX IF NOT EXISTS listen_events_profile_track ON listen_events(profile_id, track_id, completed, listened_ms);
+         CREATE INDEX IF NOT EXISTS listen_events_profile_path ON listen_events(profile_id, path, completed, listened_ms) WHERE track_id IS NULL;
+         CREATE INDEX IF NOT EXISTS tracks_title_artist ON tracks(title, artist, id);
+         CREATE INDEX IF NOT EXISTS tracks_title_desc ON tracks(title DESC, artist, id);
+         CREATE INDEX IF NOT EXISTS tracks_duration_asc ON tracks((duration_ms IS NULL), duration_ms, title, id);
+         CREATE INDEX IF NOT EXISTS tracks_duration_desc ON tracks((duration_ms IS NULL), duration_ms DESC, title, id);
+         CREATE INDEX IF NOT EXISTS listen_events_profile_artist_plays ON listen_events(profile_id, artist COLLATE NOCASE, listened_ms, completed);
+         CREATE INDEX IF NOT EXISTS listen_events_profile_stats ON listen_events(profile_id, started_at, track_id, listened_ms, completed, skipped, title, artist, album, genre);",
     )?;
     Ok(())
 }
@@ -710,32 +886,39 @@ pub fn counts(conn: &Connection) -> Result<(u64, u64)> {
     Ok((tracks as u64, albums as u64))
 }
 
-/// Track columns, then `plays`: listens that count as a play (finished or
-/// at least 15 s, same rule as `PLAY_EXPR`), matched by track id or path.
-/// The columns `track_row` reads (a macro so it can be `concat!`ed).
-macro_rules! track_columns {
-    () => {
+/// Track columns, then `plays`: this profile's listens that count as a play
+/// (finished or at least 15 s, same rule as `PLAY_EXPR`), matched by track
+/// id or path. The profile id is a number, so it is written into the SQL.
+fn track_columns(profile: ProfileId) -> String {
+    let p = profile.0;
+    format!(
         "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
         t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover,
         ((SELECT COUNT(*) FROM listen_events le
-           WHERE le.track_id = t.id
+           WHERE le.profile_id = {p} AND le.track_id = t.id
              AND (le.completed = 1 OR le.listened_ms >= 15000))
          + (SELECT COUNT(*) FROM listen_events le
-           WHERE le.track_id IS NULL AND le.path = t.path
+           WHERE le.profile_id = {p} AND le.track_id IS NULL AND le.path = t.path
              AND (le.completed = 1 OR le.listened_ms >= 15000))) AS plays"
-    };
+    )
 }
-const TRACK_SELECT: &str = concat!(
-    track_columns!(),
-    " FROM tracks t LEFT JOIN albums a ON a.id = t.album_id"
-);
+
+fn track_select(profile: ProfileId) -> String {
+    format!(
+        "{} FROM tracks t LEFT JOIN albums a ON a.id = t.album_id",
+        track_columns(profile)
+    )
+}
+
 /// Playlist entries: the track columns plus when it was added.
-const PLAYLIST_TRACK_SELECT: &str = concat!(
-    track_columns!(),
-    ", pt.added_at AS entry_added_at
+fn playlist_track_select(profile: ProfileId) -> String {
+    format!(
+        "{}, pt.added_at AS entry_added_at
      FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
-     LEFT JOIN albums a ON a.id = t.album_id"
-);
+     LEFT JOIN albums a ON a.id = t.album_id",
+        track_columns(profile)
+    )
+}
 
 fn opt_u32(v: Option<i64>) -> Option<u32> {
     v.and_then(|n| u32::try_from(n).ok())
@@ -825,11 +1008,12 @@ fn album_filter(query: &str) -> Filter {
 
 pub fn tracks_page(
     conn: &Connection,
+    profile: ProfileId,
     offset: u64,
     limit: u64,
     sort: impl Into<SortSpec>,
 ) -> Result<Vec<TrackRow>> {
-    Ok(search_tracks_page(conn, offset, limit, sort, "")?.items)
+    Ok(search_tracks_page(conn, profile, offset, limit, sort, "")?.items)
 }
 
 fn query_page<T>(
@@ -855,6 +1039,7 @@ fn query_page<T>(
 
 pub fn search_tracks_page(
     conn: &Connection,
+    profile: ProfileId,
     offset: u64,
     limit: u64,
     sort: impl Into<SortSpec>,
@@ -867,16 +1052,91 @@ pub fn search_tracks_page(
         "SELECT COUNT(*) FROM tracks t LEFT JOIN albums a ON a.id = t.album_id {}",
         f.where_sql
     );
+    // Pick the page's ids first (sort and OFFSET on minimal columns), then
+    // load the rows and their play counts for those ids only; the outer
+    // ORDER BY re-sorts just the page.
+    let cols = track_columns(profile);
+    let order = sort.order_by();
     let page_sql = format!(
-        "{TRACK_SELECT} {} ORDER BY {} LIMIT ?{} OFFSET ?{}",
+        "{cols}
+         FROM (SELECT t.id AS id
+               FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
+               {} ORDER BY {order} LIMIT ?{} OFFSET ?{}) p
+         JOIN tracks t ON t.id = p.id
+         LEFT JOIN albums a ON a.id = t.album_id
+         ORDER BY {order}",
         f.where_sql,
-        sort.order_by(),
         n + 1,
         n + 2
     );
+    if f.params.is_empty()
+        && offset >= DEEP_PAGE_OFFSET
+        && sort.order == SortOrder::Artist
+        && let Some(items) = deep_artist_page(conn, profile, offset, limit, sort.dir)?
+    {
+        let total: i64 = conn.query_row(&count_sql, [], |r| r.get(0))?;
+        return Ok(Page {
+            total: total.max(0) as u64,
+            items,
+        });
+    }
     query_page(
         conn, &count_sql, &page_sql, f.params, offset, limit, track_row,
     )
+}
+
+/// From this offset on, an unfiltered artist-sorted page skips the sort of
+/// the whole library (see `deep_artist_page`).
+const DEEP_PAGE_OFFSET: u64 = if cfg!(test) { 20 } else { 1_000 };
+
+/// A deep page of the artist-sorted song list without sorting every track:
+/// the artist at `offset` and the number of tracks before that artist come
+/// from the `(artist, title)` index, so only the tracks from that artist on
+/// are sorted, with the offset reduced by the tracks skipped. Same rows in
+/// the same order as the plain query; `None` when the offset is past the end.
+fn deep_artist_page(
+    conn: &Connection,
+    profile: ProfileId,
+    offset: u64,
+    limit: u64,
+    dir: SortDir,
+) -> Result<Option<Vec<TrackRow>>> {
+    let (cmp, dir_sql) = match dir {
+        SortDir::Asc => (">=", ""),
+        SortDir::Desc => ("<=", " DESC"),
+    };
+    let Some(boundary): Option<String> = conn
+        .query_row(
+            &format!("SELECT artist FROM tracks ORDER BY artist{dir_sql} LIMIT 1 OFFSET ?1"),
+            [offset as i64],
+            |r| r.get(0),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    let before_cmp = if dir == SortDir::Asc { "<" } else { ">" };
+    let before: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM tracks WHERE artist {before_cmp} ?1"),
+        [&boundary],
+        |r| r.get(0),
+    )?;
+    let cols = track_columns(profile);
+    let order = SortSpec::new(SortOrder::Artist, dir).order_by();
+    let mut st = conn.prepare(&format!(
+        "{cols}
+         FROM (SELECT t.id AS id
+               FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
+               WHERE t.artist {cmp} ?1 ORDER BY {order} LIMIT ?2 OFFSET ?3) p
+         JOIN tracks t ON t.id = p.id
+         LEFT JOIN albums a ON a.id = t.album_id
+         ORDER BY {order}"
+    ))?;
+    let rows = st.query_map(
+        rusqlite::params![&boundary, limit as i64, offset as i64 - before],
+        track_row,
+    )?;
+    Ok(Some(rows.collect::<std::result::Result<_, _>>()?))
 }
 
 /// Row → queue track (path, title, artist) for the three-column selects below.
@@ -964,11 +1224,12 @@ pub fn album_info(conn: &Connection, album_id: i64) -> Result<Option<AlbumRow>> 
         .optional()?)
 }
 
-pub fn album_detail(conn: &Connection, album_id: i64) -> Result<AlbumDetail> {
+pub fn album_detail(conn: &Connection, profile: ProfileId, album_id: i64) -> Result<AlbumDetail> {
     let album = album_info(conn, album_id)?
         .ok_or_else(|| super::LibraryError::Other(format!("album {album_id} not found")))?;
+    let ts = track_select(profile);
     let mut st = conn.prepare(&format!(
-        "{TRACK_SELECT} WHERE t.album_id = ?1 ORDER BY {ALBUM_TRACK_ORDER}"
+        "{ts} WHERE t.album_id = ?1 ORDER BY {ALBUM_TRACK_ORDER}"
     ))?;
     let tracks = st
         .query_map([album_id], track_row)?
@@ -1070,10 +1331,10 @@ fn clean_name(name: &str) -> Result<&str> {
     Ok(name)
 }
 
-fn ensure_playlist(conn: &Connection, id: i64) -> Result<()> {
+fn ensure_playlist(conn: &Connection, profile: ProfileId, id: i64) -> Result<()> {
     let found: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
-        [id],
+        "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1 AND profile_id = ?2)",
+        rusqlite::params![id, profile.0],
         |r| r.get(0),
     )?;
     if found {
@@ -1098,14 +1359,14 @@ fn playlist_album_covers(conn: &Connection, id: i64) -> Result<Vec<String>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
-pub fn playlist_info(conn: &Connection, id: i64) -> Result<PlaylistInfo> {
+pub fn playlist_info(conn: &Connection, profile: ProfileId, id: i64) -> Result<PlaylistInfo> {
     let mut info = conn
         .query_row(
             "SELECT p.id, p.name,
                     (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = p.id),
                     p.cover
-             FROM playlists p WHERE p.id = ?1",
-            [id],
+             FROM playlists p WHERE p.id = ?1 AND p.profile_id = ?2",
+            rusqlite::params![id, profile.0],
             |r| {
                 Ok(PlaylistInfo {
                     id: r.get(0)?,
@@ -1122,13 +1383,14 @@ pub fn playlist_info(conn: &Connection, id: i64) -> Result<PlaylistInfo> {
     Ok(info)
 }
 
-pub fn playlists(conn: &Connection) -> Result<Vec<PlaylistInfo>> {
+pub fn playlists(conn: &Connection, profile: ProfileId) -> Result<Vec<PlaylistInfo>> {
     let mut st = conn.prepare(
         "SELECT p.id, p.name, COUNT(pt.track_id), p.cover
          FROM playlists p LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+         WHERE p.profile_id = ?1
          GROUP BY p.id ORDER BY p.name COLLATE NOCASE, p.id",
     )?;
-    let rows = st.query_map([], |r| {
+    let rows = st.query_map([profile.0], |r| {
         Ok(PlaylistInfo {
             id: r.get(0)?,
             name: r.get(1)?,
@@ -1169,6 +1431,7 @@ fn append_tracks(conn: &Connection, id: i64, track_ids: &[i64]) -> Result<usize>
 
 pub fn create_playlist(
     conn: &mut Connection,
+    profile: ProfileId,
     name: &str,
     track_ids: &[i64],
     now: i64,
@@ -1176,21 +1439,21 @@ pub fn create_playlist(
     let name = clean_name(name)?;
     let tx = conn.transaction()?;
     tx.execute(
-        "INSERT INTO playlists(name, created_at) VALUES (?1, ?2)",
-        rusqlite::params![name, now],
+        "INSERT INTO playlists(name, created_at, profile_id) VALUES (?1, ?2, ?3)",
+        rusqlite::params![name, now, profile.0],
     )?;
     let id = tx.last_insert_rowid();
     append_tracks(&tx, id, track_ids)?;
-    let info = playlist_info(&tx, id)?;
+    let info = playlist_info(&tx, profile, id)?;
     tx.commit()?;
     Ok(info)
 }
 
-pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<()> {
+pub fn rename_playlist(conn: &Connection, profile: ProfileId, id: i64, name: &str) -> Result<()> {
     let name = clean_name(name)?;
     let n = conn.execute(
-        "UPDATE playlists SET name = ?2 WHERE id = ?1",
-        rusqlite::params![id, name],
+        "UPDATE playlists SET name = ?2 WHERE id = ?1 AND profile_id = ?3",
+        rusqlite::params![id, name, profile.0],
     )?;
     if n == 0 {
         return Err(playlist_not_found(id));
@@ -1198,29 +1461,34 @@ pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// (playlist id, cover) for every playlist with an image file as cover.
-pub fn playlist_cover_paths(conn: &Connection) -> Result<Vec<(i64, String)>> {
+/// (profile, playlist id, cover) for every playlist of every profile with an
+/// image file as cover (a device-wide clean-up, not a per-profile read).
+pub fn playlist_cover_paths(conn: &Connection) -> Result<Vec<(ProfileId, i64, String)>> {
     let mut st = conn.prepare(
-        "SELECT id, cover FROM playlists WHERE cover IS NOT NULL AND cover NOT LIKE 'preset:%'",
+        "SELECT profile_id, id, cover FROM playlists
+         WHERE cover IS NOT NULL AND cover NOT LIKE 'preset:%'",
     )?;
-    let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let rows = st.query_map([], |r| Ok((ProfileId(r.get(0)?), r.get(1)?, r.get(2)?)))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
 pub fn set_playlist_cover(
     conn: &Connection,
+    profile: ProfileId,
     id: i64,
     cover: Option<&str>,
 ) -> Result<Option<String>> {
     let old: Option<String> = conn
-        .query_row("SELECT cover FROM playlists WHERE id = ?1", [id], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT cover FROM playlists WHERE id = ?1 AND profile_id = ?2",
+            rusqlite::params![id, profile.0],
+            |r| r.get(0),
+        )
         .optional()?
         .flatten();
     let n = conn.execute(
-        "UPDATE playlists SET cover = ?2 WHERE id = ?1",
-        rusqlite::params![id, cover],
+        "UPDATE playlists SET cover = ?2 WHERE id = ?1 AND profile_id = ?3",
+        rusqlite::params![id, cover, profile.0],
     )?;
     if n == 0 {
         return Err(playlist_not_found(id));
@@ -1228,14 +1496,19 @@ pub fn set_playlist_cover(
     Ok(old)
 }
 
-pub fn delete_playlist(conn: &Connection, id: i64) -> Result<Option<String>> {
+pub fn delete_playlist(conn: &Connection, profile: ProfileId, id: i64) -> Result<Option<String>> {
     let old: Option<String> = conn
-        .query_row("SELECT cover FROM playlists WHERE id = ?1", [id], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT cover FROM playlists WHERE id = ?1 AND profile_id = ?2",
+            rusqlite::params![id, profile.0],
+            |r| r.get(0),
+        )
         .optional()?
         .flatten();
-    let n = conn.execute("DELETE FROM playlists WHERE id = ?1", [id])?;
+    let n = conn.execute(
+        "DELETE FROM playlists WHERE id = ?1 AND profile_id = ?2",
+        rusqlite::params![id, profile.0],
+    )?;
     if n == 0 {
         return Err(playlist_not_found(id));
     }
@@ -1244,13 +1517,15 @@ pub fn delete_playlist(conn: &Connection, id: i64) -> Result<Option<String>> {
 
 pub fn playlist_tracks(
     conn: &Connection,
+    profile: ProfileId,
     id: i64,
     offset: u64,
     limit: u64,
 ) -> Result<Vec<TrackRow>> {
-    ensure_playlist(conn, id)?;
+    ensure_playlist(conn, profile, id)?;
+    let pts = playlist_track_select(profile);
     let mut st = conn.prepare(&format!(
-        "{PLAYLIST_TRACK_SELECT}
+        "{pts}
          WHERE pt.playlist_id = ?1 ORDER BY pt.position LIMIT ?2 OFFSET ?3"
     ))?;
     let rows = st.query_map(
@@ -1261,8 +1536,8 @@ pub fn playlist_tracks(
 }
 
 /// Playlist contents in order, ready for the queue.
-pub fn playlist_queue_tracks(conn: &Connection, id: i64) -> Result<Vec<Track>> {
-    ensure_playlist(conn, id)?;
+pub fn playlist_queue_tracks(conn: &Connection, profile: ProfileId, id: i64) -> Result<Vec<Track>> {
+    ensure_playlist(conn, profile, id)?;
     let mut st = conn.prepare(
         "SELECT t.path, t.title, t.artist FROM playlist_tracks pt
          JOIN tracks t ON t.id = pt.track_id
@@ -1272,17 +1547,27 @@ pub fn playlist_queue_tracks(conn: &Connection, id: i64) -> Result<Vec<Track>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
-pub fn playlist_add_tracks(conn: &mut Connection, id: i64, track_ids: &[i64]) -> Result<usize> {
+pub fn playlist_add_tracks(
+    conn: &mut Connection,
+    profile: ProfileId,
+    id: i64,
+    track_ids: &[i64],
+) -> Result<usize> {
     let tx = conn.transaction()?;
-    ensure_playlist(&tx, id)?;
+    ensure_playlist(&tx, profile, id)?;
     let added = append_tracks(&tx, id, track_ids)?;
     tx.commit()?;
     Ok(added)
 }
 
-pub fn playlist_add_album(conn: &mut Connection, id: i64, album_id: i64) -> Result<usize> {
+pub fn playlist_add_album(
+    conn: &mut Connection,
+    profile: ProfileId,
+    id: i64,
+    album_id: i64,
+) -> Result<usize> {
     let tx = conn.transaction()?;
-    ensure_playlist(&tx, id)?;
+    ensure_playlist(&tx, profile, id)?;
     let ids = {
         let mut st = tx.prepare(&format!(
             "SELECT t.id FROM tracks t WHERE t.album_id = ?1 ORDER BY {ALBUM_TRACK_ORDER}"
@@ -1325,19 +1610,31 @@ fn rewrite(conn: &Connection, id: i64, entries: &[Entry]) -> Result<()> {
 /// Removes the entries at the given indexes (duplicates and out-of-range
 /// indexes are ignored) and closes the gaps.
 /// Ids of the playlists that contain `track_id`.
-pub fn playlists_with_track(conn: &Connection, track_id: i64) -> Result<Vec<i64>> {
+pub fn playlists_with_track(
+    conn: &Connection,
+    profile: ProfileId,
+    track_id: i64,
+) -> Result<Vec<i64>> {
     let mut st = conn.prepare_cached(
-        "SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1 ORDER BY playlist_id",
+        "SELECT DISTINCT pt.playlist_id FROM playlist_tracks pt
+         JOIN playlists p ON p.id = pt.playlist_id
+         WHERE pt.track_id = ?1 AND p.profile_id = ?2
+         ORDER BY pt.playlist_id",
     )?;
     Ok(st
-        .query_map([track_id], |r| r.get(0))?
+        .query_map(rusqlite::params![track_id, profile.0], |r| r.get(0))?
         .collect::<std::result::Result<_, _>>()?)
 }
 
 /// Removes every entry of `track_id` from playlist `id`.
-pub fn playlist_remove_track(conn: &mut Connection, id: i64, track_id: i64) -> Result<()> {
+pub fn playlist_remove_track(
+    conn: &mut Connection,
+    profile: ProfileId,
+    id: i64,
+    track_id: i64,
+) -> Result<()> {
     let tx = conn.transaction()?;
-    ensure_playlist(&tx, id)?;
+    ensure_playlist(&tx, profile, id)?;
     let kept: Vec<Entry> = order(&tx, id)?
         .into_iter()
         .filter(|(t, _)| *t != track_id)
@@ -1347,9 +1644,14 @@ pub fn playlist_remove_track(conn: &mut Connection, id: i64, track_id: i64) -> R
     Ok(())
 }
 
-pub fn playlist_remove(conn: &mut Connection, id: i64, indexes: &[usize]) -> Result<()> {
+pub fn playlist_remove(
+    conn: &mut Connection,
+    profile: ProfileId,
+    id: i64,
+    indexes: &[usize],
+) -> Result<()> {
     let tx = conn.transaction()?;
-    ensure_playlist(&tx, id)?;
+    ensure_playlist(&tx, profile, id)?;
     let drop: std::collections::HashSet<usize> = indexes.iter().copied().collect();
     let kept: Vec<Entry> = order(&tx, id)?
         .into_iter()
@@ -1363,9 +1665,15 @@ pub fn playlist_remove(conn: &mut Connection, id: i64, indexes: &[usize]) -> Res
 }
 
 /// Moves the entry at index `from` so that it ends up at index `to`.
-pub fn playlist_move(conn: &mut Connection, id: i64, from: usize, to: usize) -> Result<()> {
+pub fn playlist_move(
+    conn: &mut Connection,
+    profile: ProfileId,
+    id: i64,
+    from: usize,
+    to: usize,
+) -> Result<()> {
     let tx = conn.transaction()?;
-    ensure_playlist(&tx, id)?;
+    ensure_playlist(&tx, profile, id)?;
     let mut ids = order(&tx, id)?;
     if from >= ids.len() || to >= ids.len() {
         return Err(super::LibraryError::Other(format!(
@@ -1426,14 +1734,15 @@ pub fn track_files_by_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<(i64, St
 // Favorites
 // ---------------------------------------------------------------------
 
-pub fn favorites(conn: &Connection) -> Result<Vec<FavoriteRef>> {
+pub fn favorites(conn: &Connection, profile: ProfileId) -> Result<Vec<FavoriteRef>> {
     let mut st = conn.prepare(
         "SELECT f.track_id, t.path
          FROM favorites f
          JOIN tracks t ON t.id = f.track_id
+         WHERE f.profile_id = ?1
          ORDER BY f.added_at DESC, t.title COLLATE NOCASE, f.track_id",
     )?;
-    let rows = st.query_map([], |r| {
+    let rows = st.query_map([profile.0], |r| {
         Ok(FavoriteRef {
             track_id: r.get(0)?,
             path: r.get(1)?,
@@ -1442,15 +1751,23 @@ pub fn favorites(conn: &Connection) -> Result<Vec<FavoriteRef>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
-pub fn toggle_favorite(conn: &Connection, track_id: i64, now: i64) -> Result<bool> {
-    let removed = conn.execute("DELETE FROM favorites WHERE track_id = ?1", [track_id])?;
+pub fn toggle_favorite(
+    conn: &Connection,
+    profile: ProfileId,
+    track_id: i64,
+    now: i64,
+) -> Result<bool> {
+    let removed = conn.execute(
+        "DELETE FROM favorites WHERE profile_id = ?1 AND track_id = ?2",
+        rusqlite::params![profile.0, track_id],
+    )?;
     if removed > 0 {
         return Ok(false);
     }
     let inserted = conn.execute(
-        "INSERT INTO favorites(track_id, added_at)
-         SELECT id, ?2 FROM tracks WHERE id = ?1",
-        rusqlite::params![track_id, now],
+        "INSERT INTO favorites(profile_id, track_id, added_at)
+         SELECT ?3, id, ?2 FROM tracks WHERE id = ?1",
+        rusqlite::params![track_id, now, profile.0],
     )?;
     if inserted == 0 {
         return Err(super::LibraryError::Other(format!(
@@ -1464,6 +1781,7 @@ pub fn toggle_favorite(conn: &Connection, track_id: i64, now: i64) -> Result<boo
 /// returns how many changed. Ids not in the library are ignored.
 pub fn set_favorites(
     conn: &mut Connection,
+    profile: ProfileId,
     track_ids: &[i64],
     on: bool,
     now: i64,
@@ -1472,17 +1790,18 @@ pub fn set_favorites(
     let mut changed = 0;
     {
         let mut add = tx.prepare_cached(
-            "INSERT OR IGNORE INTO favorites(track_id, added_at)
-             SELECT id, ?2 FROM tracks WHERE id = ?1",
+            "INSERT OR IGNORE INTO favorites(profile_id, track_id, added_at)
+             SELECT ?3, id, ?2 FROM tracks WHERE id = ?1",
         )?;
-        let mut del = tx.prepare_cached("DELETE FROM favorites WHERE track_id = ?1")?;
+        let mut del =
+            tx.prepare_cached("DELETE FROM favorites WHERE track_id = ?1 AND profile_id = ?2")?;
         // Later items get later times, so the list keeps the chosen order
         // (newest first) like single stars do.
         for (i, id) in track_ids.iter().enumerate() {
             changed += if on {
-                add.execute(rusqlite::params![id, now + i as i64])?
+                add.execute(rusqlite::params![id, now + i as i64, profile.0])?
             } else {
-                del.execute([id])?
+                del.execute(rusqlite::params![id, profile.0])?
             };
         }
     }
@@ -1490,10 +1809,21 @@ pub fn set_favorites(
     Ok(changed)
 }
 
-pub fn favorites_page(conn: &Connection, offset: u64, limit: u64) -> Result<Page<TrackRow>> {
-    let total: i64 = conn.query_row("SELECT COUNT(*) FROM favorites", [], |r| r.get(0))?;
+pub fn favorites_page(
+    conn: &Connection,
+    profile: ProfileId,
+    offset: u64,
+    limit: u64,
+) -> Result<Page<TrackRow>> {
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM favorites WHERE profile_id = ?1",
+        [profile.0],
+        |r| r.get(0),
+    )?;
+    let ts = track_select(profile);
+    let pr = profile.0;
     let mut st = conn.prepare(&format!(
-        "{TRACK_SELECT} JOIN favorites f ON f.track_id = t.id
+        "{ts} JOIN favorites f ON f.track_id = t.id AND f.profile_id = {pr}
          ORDER BY f.added_at DESC, t.title COLLATE NOCASE, f.track_id
          LIMIT ?1 OFFSET ?2"
     ))?;
@@ -1505,14 +1835,15 @@ pub fn favorites_page(conn: &Connection, offset: u64, limit: u64) -> Result<Page
     })
 }
 
-pub fn favorites_queue_tracks(conn: &Connection) -> Result<Vec<Track>> {
+pub fn favorites_queue_tracks(conn: &Connection, profile: ProfileId) -> Result<Vec<Track>> {
     let mut st = conn.prepare(
         "SELECT t.path, t.title, t.artist
          FROM favorites f
          JOIN tracks t ON t.id = f.track_id
+         WHERE f.profile_id = ?1
          ORDER BY f.added_at DESC, t.title COLLATE NOCASE, f.track_id",
     )?;
-    let rows = st.query_map([], queue_track)?;
+    let rows = st.query_map([profile.0], queue_track)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
@@ -1520,11 +1851,15 @@ pub fn favorites_queue_tracks(conn: &Connection) -> Result<Vec<Track>> {
 // Listening history & stats
 // ---------------------------------------------------------------------
 
-const LISTEN_RANGE: &str =
-    "(?1 IS NULL OR e.started_at >= ?1) AND (?2 IS NULL OR e.started_at < ?2)";
+/// `WHERE` clause of the listening queries: this profile's events inside the
+/// optional `[?1, ?2)` range.
 const PLAY_EXPR: &str = "CASE WHEN e.completed = 1 OR e.listened_ms >= 15000 THEN 1 ELSE 0 END";
 
-pub fn record_listen_event(conn: &Connection, ev: &NewListenEvent) -> Result<()> {
+pub fn record_listen_event(
+    conn: &Connection,
+    profile: ProfileId,
+    ev: &NewListenEvent,
+) -> Result<()> {
     let matched: Option<(i64, String, String, String, String, Option<i64>)> = conn
         .query_row(
             "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''),
@@ -1585,8 +1920,8 @@ pub fn record_listen_event(conn: &Connection, ev: &NewListenEvent) -> Result<()>
     conn.execute(
         "INSERT INTO listen_events(
              track_id, path, title, artist, album, genre, duration_ms,
-             started_at, ended_at, listened_ms, completed, skipped, source
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             started_at, ended_at, listened_ms, completed, skipped, source, profile_id
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         rusqlite::params![
             track_id,
             ev.path,
@@ -1601,13 +1936,17 @@ pub fn record_listen_event(conn: &Connection, ev: &NewListenEvent) -> Result<()>
             i64::from(ev.completed),
             i64::from(ev.skipped),
             source,
+            profile.0,
         ],
     )?;
     Ok(())
 }
 
-pub fn clear_listen_history(conn: &Connection) -> Result<u64> {
-    let n = conn.execute("DELETE FROM listen_events", [])?;
+pub fn clear_listen_history(conn: &Connection, profile: ProfileId) -> Result<u64> {
+    let n = conn.execute(
+        "DELETE FROM listen_events WHERE profile_id = ?1",
+        [profile.0],
+    )?;
     Ok(n as u64)
 }
 
@@ -1616,75 +1955,175 @@ fn u64_col(r: &Row<'_>, idx: usize) -> rusqlite::Result<u64> {
     Ok(u64::try_from(v).unwrap_or(0))
 }
 
-fn query_top_tracks(
-    conn: &Connection,
-    from: Option<i64>,
-    to: Option<i64>,
-    order_by_time: bool,
-    limit: usize,
-) -> Result<Vec<TopTrackStat>> {
-    let order = if order_by_time {
-        "total_ms DESC, plays DESC, MIN(e.title) COLLATE NOCASE"
-    } else {
-        "plays DESC, total_ms DESC, MIN(e.title) COLLATE NOCASE"
-    };
-    let having = if order_by_time {
-        ""
-    } else {
-        "HAVING plays > 0"
-    };
-    let sql = format!(
-        "SELECT MAX(e.track_id), MAX(e.path), MAX(e.title), MAX(e.artist),
-                MAX(e.album), MAX(a.cover),
-                SUM({PLAY_EXPR}) AS plays,
-                SUM(e.listened_ms) AS total_ms,
-                SUM(e.skipped) AS skips
-         FROM listen_events e
-         LEFT JOIN tracks t ON t.id = e.track_id
-         LEFT JOIN albums a ON a.id = t.album_id
-         WHERE {LISTEN_RANGE}
-         GROUP BY LOWER(e.title), LOWER(e.artist)
-         {having}
-         ORDER BY {order}
-         LIMIT ?3"
-    );
-    let mut st = conn.prepare(&sql)?;
-    let rows = st.query_map(rusqlite::params![from, to, limit as i64], |r| {
-        Ok(TopTrackStat {
-            track_id: r.get(0)?,
-            path: r.get(1)?,
-            title: r.get(2)?,
-            artist: r.get(3)?,
-            album: r.get(4)?,
-            cover: r.get(5)?,
-            play_count: u64_col(r, 6)?,
-            listened_ms: u64_col(r, 7)?,
-            skip_count: u64_col(r, 8)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+/// Days since 1970-01-01 -> (year, month) in the proleptic Gregorian
+/// calendar (Howard Hinnant's `civil_from_days`).
+fn year_month_of_day(days: i64) -> (i64, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (y, m)
 }
 
-fn streak_stats(conn: &Connection, from: Option<i64>, to: Option<i64>) -> Result<(u64, u64, u64)> {
+/// Local-time offset (seconds east of UTC) at `ts`, as SQLite's
+/// `'localtime'` modifier sees it.
+fn local_offset(st: &mut rusqlite::Statement<'_>, ts: i64) -> Result<i64> {
+    Ok(st.query_row([ts, ts], |r| r.get::<_, i64>(0))?)
+}
+
+/// Everything the stats view derives from time buckets, from one pass over
+/// the events: summary sums, hour / weekday / month totals and the distinct
+/// local days (for active days and streaks).
+struct TimeBuckets {
+    total_listened_ms: u64,
+    play_count: u64,
+    raw_event_count: u64,
+    skip_count: u64,
+    completed_count: u64,
+    first_listen_at: Option<i64>,
+    by_hour: Vec<BucketStat>,
+    by_weekday: Vec<BucketStat>,
+    by_month: Vec<BucketStat>,
+    /// Distinct local days (days since 1970-01-01, local calendar), ascending.
+    days: Vec<i64>,
+}
+
+/// Events are summed per 15-minute UTC window first (integer maths on the
+/// index, no per-event `localtime`; calling `strftime` for every event was
+/// most of the old cost), then each window is placed in local
+/// time. Every real UTC offset and DST change is a multiple of 15 minutes, so
+/// a window never straddles a local hour or day boundary.
+fn time_buckets(conn: &Connection, range: &str) -> Result<TimeBuckets> {
+    // Ascending by `started_at` straight off the covering index; windows
+    // are contiguous, so they are summed on the fly without a sorter.
     let sql = format!(
-        "SELECT DISTINCT
-             CAST(
-                 julianday(e.started_at, 'unixepoch', 'localtime', 'start of day') + 0.5
-                 AS INTEGER
-             ) AS d
+        "SELECT e.started_at, e.listened_ms,
+                CASE WHEN e.completed = 1 OR e.listened_ms >= 15000 THEN 1 ELSE 0 END,
+                e.skipped, e.completed
          FROM listen_events e
-         WHERE {LISTEN_RANGE}
-         ORDER BY d ASC"
+         WHERE {range}
+         ORDER BY e.started_at"
     );
     let mut st = conn.prepare(&sql)?;
-    let days: Vec<i64> = st
-        .query_map(rusqlite::params![from, to], |r| r.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
+    let mut off_st =
+        conn.prepare("SELECT CAST(strftime('%s', ?1, 'unixepoch', 'localtime') AS INTEGER) - ?2")?;
+    let mut t = TimeBuckets {
+        total_listened_ms: 0,
+        play_count: 0,
+        raw_event_count: 0,
+        skip_count: 0,
+        completed_count: 0,
+        first_listen_at: None,
+        by_hour: (0..24)
+            .map(|h| BucketStat {
+                label: format!("{h:02}"),
+                listened_ms: 0,
+                play_count: 0,
+            })
+            .collect(),
+        by_weekday: (0..7)
+            .map(|w| BucketStat {
+                label: w.to_string(),
+                listened_ms: 0,
+                play_count: 0,
+            })
+            .collect(),
+        by_month: Vec::new(),
+        days: Vec::new(),
+    };
+    let mut months: std::collections::BTreeMap<String, (u64, u64)> = Default::default();
+    let mut days: std::collections::BTreeSet<i64> = Default::default();
+    // One 15-minute window: first timestamp, then sums.
+    struct Window {
+        id: i64,
+        first: i64,
+        ms: u64,
+        plays: u64,
+        events: u64,
+        skips: u64,
+        completed: u64,
+    }
+    let mut place = |w: &Window, t: &mut TimeBuckets| -> Result<()> {
+        t.raw_event_count += w.events;
+        t.skip_count += w.skips;
+        t.completed_count += w.completed;
+        t.total_listened_ms += w.ms;
+        t.play_count += w.plays;
+        t.first_listen_at = Some(t.first_listen_at.map_or(w.first, |f| f.min(w.first)));
+        let local = w.first + local_offset(&mut off_st, w.first)?;
+        let day = local.div_euclid(SECS_PER_DAY);
+        let hour = (local.rem_euclid(SECS_PER_DAY) / 3_600) as usize;
+        // 1970-01-01 was a Thursday; SQLite `%w` has Sunday = 0.
+        let sqlite_wday = (day + 4).rem_euclid(7);
+        // Monday-first: 0 = Mon .. 6 = Sun.
+        let wday = ((sqlite_wday + 6) % 7) as usize;
+        t.by_hour[hour].listened_ms += w.ms;
+        t.by_hour[hour].play_count += w.plays;
+        t.by_weekday[wday].listened_ms += w.ms;
+        t.by_weekday[wday].play_count += w.plays;
+        let (y, m) = year_month_of_day(day);
+        let e = months.entry(format!("{y:04}-{m:02}")).or_default();
+        e.0 += w.ms;
+        e.1 += w.plays;
+        days.insert(day);
+        Ok(())
+    };
+    let mut cur: Option<Window> = None;
+    let mut rows = st.query([])?;
+    while let Some(r) = rows.next()? {
+        let started: i64 = r.get(0)?;
+        let id = started.div_euclid(900);
+        if cur.as_ref().is_some_and(|w| w.id != id)
+            && let Some(w) = cur.take()
+        {
+            place(&w, &mut t)?;
+        }
+        let w = cur.get_or_insert(Window {
+            id,
+            first: started,
+            ms: 0,
+            plays: 0,
+            events: 0,
+            skips: 0,
+            completed: 0,
+        });
+        w.first = w.first.min(started);
+        w.ms += u64_col(r, 1)?;
+        w.plays += u64_col(r, 2)?;
+        w.events += 1;
+        w.skips += u64_col(r, 3)?;
+        w.completed += u64_col(r, 4)?;
+    }
+    if let Some(w) = cur.take() {
+        place(&w, &mut t)?;
+    }
+    // Last 24 months, oldest first.
+    let skip = months.len().saturating_sub(24);
+    t.by_month = months
+        .into_iter()
+        .skip(skip)
+        .map(|(label, (listened_ms, play_count))| BucketStat {
+            label,
+            listened_ms,
+            play_count,
+        })
+        .collect();
+    t.days = days.into_iter().collect();
+    Ok(t)
+}
+
+/// Active days, longest streak and current streak from the ascending
+/// distinct local days.
+fn streaks_from_days(conn: &Connection, days: &[i64]) -> Result<(u64, u64, u64)> {
     if days.is_empty() {
         return Ok((0, 0, 0));
     }
     let today: i64 = conn.query_row(
-        "SELECT CAST(julianday('now', 'localtime', 'start of day') + 0.5 AS INTEGER)",
+        "SELECT CAST(strftime('%s', 'now', 'localtime') AS INTEGER) / 86400",
         [],
         |r| r.get(0),
     )?;
@@ -1707,97 +2146,198 @@ fn streak_stats(conn: &Connection, from: Option<i64>, to: Option<i64>) -> Result
     Ok((days.len() as u64, longest, current))
 }
 
+/// `WHERE` clause for the events of one profile in `[from, to)`. The bounds
+/// are written into the SQL only when present (they are integers), so SQLite
+/// can use the `(profile_id, started_at)` index range; `(?1 IS NULL OR ...)`
+/// forms made it scan the whole profile.
+fn listen_range(profile: ProfileId, from: Option<i64>, to: Option<i64>) -> String {
+    let mut s = format!("e.profile_id = {}", profile.0);
+    if let Some(f) = from {
+        s.push_str(&format!(" AND e.started_at >= {f}"));
+    }
+    if let Some(t) = to {
+        s.push_str(&format!(" AND e.started_at < {t}"));
+    }
+    s
+}
+
+/// Scratch tables of `listening_stats`, dropped when the call ends.
+struct StatsScratch<'a>(&'a Connection);
+
+impl StatsScratch<'_> {
+    const DROP: &'static str = "DROP TABLE IF EXISTS temp.stats_tracks;
+                                DROP TABLE IF EXISTS temp.stats_albums;
+                                DROP TABLE IF EXISTS temp.stats_fine;";
+}
+
+impl Drop for StatsScratch<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.execute_batch(Self::DROP);
+    }
+}
+
 pub fn listening_stats(
     conn: &Connection,
+    profile: ProfileId,
     from: Option<i64>,
     to: Option<i64>,
     limit: usize,
 ) -> Result<ListeningStats> {
-    let summary_sql = format!(
-        "SELECT COALESCE(SUM(e.listened_ms), 0),
-                COALESCE(SUM({PLAY_EXPR}), 0),
-                COUNT(*),
-                COALESCE(SUM(e.skipped), 0),
-                COALESCE(SUM(e.completed), 0),
-                COUNT(DISTINCT LOWER(e.title) || char(0) || LOWER(e.artist)),
-                COUNT(DISTINCT CASE WHEN TRIM(e.artist) != '' THEN LOWER(e.artist) END),
-                COUNT(DISTINCT CASE WHEN TRIM(e.album) != '' THEN LOWER(e.album) END),
-                MIN(e.started_at)
+    let range = listen_range(profile, from, to);
+    let buckets = time_buckets(conn, &range)?;
+    let (active_days, longest_streak_days, current_streak_days) =
+        streaks_from_days(conn, &buckets.days)?;
+
+    // One grouping pass per kind. Tracks are grouped once and serve the two
+    // top-track lists, the unique-track count and (re-grouped by artist) the
+    // artist list; albums are grouped once for the list and their count.
+    let _scratch = StatsScratch(conn);
+    conn.execute_batch(StatsScratch::DROP)?;
+    conn.execute_batch(&format!(
+        "CREATE TEMP TABLE stats_fine(
+             track_id INTEGER, title TEXT COLLATE NOCASE, artist TEXT COLLATE NOCASE,
+             album TEXT COLLATE NOCASE, genre TEXT COLLATE NOCASE,
+             plays INTEGER, total_ms INTEGER, skips INTEGER
+         );
+         INSERT INTO stats_fine
+         SELECT e.track_id, MAX(e.title), MAX(e.artist), MAX(e.album), MAX(e.genre),
+                SUM({PLAY_EXPR}), SUM(e.listened_ms), SUM(e.skipped)
          FROM listen_events e
-         WHERE {LISTEN_RANGE}"
-    );
-    let (
-        total_listened_ms,
-        play_count,
-        raw_event_count,
-        skip_count,
-        completed_count,
-        unique_tracks,
-        unique_artists,
-        unique_albums,
-        first_listen_at,
-    ) = conn.query_row(&summary_sql, rusqlite::params![from, to], |r| {
-        Ok((
-            u64_col(r, 0)?,
-            u64_col(r, 1)?,
-            u64_col(r, 2)?,
-            u64_col(r, 3)?,
-            u64_col(r, 4)?,
-            u64_col(r, 5)?,
-            u64_col(r, 6)?,
-            u64_col(r, 7)?,
-            r.get::<_, Option<i64>>(8)?,
-        ))
+         WHERE {range}
+         GROUP BY e.track_id, e.title, e.artist, e.album, e.genre;
+         CREATE TEMP TABLE stats_tracks(
+             track_id INTEGER, title TEXT COLLATE NOCASE, artist TEXT COLLATE NOCASE,
+             album TEXT COLLATE NOCASE, plays INTEGER, total_ms INTEGER, skips INTEGER,
+             min_title TEXT COLLATE NOCASE
+         );
+         INSERT INTO stats_tracks
+         SELECT MAX(track_id), MAX(title), MAX(artist), MAX(album),
+                SUM(plays), SUM(total_ms), SUM(skips), MIN(title)
+         FROM stats_fine
+         GROUP BY LOWER(title), LOWER(artist);
+         CREATE TEMP TABLE stats_albums(
+             album TEXT COLLATE NOCASE, artist TEXT COLLATE NOCASE, album_id INTEGER,
+             cover TEXT, plays INTEGER, total_ms INTEGER
+         );
+         INSERT INTO stats_albums
+         SELECT MAX(f.album), MAX(f.artist), MAX(t.album_id), MAX(a.cover),
+                SUM(f.plays), SUM(f.total_ms)
+         FROM stats_fine f
+         LEFT JOIN tracks t ON t.id = f.track_id
+         LEFT JOIN albums a ON a.id = t.album_id
+         WHERE TRIM(f.album) != ''
+         GROUP BY LOWER(f.album);"
+    ))?;
+    let (unique_tracks, unique_artists): (u64, u64) = conn.query_row(
+        "SELECT COUNT(*), COUNT(DISTINCT CASE WHEN TRIM(artist) != '' THEN LOWER(artist) END)
+         FROM temp.stats_tracks",
+        [],
+        |r| Ok((u64_col(r, 0)?, u64_col(r, 1)?)),
+    )?;
+    let unique_albums: u64 = conn.query_row("SELECT COUNT(*) FROM temp.stats_albums", [], |r| {
+        u64_col(r, 0)
     })?;
 
-    let (active_days, longest_streak_days, current_streak_days) = streak_stats(conn, from, to)?;
-
-    let top_tracks_by_plays = query_top_tracks(conn, from, to, false, limit)?;
-    let top_tracks_by_time = query_top_tracks(conn, from, to, true, limit)?;
-
-    let artist_sql = format!(
-        "SELECT MAX(e.artist), MAX(a.cover),
-                SUM({PLAY_EXPR}) AS plays,
-                SUM(e.listened_ms) AS total_ms,
-                COUNT(DISTINCT LOWER(e.title)) AS uniq,
-                SUM(e.skipped) AS skips
+    // Path and cover are not part of the grouping (they would force table
+    // reads for every event); the few listed groups look them up.
+    let mut detail_st = conn.prepare(&format!(
+        "SELECT MAX(e.path), MAX(a.cover)
          FROM listen_events e
          LEFT JOIN tracks t ON t.id = e.track_id
          LEFT JOIN albums a ON a.id = t.album_id
-         WHERE {LISTEN_RANGE} AND TRIM(e.artist) != ''
-         GROUP BY LOWER(e.artist)
-         ORDER BY total_ms DESC, plays DESC, MAX(e.artist) COLLATE NOCASE
-         LIMIT ?3"
-    );
-    let mut artist_st = conn.prepare(&artist_sql)?;
-    let top_artists_by_time = artist_st
-        .query_map(rusqlite::params![from, to, limit as i64], |r| {
+         WHERE {range} AND e.artist = ?1 AND e.title = ?2"
+    ))?;
+    let mut top_tracks = |order_by_time: bool| -> Result<Vec<TopTrackStat>> {
+        let (order, having) = if order_by_time {
+            ("total_ms DESC, plays DESC, min_title COLLATE NOCASE", "")
+        } else {
+            (
+                "plays DESC, total_ms DESC, min_title COLLATE NOCASE",
+                "WHERE plays > 0",
+            )
+        };
+        let mut st = conn.prepare(&format!(
+            "SELECT track_id, title, artist, album, plays, total_ms, skips
+             FROM temp.stats_tracks {having} ORDER BY {order} LIMIT ?1"
+        ))?;
+        let rows = st
+            .query_map([limit as i64], |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    u64_col(r, 4)?,
+                    u64_col(r, 5)?,
+                    u64_col(r, 6)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut out = Vec::with_capacity(rows.len());
+        for (track_id, title, artist, album, play_count, listened_ms, skip_count) in rows {
+            let (path, cover): (String, Option<String>) = detail_st
+                .query_row(rusqlite::params![&artist, &title], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })?;
+            out.push(TopTrackStat {
+                track_id,
+                path,
+                title,
+                artist,
+                album,
+                cover,
+                play_count,
+                listened_ms,
+                skip_count,
+            });
+        }
+        Ok(out)
+    };
+    let top_tracks_by_plays = top_tracks(false)?;
+    let top_tracks_by_time = top_tracks(true)?;
+
+    let mut cover_st = conn.prepare(&format!(
+        "SELECT MAX(a.cover)
+         FROM listen_events e
+         LEFT JOIN tracks t ON t.id = e.track_id
+         LEFT JOIN albums a ON a.id = t.album_id
+         WHERE {range} AND e.artist = ?1"
+    ))?;
+    let mut artist_st = conn.prepare(
+        "SELECT MAX(artist COLLATE NOCASE), SUM(plays) AS plays, SUM(total_ms) AS total_ms,
+                COUNT(*), SUM(skips)
+         FROM temp.stats_tracks
+         WHERE TRIM(artist) != ''
+         GROUP BY LOWER(artist)
+         ORDER BY total_ms DESC, plays DESC, MAX(artist COLLATE NOCASE) COLLATE NOCASE
+         LIMIT ?1",
+    )?;
+    let artist_rows = artist_st
+        .query_map([limit as i64], |r| {
             Ok(TopArtistStat {
                 artist: r.get(0)?,
-                cover: r.get(1)?,
-                play_count: u64_col(r, 2)?,
-                listened_ms: u64_col(r, 3)?,
-                unique_tracks: u64_col(r, 4)?,
-                skip_count: u64_col(r, 5)?,
+                cover: None,
+                play_count: u64_col(r, 1)?,
+                listened_ms: u64_col(r, 2)?,
+                unique_tracks: u64_col(r, 3)?,
+                skip_count: u64_col(r, 4)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut top_artists_by_time = Vec::with_capacity(artist_rows.len());
+    for mut a in artist_rows {
+        a.cover = cover_st.query_row([&a.artist], |r| r.get(0))?;
+        top_artists_by_time.push(a);
+    }
 
-    let album_sql = format!(
-        "SELECT MAX(e.album), MAX(e.artist), MAX(t.album_id), MAX(a.cover),
-                SUM({PLAY_EXPR}) AS plays,
-                SUM(e.listened_ms) AS total_ms
-         FROM listen_events e
-         LEFT JOIN tracks t ON t.id = e.track_id
-         LEFT JOIN albums a ON a.id = t.album_id
-         WHERE {LISTEN_RANGE} AND TRIM(e.album) != ''
-         GROUP BY LOWER(e.album)
-         ORDER BY total_ms DESC, plays DESC, MAX(e.album) COLLATE NOCASE
-         LIMIT ?3"
-    );
-    let mut album_st = conn.prepare(&album_sql)?;
+    let mut album_st = conn.prepare(
+        "SELECT album, artist, album_id, cover, plays, total_ms
+         FROM temp.stats_albums
+         ORDER BY total_ms DESC, plays DESC, album COLLATE NOCASE
+         LIMIT ?1",
+    )?;
     let top_albums_by_time = album_st
-        .query_map(rusqlite::params![from, to, limit as i64], |r| {
+        .query_map([limit as i64], |r| {
             Ok(TopAlbumStat {
                 album: r.get(0)?,
                 artist: r.get(1)?,
@@ -1809,17 +2349,15 @@ pub fn listening_stats(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let genre_sql = format!(
-        "SELECT MAX(e.genre), SUM({PLAY_EXPR}) AS plays, SUM(e.listened_ms) AS total_ms
-         FROM listen_events e
-         WHERE {LISTEN_RANGE} AND TRIM(e.genre) != ''
-         GROUP BY LOWER(e.genre)
-         ORDER BY total_ms DESC, plays DESC, MAX(e.genre) COLLATE NOCASE
-         LIMIT ?3"
-    );
-    let mut genre_st = conn.prepare(&genre_sql)?;
+    let genre_sql = "SELECT MAX(genre), SUM(plays) AS plays, SUM(total_ms) AS total_ms
+         FROM temp.stats_fine
+         WHERE TRIM(genre) != ''
+         GROUP BY LOWER(genre)
+         ORDER BY total_ms DESC, plays DESC, MAX(genre) COLLATE NOCASE
+         LIMIT ?1";
+    let mut genre_st = conn.prepare(genre_sql)?;
     let top_genres = genre_st
-        .query_map(rusqlite::params![from, to, limit as i64], |r| {
+        .query_map([limit as i64], |r| {
             Ok(TopGenreStat {
                 genre: r.get(0)?,
                 play_count: u64_col(r, 1)?,
@@ -1828,94 +2366,21 @@ pub fn listening_stats(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let mut by_hour: Vec<BucketStat> = (0..24)
-        .map(|h| BucketStat {
-            label: format!("{h:02}"),
-            listened_ms: 0,
-            play_count: 0,
-        })
-        .collect();
-    let hour_sql = format!(
-        "SELECT CAST(strftime('%H', e.started_at, 'unixepoch', 'localtime') AS INTEGER) AS h,
-                SUM(e.listened_ms), SUM({PLAY_EXPR})
-         FROM listen_events e
-         WHERE {LISTEN_RANGE}
-         GROUP BY h"
-    );
-    let mut hour_st = conn.prepare(&hour_sql)?;
-    let hour_rows = hour_st.query_map(rusqlite::params![from, to], |r| {
-        Ok((r.get::<_, i64>(0)?, u64_col(r, 1)?, u64_col(r, 2)?))
-    })?;
-    for row in hour_rows {
-        let (h, ms, plays) = row?;
-        if let Ok(idx) = usize::try_from(h)
-            && idx < 24
-        {
-            by_hour[idx].listened_ms = ms;
-            by_hour[idx].play_count = plays;
-        }
-    }
+    let by_hour = buckets.by_hour;
     let top_hour = by_hour
         .iter()
         .enumerate()
         .filter(|(_, b)| b.listened_ms > 0)
         .max_by_key(|(_, b)| b.listened_ms)
         .map(|(idx, _)| idx as u32);
-
-    let mut by_weekday: Vec<BucketStat> = (0..7)
-        .map(|w| BucketStat {
-            label: w.to_string(),
-            listened_ms: 0,
-            play_count: 0,
-        })
-        .collect();
-    let wday_sql = format!(
-        "SELECT CAST(strftime('%w', e.started_at, 'unixepoch', 'localtime') AS INTEGER) AS w,
-                SUM(e.listened_ms), SUM({PLAY_EXPR})
-         FROM listen_events e
-         WHERE {LISTEN_RANGE}
-         GROUP BY w"
-    );
-    let mut wday_st = conn.prepare(&wday_sql)?;
-    let wday_rows = wday_st.query_map(rusqlite::params![from, to], |r| {
-        Ok((r.get::<_, i64>(0)?, u64_col(r, 1)?, u64_col(r, 2)?))
-    })?;
-    for row in wday_rows {
-        let (w, ms, plays) = row?;
-        // Convert SQLite %w (0 = Sun .. 6 = Sat) to Monday-first (0 = Mon .. 6 = Sun).
-        let idx = ((w.rem_euclid(7) + 6) % 7) as usize;
-        by_weekday[idx].listened_ms = ms;
-        by_weekday[idx].play_count = plays;
-    }
+    let by_weekday = buckets.by_weekday;
     let top_weekday = by_weekday
         .iter()
         .enumerate()
         .filter(|(_, b)| b.listened_ms > 0)
         .max_by_key(|(_, b)| b.listened_ms)
         .map(|(idx, _)| idx as u32);
-
-    let month_sql = format!(
-        "SELECT m, total_ms, plays FROM (
-             SELECT strftime('%Y-%m', e.started_at, 'unixepoch', 'localtime') AS m,
-                    SUM(e.listened_ms) AS total_ms,
-                    SUM({PLAY_EXPR}) AS plays
-             FROM listen_events e
-             WHERE {LISTEN_RANGE}
-             GROUP BY m
-             ORDER BY m DESC
-             LIMIT 24
-         ) ORDER BY m ASC"
-    );
-    let mut month_st = conn.prepare(&month_sql)?;
-    let by_month = month_st
-        .query_map(rusqlite::params![from, to], |r| {
-            Ok(BucketStat {
-                label: r.get(0)?,
-                listened_ms: u64_col(r, 1)?,
-                play_count: u64_col(r, 2)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let by_month = buckets.by_month;
 
     let recent_sql = format!(
         "SELECT e.id, e.track_id, e.path, e.title, e.artist, e.album, a.cover,
@@ -1923,13 +2388,13 @@ pub fn listening_stats(
          FROM listen_events e
          LEFT JOIN tracks t ON t.id = e.track_id
          LEFT JOIN albums a ON a.id = t.album_id
-         WHERE {LISTEN_RANGE}
+         WHERE {range}
          ORDER BY e.started_at DESC, e.id DESC
          LIMIT 50"
     );
     let mut recent_st = conn.prepare(&recent_sql)?;
     let recent = recent_st
-        .query_map(rusqlite::params![from, to], |r| {
+        .query_map([], |r| {
             Ok(RecentListen {
                 id: r.get(0)?,
                 track_id: r.get(1)?,
@@ -1947,22 +2412,15 @@ pub fn listening_stats(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let mut year_st = conn.prepare(
-        "SELECT DISTINCT CAST(strftime('%Y', started_at, 'unixepoch', 'localtime') AS INTEGER) AS y
-         FROM listen_events
-         ORDER BY y DESC",
-    )?;
-    let available_years = year_st
-        .query_map([], |r| r.get(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let available_years = available_listen_years(conn, profile)?;
 
     Ok(ListeningStats {
         summary: StatsSummary {
-            total_listened_ms,
-            play_count,
-            raw_event_count,
-            skip_count,
-            completed_count,
+            total_listened_ms: buckets.total_listened_ms,
+            play_count: buckets.play_count,
+            raw_event_count: buckets.raw_event_count,
+            skip_count: buckets.skip_count,
+            completed_count: buckets.completed_count,
             unique_tracks,
             unique_artists,
             unique_albums,
@@ -1971,7 +2429,7 @@ pub fn listening_stats(
             current_streak_days,
             top_hour,
             top_weekday,
-            first_listen_at,
+            first_listen_at: buckets.first_listen_at,
         },
         top_tracks_by_plays,
         top_tracks_by_time,
@@ -1985,6 +2443,46 @@ pub fn listening_stats(
         available_years,
     })
 }
+
+/// Local calendar years with at least one listen, newest first. Hops from
+/// year to year with an index seek each instead of scanning every event.
+fn available_listen_years(conn: &Connection, profile: ProfileId) -> Result<Vec<i32>> {
+    let mut st = conn.prepare(
+        "SELECT CAST(strftime('%Y', m, 'unixepoch', 'localtime') AS INTEGER)
+         FROM (SELECT MIN(started_at) AS m FROM listen_events
+               WHERE profile_id = ?1 AND started_at >= ?2)
+         WHERE m IS NOT NULL",
+    )?;
+    let mut next_start = conn.prepare(
+        "SELECT CAST(strftime('%s', printf('%04d-01-01 00:00:00', ?1 + 1), 'utc') AS INTEGER)",
+    )?;
+    let mut years = Vec::new();
+    let mut bound = i64::MIN;
+    while let Some(y) = st
+        .query_row(rusqlite::params![profile.0, bound], |r| {
+            r.get::<_, Option<i32>>(0)
+        })
+        .optional()?
+        .flatten()
+    {
+        years.push(y);
+        let nb: i64 = next_start.query_row([y], |r| r.get(0))?;
+        if nb <= bound {
+            break;
+        }
+        bound = nb;
+    }
+    years.reverse();
+    Ok(years)
+}
+
+#[cfg(test)]
+#[path = "db_stats_reference.rs"]
+mod stats_reference;
+
+#[cfg(test)]
+#[path = "db_perf_tests.rs"]
+mod perf_tests;
 
 // ---------------------------------------------------------------------
 // Artists & profiles
@@ -2175,6 +2673,7 @@ fn backfill_track_artists(conn: &Connection) -> Result<()> {
 
 pub fn search_artists_page(
     conn: &Connection,
+    profile: ProfileId,
     offset: u64,
     limit: u64,
     query: &str,
@@ -2185,27 +2684,35 @@ pub fn search_artists_page(
         "SELECT COUNT(DISTINCT ta.artist) FROM track_artists ta {}",
         f.where_sql
     );
+    let pr = profile.0;
+    // Page the artist names first (index-only scan of `track_artists`), then
+    // compute counts and plays for those names only.
     let page_sql = format!(
-        "SELECT MIN(ta.artist),
+        "WITH page(name) AS MATERIALIZED (
+             SELECT MIN(ta.artist) FROM track_artists ta {}
+             GROUP BY ta.artist
+             ORDER BY MIN(ta.artist) COLLATE NOCASE
+             LIMIT ?{} OFFSET ?{}
+         )
+         SELECT MIN(ta.artist),
                 COUNT(DISTINCT ta.track_id) AS tracks_n,
                 COUNT(DISTINCT t.album_id) AS albums_n,
                 COALESCE(MAX(am.image), MAX(a.cover)),
                 COALESCE((
                     SELECT SUM({PLAY_EXPR}) FROM listen_events e
-                    WHERE e.artist = ta.artist COLLATE NOCASE
+                    WHERE e.profile_id = {pr} AND e.artist = ta.artist COLLATE NOCASE
                 ), 0),
                 COALESCE((
                     SELECT SUM(e.listened_ms) FROM listen_events e
-                    WHERE e.artist = ta.artist COLLATE NOCASE
+                    WHERE e.profile_id = {pr} AND e.artist = ta.artist COLLATE NOCASE
                 ), 0)
          FROM track_artists ta
          JOIN tracks t ON t.id = ta.track_id
          LEFT JOIN albums a ON a.id = t.album_id
          LEFT JOIN artists_meta am ON am.name_key = ta.artist
-         {}
+         WHERE ta.artist IN (SELECT name FROM page)
          GROUP BY ta.artist
-         ORDER BY MIN(ta.artist) COLLATE NOCASE
-         LIMIT ?{} OFFSET ?{}",
+         ORDER BY MIN(ta.artist) COLLATE NOCASE",
         f.where_sql,
         n + 1,
         n + 2
@@ -2287,9 +2794,11 @@ pub fn artist_queue_tracks(conn: &Connection, name: &str) -> Result<Vec<Track>> 
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-pub fn artist_profile(conn: &Connection, name: &str) -> Result<ArtistProfile> {
+pub fn artist_profile(conn: &Connection, profile: ProfileId, name: &str) -> Result<ArtistProfile> {
+    let ts = track_select(profile);
+    let pr = profile.0;
     let mut tr_st = conn.prepare(&format!(
-        "{TRACK_SELECT}
+        "{ts}
          JOIN track_artists ta ON ta.track_id = t.id
          WHERE ta.artist = ?1 COLLATE NOCASE
          ORDER BY COALESCE(a.year, 0) DESC, a.title COLLATE NOCASE,
@@ -2321,7 +2830,7 @@ pub fn artist_profile(conn: &Connection, name: &str) -> Result<ArtistProfile> {
          FROM track_artists ta
          JOIN tracks t ON t.id = ta.track_id
          LEFT JOIN albums a ON a.id = t.album_id
-         LEFT JOIN listen_events e ON e.track_id = t.id
+         LEFT JOIN listen_events e ON e.track_id = t.id AND e.profile_id = {pr}
          WHERE ta.artist = ?1 COLLATE NOCASE
          GROUP BY t.id
          ORDER BY plays DESC, total_ms DESC, t.disc_no, t.track_no, t.title COLLATE NOCASE
@@ -2344,11 +2853,12 @@ pub fn artist_profile(conn: &Connection, name: &str) -> Result<ArtistProfile> {
         &format!(
             "SELECT COALESCE(SUM({PLAY_EXPR}), 0), COALESCE(SUM(e.listened_ms), 0)
              FROM listen_events e
-             WHERE e.artist = ?1 COLLATE NOCASE
-                OR EXISTS (
-                    SELECT 1 FROM track_artists ta
-                    WHERE ta.track_id = e.track_id AND ta.artist = ?1 COLLATE NOCASE
-                )"
+             WHERE e.profile_id = {pr}
+               AND (e.artist = ?1 COLLATE NOCASE
+                OR e.track_id IN (
+                    SELECT ta.track_id FROM track_artists ta
+                    WHERE ta.artist = ?1 COLLATE NOCASE
+                ))"
         ),
         [name],
         |r| Ok((u64_col(r, 0)?, u64_col(r, 1)?)),
@@ -2464,16 +2974,16 @@ pub fn genre_detail(conn: &Connection, name: &str) -> Result<GenreDetail> {
 /// One page of a genre's tracks, in queue order (see `genre_queue_tracks`).
 pub fn genre_tracks_page(
     conn: &Connection,
+    profile: ProfileId,
     name: &str,
     offset: u64,
     limit: u64,
 ) -> Result<Page<TrackRow>> {
+    let ts = track_select(profile);
     query_page(
         conn,
         &format!("SELECT COUNT(*) FROM tracks t WHERE {GENRE_FILTER}"),
-        &format!(
-            "{TRACK_SELECT} WHERE {GENRE_FILTER} ORDER BY {GENRE_TRACK_ORDER} LIMIT ?2 OFFSET ?3"
-        ),
+        &format!("{ts} WHERE {GENRE_FILTER} ORDER BY {GENRE_TRACK_ORDER} LIMIT ?2 OFFSET ?3"),
         vec![name.to_owned()],
         offset,
         limit,
@@ -2573,10 +3083,14 @@ pub fn track_album(conn: &Connection, track_id: i64) -> Result<Option<AlbumRow>>
 }
 
 /// One track by id, in the same shape as album listings.
-pub fn track_by_id(conn: &Connection, track_id: i64) -> Result<Option<TrackRow>> {
+pub fn track_by_id(
+    conn: &Connection,
+    profile: ProfileId,
+    track_id: i64,
+) -> Result<Option<TrackRow>> {
     Ok(conn
         .query_row(
-            &format!("{TRACK_SELECT} WHERE t.id = ?1"),
+            &format!("{} WHERE t.id = ?1", track_select(profile)),
             [track_id],
             track_row,
         )
@@ -2584,10 +3098,14 @@ pub fn track_by_id(conn: &Connection, track_id: i64) -> Result<Option<TrackRow>>
 }
 
 /// One track by filesystem path, in the same shape as album listings.
-pub fn track_row_by_path(conn: &Connection, path: &str) -> Result<Option<TrackRow>> {
+pub fn track_row_by_path(
+    conn: &Connection,
+    profile: ProfileId,
+    path: &str,
+) -> Result<Option<TrackRow>> {
     Ok(conn
         .query_row(
-            &format!("{TRACK_SELECT} WHERE t.path = ?1"),
+            &format!("{} WHERE t.path = ?1", track_select(profile)),
             [path],
             track_row,
         )
@@ -2689,54 +3207,126 @@ fn daily_rank(track_id: i64, day_seed: i64) -> u64 {
     x ^ (x >> 31)
 }
 
-fn has_listen_history(conn: &Connection) -> Result<bool> {
+fn has_listen_history(conn: &Connection, profile: ProfileId) -> Result<bool> {
+    let pr = profile.0;
     let exists: bool = conn.query_row(
-        &format!("SELECT EXISTS(SELECT 1 FROM listen_events e WHERE {PLAY_EXPR} = 1)"),
+        &format!(
+            "SELECT EXISTS(SELECT 1 FROM listen_events e WHERE e.profile_id = {pr} AND {PLAY_EXPR} = 1)"
+        ),
         [],
         |r| r.get(0),
     )?;
     Ok(exists)
 }
 
-fn recently_played_tracks(conn: &Connection, limit: i64) -> Result<Vec<RecentTrack>> {
-    let sql = format!(
-        "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
-                t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover,
-                MAX(e.started_at) AS last_started
+/// The most recent distinct keys (track or album ids) among this profile's
+/// plays, newest first, ties by key descending. Walks the plays from the
+/// newest and stops once `limit` keys are known and the next play is older
+/// than the last of them, so it never touches the whole history.
+/// `key_of` maps a resolved track id to the key (or `None` to skip it).
+fn recent_play_keys(
+    conn: &Connection,
+    profile: ProfileId,
+    limit: usize,
+    key_of: &mut dyn FnMut(i64) -> Result<Option<i64>>,
+) -> Result<Vec<(i64, i64)>> {
+    let pr = profile.0;
+    let mut st = conn.prepare(&format!(
+        "SELECT e.track_id, e.started_at, CASE WHEN e.track_id IS NULL THEN e.path END
          FROM listen_events e
-         LEFT JOIN tracks tp ON e.track_id IS NULL AND tp.path = e.path
-         JOIN tracks t ON t.id = COALESCE(e.track_id, tp.id)
-         LEFT JOIN albums a ON a.id = t.album_id
-         WHERE {PLAY_EXPR} = 1
-         GROUP BY t.id
-         ORDER BY last_started DESC, t.id DESC
-         LIMIT ?1"
-    );
-    let mut st = conn.prepare(&sql)?;
-    let rows = st.query_map([limit], |r| {
-        Ok(RecentTrack {
-            track: track_row(r)?,
-            started_at: r.get(11)?,
-        })
-    })?;
-    Ok(rows.collect::<std::result::Result<_, _>>()?)
+         WHERE e.profile_id = {pr} AND {PLAY_EXPR} = 1
+         ORDER BY e.started_at DESC"
+    ))?;
+    let mut path_st = conn.prepare("SELECT id FROM tracks WHERE path = ?1")?;
+    let mut rows = st.query([])?;
+    let mut seen: HashMap<i64, i64> = HashMap::new();
+    // `started_at` of the newest play of the `limit`-th key so far.
+    let mut cutoff: Option<i64> = None;
+    while let Some(r) = rows.next()? {
+        let started: i64 = r.get(1)?;
+        if let Some(c) = cutoff
+            && started < c
+        {
+            break;
+        }
+        let tid = match r.get::<_, Option<i64>>(0)? {
+            Some(id) => Some(id),
+            None => {
+                let path: Option<String> = r.get(2)?;
+                match path {
+                    Some(p) => path_st.query_row([p], |x| x.get(0)).optional()?,
+                    None => None,
+                }
+            }
+        };
+        let Some(tid) = tid else { continue };
+        let Some(key) = key_of(tid)? else { continue };
+        // Rows come newest first, so the first sighting is the newest play.
+        seen.entry(key).or_insert(started);
+        if cutoff.is_none() && seen.len() >= limit {
+            let mut times: Vec<i64> = seen.values().copied().collect();
+            times.sort_unstable_by(|a, b| b.cmp(a));
+            cutoff = times.get(limit - 1).copied();
+        }
+    }
+    let mut out: Vec<(i64, i64)> = seen.into_iter().collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
+    out.truncate(limit);
+    Ok(out)
 }
 
-fn recently_played_albums(conn: &Connection, limit: i64) -> Result<Vec<AlbumRow>> {
-    let mut st = conn.prepare(&format!(
-        "SELECT a.id, a.title, a.album_artist, a.year,
-                (SELECT COUNT(*) FROM tracks WHERE album_id = a.id), a.cover
-         FROM listen_events e
-         LEFT JOIN tracks tp ON e.track_id IS NULL AND tp.path = e.path
-         JOIN tracks t ON t.id = COALESCE(e.track_id, tp.id)
-         JOIN albums a ON a.id = t.album_id
-         WHERE {PLAY_EXPR} = 1
-         GROUP BY a.id
-         ORDER BY MAX(e.started_at) DESC, a.id DESC
-         LIMIT ?1"
-    ))?;
-    let rows = st.query_map([limit], album_row)?;
-    Ok(rows.collect::<std::result::Result<_, _>>()?)
+fn recently_played_tracks(
+    conn: &Connection,
+    profile: ProfileId,
+    limit: i64,
+) -> Result<Vec<RecentTrack>> {
+    let keys = recent_play_keys(
+        conn,
+        profile,
+        usize::try_from(limit).unwrap_or(0),
+        &mut |tid| Ok(Some(tid)),
+    )?;
+    let mut st = conn.prepare(
+        "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
+                t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover
+         FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
+         WHERE t.id = ?1",
+    )?;
+    let mut out = Vec::with_capacity(keys.len());
+    for (id, started_at) in keys {
+        // A play whose track row is gone resolves to nothing, as the join did.
+        if let Some(track) = st.query_row([id], track_row).optional()? {
+            out.push(RecentTrack { track, started_at });
+        }
+    }
+    Ok(out)
+}
+
+fn recently_played_albums(
+    conn: &Connection,
+    profile: ProfileId,
+    limit: i64,
+) -> Result<Vec<AlbumRow>> {
+    let mut album_of = conn.prepare("SELECT album_id FROM tracks WHERE id = ?1")?;
+    let keys = recent_play_keys(
+        conn,
+        profile,
+        usize::try_from(limit).unwrap_or(0),
+        &mut |tid| {
+            Ok(album_of
+                .query_row([tid], |r| r.get::<_, Option<i64>>(0))
+                .optional()?
+                .flatten())
+        },
+    )?;
+    let mut st = conn.prepare(&format!("{ALBUM_SELECT} WHERE a.id = ?1"))?;
+    let mut out = Vec::with_capacity(keys.len());
+    for (id, _) in keys {
+        if let Some(album) = st.query_row([id], album_row).optional()? {
+            out.push(album);
+        }
+    }
+    Ok(out)
 }
 
 fn recently_added_albums(conn: &Connection, limit: i64) -> Result<Vec<AlbumRow>> {
@@ -2750,106 +3340,198 @@ fn recently_added_albums(conn: &Connection, limit: i64) -> Result<Vec<AlbumRow>>
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
-fn weekly_favorites_tracks(conn: &Connection, now: i64) -> Result<Vec<TrackRow>> {
-    let since = now.saturating_sub(7 * SECS_PER_DAY);
-    let sql = format!(
-        "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
-                t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover
-         FROM listen_events e
-         LEFT JOIN tracks tp ON e.track_id IS NULL AND tp.path = e.path
-         JOIN tracks t ON t.id = COALESCE(e.track_id, tp.id)
-         LEFT JOIN albums a ON a.id = t.album_id
-         WHERE e.started_at >= ?1
-         GROUP BY t.id
-         HAVING SUM(
-             e.completed * 3.0
-             + MIN(e.listened_ms, 600000) / 30000.0
-             - e.skipped * 2.0
-         ) > 0
-           AND SUM({PLAY_EXPR}) >= 1
-         ORDER BY SUM(
-             e.completed * 3.0
-             + MIN(e.listened_ms, 600000) / 30000.0
-             - e.skipped * 2.0
-         ) DESC,
-         MAX(e.started_at) DESC,
-         t.id ASC
-         LIMIT ?2"
-    );
-    let mut st = conn.prepare(&sql)?;
-    let rows = st.query_map(rusqlite::params![since, MIX_LIMIT], track_row)?;
-    Ok(rows.collect::<std::result::Result<_, _>>()?)
-}
-
-fn on_repeat_tracks(conn: &Connection, now: i64) -> Result<Vec<TrackRow>> {
-    let since = now.saturating_sub(30 * SECS_PER_DAY);
-    let sql = format!(
-        "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
-                t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover
-         FROM listen_events e
-         LEFT JOIN tracks tp ON e.track_id IS NULL AND tp.path = e.path
-         JOIN tracks t ON t.id = COALESCE(e.track_id, tp.id)
-         LEFT JOIN albums a ON a.id = t.album_id
-         WHERE e.started_at >= ?1
-         GROUP BY t.id
-         HAVING SUM({PLAY_EXPR}) >= 2
-         ORDER BY SUM({PLAY_EXPR}) DESC, SUM(e.listened_ms) DESC, MAX(e.started_at) DESC, t.id ASC
-         LIMIT ?2"
-    );
-    let mut st = conn.prepare(&sql)?;
-    let rows = st.query_map(rusqlite::params![since, MIX_LIMIT], track_row)?;
-    Ok(rows.collect::<std::result::Result<_, _>>()?)
-}
-
-fn rediscover_tracks(conn: &Connection, now: i64) -> Result<Vec<TrackRow>> {
-    let recent_cutoff = now.saturating_sub(30 * SECS_PER_DAY);
-    let sql = format!(
-        "{TRACK_SELECT}
-         WHERE (
-             EXISTS (SELECT 1 FROM favorites f WHERE f.track_id = t.id)
-             OR EXISTS (
-                 SELECT 1 FROM listen_events e
-                 WHERE (e.track_id = t.id OR (e.track_id IS NULL AND e.path = t.path))
-                   AND (e.completed = 1 OR e.listened_ms >= 30000)
-             )
-         )
-         AND NOT EXISTS (
-             SELECT 1 FROM listen_events e
-             WHERE (e.track_id = t.id OR (e.track_id IS NULL AND e.path = t.path))
-               AND e.started_at >= ?1
-               AND {PLAY_EXPR} = 1
+/// The profile's events since `?{since}` with the track resolved: by id, or
+/// by path when the id was lost. Written as two selects so the (many) events
+/// with a track id are read from the covering index alone; only the few
+/// without one touch the table.
+fn resolved_events_cte(pr: i64, since: usize) -> String {
+    format!(
+        "ev(tid, started_at, completed, listened_ms, skipped) AS (
+             SELECT e.track_id, e.started_at, e.completed, e.listened_ms, e.skipped
+             FROM listen_events e
+             WHERE e.profile_id = {pr} AND e.started_at >= ?{since} AND e.track_id IS NOT NULL
+             UNION ALL
+             SELECT tp.id, e.started_at, e.completed, e.listened_ms, e.skipped
+             FROM listen_events e JOIN tracks tp ON tp.path = e.path
+             WHERE e.profile_id = {pr} AND e.started_at >= ?{since} AND e.track_id IS NULL
          )"
+    )
+}
+
+/// Plain track rows (no play count) for `ids`, in the order of `ids`.
+fn plain_tracks_by_ids_in_order(conn: &Connection, ids: &[i64]) -> Result<Vec<TrackRow>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let list = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    let mut st = conn.prepare(&format!(
+        "SELECT t.id, t.title, t.artist, COALESCE(a.title, ''), t.album_id,
+                t.track_no, t.disc_no, t.year, t.duration_ms, t.path, a.cover
+         FROM tracks t LEFT JOIN albums a ON a.id = t.album_id
+         WHERE t.id IN ({list})"
+    ))?;
+    let mut by_id: HashMap<i64, TrackRow> = st
+        .query_map([], track_row)?
+        .map(|r| r.map(|t| (t.id, t)))
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(ids.iter().filter_map(|id| by_id.remove(id)).collect())
+}
+
+fn weekly_favorites_tracks(
+    conn: &Connection,
+    profile: ProfileId,
+    now: i64,
+) -> Result<Vec<TrackRow>> {
+    let since = now.saturating_sub(7 * SECS_PER_DAY);
+    let cte = resolved_events_cte(profile.0, 1);
+    let sql = format!(
+        "WITH {cte}
+         SELECT ev.tid
+         FROM ev JOIN tracks t ON t.id = ev.tid
+         GROUP BY ev.tid
+         HAVING SUM(
+             ev.completed * 3.0
+             + MIN(ev.listened_ms, 600000) / 30000.0
+             - ev.skipped * 2.0
+         ) > 0
+           AND SUM(CASE WHEN ev.completed = 1 OR ev.listened_ms >= 15000 THEN 1 ELSE 0 END) >= 1
+         ORDER BY SUM(
+             ev.completed * 3.0
+             + MIN(ev.listened_ms, 600000) / 30000.0
+             - ev.skipped * 2.0
+         ) DESC,
+         MAX(ev.started_at) DESC,
+         ev.tid ASC
+         LIMIT ?2"
     );
     let mut st = conn.prepare(&sql)?;
-    let mut items = st
-        .query_map([recent_cutoff], track_row)?
+    let ids = st
+        .query_map(rusqlite::params![since, MIX_LIMIT], |r| r.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    plain_tracks_by_ids_in_order(conn, &ids)
+}
+
+fn on_repeat_tracks(conn: &Connection, profile: ProfileId, now: i64) -> Result<Vec<TrackRow>> {
+    let since = now.saturating_sub(30 * SECS_PER_DAY);
+    let cte = resolved_events_cte(profile.0, 1);
+    let play = "CASE WHEN ev.completed = 1 OR ev.listened_ms >= 15000 THEN 1 ELSE 0 END";
+    let sql = format!(
+        "WITH {cte}
+         SELECT ev.tid
+         FROM ev JOIN tracks t ON t.id = ev.tid
+         GROUP BY ev.tid
+         HAVING SUM({play}) >= 2
+         ORDER BY SUM({play}) DESC, SUM(ev.listened_ms) DESC, MAX(ev.started_at) DESC, ev.tid ASC
+         LIMIT ?2"
+    );
+    let mut st = conn.prepare(&sql)?;
+    let ids = st
+        .query_map(rusqlite::params![since, MIX_LIMIT], |r| r.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    plain_tracks_by_ids_in_order(conn, &ids)
+}
+
+fn rediscover_tracks(conn: &Connection, profile: ProfileId, now: i64) -> Result<Vec<TrackRow>> {
+    let recent_cutoff = now.saturating_sub(30 * SECS_PER_DAY);
+    let pr = profile.0;
+    // Set-based: candidates are favourites plus tracks with a real listen,
+    // minus tracks played since the cutoff. Events match a track by id, or
+    // by path when the id was lost.
+    let sql = format!(
+        "WITH liked(id) AS (
+             SELECT f.track_id FROM favorites f WHERE f.profile_id = {pr}
+             UNION
+             SELECT e.track_id FROM listen_events e
+             WHERE e.profile_id = {pr} AND e.track_id IS NOT NULL
+               AND (e.completed = 1 OR e.listened_ms >= 30000)
+             UNION
+             SELECT tp.id FROM listen_events e JOIN tracks tp ON tp.path = e.path
+             WHERE e.profile_id = {pr} AND e.track_id IS NULL
+               AND (e.completed = 1 OR e.listened_ms >= 30000)
+         ),
+         recent(id) AS (
+             SELECT e.track_id FROM listen_events e
+             WHERE e.profile_id = {pr} AND e.started_at >= ?1
+               AND e.track_id IS NOT NULL AND {PLAY_EXPR} = 1
+             UNION
+             SELECT tp.id FROM listen_events e JOIN tracks tp ON tp.path = e.path
+             WHERE e.profile_id = {pr} AND e.started_at >= ?1
+               AND e.track_id IS NULL AND {PLAY_EXPR} = 1
+         )
+         SELECT t.id FROM tracks t
+         WHERE t.id IN (SELECT id FROM liked) AND t.id NOT IN (SELECT id FROM recent)"
+    );
+    let mut st = conn.prepare(&sql)?;
+    let mut ids = st
+        .query_map([recent_cutoff], |r| r.get::<_, i64>(0))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let day_seed = now.div_euclid(SECS_PER_DAY);
-    items.sort_by_key(|tr| daily_rank(tr.id, day_seed));
-    items.truncate(MIX_LIMIT as usize);
-    Ok(items)
+    ids.sort_by_key(|id| daily_rank(*id, day_seed));
+    ids.truncate(MIX_LIMIT as usize);
+    tracks_by_ids_in_order(conn, profile, &ids)
 }
 
-fn focus_mix_data(conn: &Connection, now: i64) -> Result<Option<(String, Vec<TrackRow>)>> {
+/// Full track rows (with plays) for `ids`, in the order of `ids`. Missing
+/// ids are skipped. Used after the ids were chosen with cheap queries so the
+/// per-row play counts are computed for the final handful only.
+fn tracks_by_ids_in_order(
+    conn: &Connection,
+    profile: ProfileId,
+    ids: &[i64],
+) -> Result<Vec<TrackRow>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ts = track_select(profile);
+    let list = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    let mut st = conn.prepare(&format!("{ts} WHERE t.id IN ({list})"))?;
+    let mut by_id: HashMap<i64, TrackRow> = st
+        .query_map([], track_row)?
+        .map(|r| r.map(|t| (t.id, t)))
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(ids.iter().filter_map(|id| by_id.remove(id)).collect())
+}
+
+/// Per-track focus score over the window `?2` (a CTE for the queries that
+/// rank a mix's candidates). Events match a track by id, or by path when
+/// the id was lost.
+fn focus_scores_cte(pr: i64) -> String {
+    let ev = resolved_events_cte(pr, 2);
+    format!(
+        "WITH {ev},
+         focus_score(tid, score) AS (
+             SELECT tid, SUM(completed * 2 + listened_ms / 30000.0 - skipped)
+             FROM ev GROUP BY tid
+         )"
+    )
+}
+
+fn focus_mix_data(
+    conn: &Connection,
+    profile: ProfileId,
+    now: i64,
+) -> Result<Option<(String, Vec<TrackRow>)>> {
     let since = now.saturating_sub(14 * SECS_PER_DAY);
+    let pr = profile.0;
     let top_artist: Option<String> = conn
         .query_row(
-            "SELECT ta.artist
-             FROM listen_events e
-             LEFT JOIN tracks tp ON e.track_id IS NULL AND tp.path = e.path
-             JOIN tracks t ON t.id = COALESCE(e.track_id, tp.id)
-             JOIN track_artists ta ON ta.track_id = t.id
-             WHERE e.started_at >= ?1
-               AND e.skipped = 0
+            &format!(
+                "WITH {ev}
+             SELECT ta.artist
+             FROM ev
+             JOIN track_artists ta ON ta.track_id = ev.tid
+             WHERE ev.skipped = 0
                AND TRIM(ta.artist) != ''
-               AND (
-                   SELECT COUNT(DISTINCT ta2.track_id)
-                   FROM track_artists ta2
-                   WHERE ta2.artist = ta.artist
-               ) >= ?2
              GROUP BY ta.artist COLLATE NOCASE
-             ORDER BY SUM(e.listened_ms) DESC, COUNT(*) DESC
+             HAVING (
+                 SELECT COUNT(DISTINCT ta2.track_id)
+                 FROM track_artists ta2
+                 WHERE ta2.artist = ta.artist
+             ) >= ?2
+             ORDER BY SUM(ev.listened_ms) DESC, COUNT(*) DESC
              LIMIT 1",
+                ev = resolved_events_cte(pr, 1)
+            ),
             rusqlite::params![since, MIN_MIX_TRACKS as i64],
             |r| r.get(0),
         )
@@ -2857,21 +3539,22 @@ fn focus_mix_data(conn: &Connection, now: i64) -> Result<Option<(String, Vec<Tra
 
     if let Some(artist) = top_artist {
         let mut st = conn.prepare(&format!(
-            "{TRACK_SELECT}
+            "{FOCUS_SCORES_CTE}
+             SELECT t.id FROM tracks t LEFT JOIN focus_score fs ON fs.tid = t.id
              WHERE EXISTS (
                  SELECT 1 FROM track_artists ta
                  WHERE ta.track_id = t.id AND ta.artist = ?1 COLLATE NOCASE
              )
-             ORDER BY COALESCE((
-                 SELECT SUM(e.completed * 2 + e.listened_ms / 30000.0 - e.skipped)
-                 FROM listen_events e
-                 WHERE (e.track_id = t.id OR (e.track_id IS NULL AND e.path = t.path))
-                   AND e.started_at >= ?2
-             ), 0) DESC, t.added_at DESC, t.id ASC
-             LIMIT ?3"
+             ORDER BY COALESCE(fs.score, 0) DESC, t.added_at DESC, t.id ASC
+             LIMIT ?3",
+            FOCUS_SCORES_CTE = focus_scores_cte(pr)
         ))?;
-        let rows = st.query_map(rusqlite::params![&artist, since, MIX_LIMIT], track_row)?;
-        let tracks = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let ids = st
+            .query_map(rusqlite::params![&artist, since, MIX_LIMIT], |r| {
+                r.get::<_, i64>(0)
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let tracks = tracks_by_ids_in_order(conn, profile, &ids)?;
         if tracks.len() >= MIN_MIX_TRACKS {
             return Ok(Some((artist, tracks)));
         }
@@ -2879,7 +3562,8 @@ fn focus_mix_data(conn: &Connection, now: i64) -> Result<Option<(String, Vec<Tra
 
     let top_genre: Option<String> = conn
         .query_row(
-            "WITH genre_counts AS (
+            &format!(
+                "WITH genre_counts AS (
                  SELECT TRIM(genre) AS g, COUNT(*) AS n
                  FROM tracks
                  WHERE genre IS NOT NULL AND TRIM(genre) != ''
@@ -2890,12 +3574,14 @@ fn focus_mix_data(conn: &Connection, now: i64) -> Result<Option<(String, Vec<Tra
              LEFT JOIN tracks tp ON e.track_id IS NULL AND tp.path = e.path
              JOIN tracks t ON t.id = COALESCE(e.track_id, tp.id)
              JOIN genre_counts gc ON gc.g = TRIM(t.genre) COLLATE NOCASE AND gc.n >= ?2
-             WHERE e.started_at >= ?1
+             WHERE e.profile_id = {pr}
+               AND e.started_at >= ?1
                AND e.skipped = 0
                AND t.genre IS NOT NULL AND TRIM(t.genre) != ''
              GROUP BY TRIM(t.genre) COLLATE NOCASE
              ORDER BY SUM(e.listened_ms) DESC, COUNT(*) DESC
-             LIMIT 1",
+             LIMIT 1"
+            ),
             rusqlite::params![since, MIN_MIX_TRACKS as i64],
             |r| r.get(0),
         )
@@ -2903,18 +3589,19 @@ fn focus_mix_data(conn: &Connection, now: i64) -> Result<Option<(String, Vec<Tra
 
     if let Some(genre) = top_genre {
         let mut st = conn.prepare(&format!(
-            "{TRACK_SELECT}
+            "{FOCUS_SCORES_CTE}
+             SELECT t.id FROM tracks t LEFT JOIN focus_score fs ON fs.tid = t.id
              WHERE TRIM(COALESCE(t.genre, '')) = ?1 COLLATE NOCASE
-             ORDER BY COALESCE((
-                 SELECT SUM(e.completed * 2 + e.listened_ms / 30000.0 - e.skipped)
-                 FROM listen_events e
-                 WHERE (e.track_id = t.id OR (e.track_id IS NULL AND e.path = t.path))
-                   AND e.started_at >= ?2
-             ), 0) DESC, t.added_at DESC, t.id ASC
-             LIMIT ?3"
+             ORDER BY COALESCE(fs.score, 0) DESC, t.added_at DESC, t.id ASC
+             LIMIT ?3",
+            FOCUS_SCORES_CTE = focus_scores_cte(pr)
         ))?;
-        let rows = st.query_map(rusqlite::params![&genre, since, MIX_LIMIT], track_row)?;
-        let tracks = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let ids = st
+            .query_map(rusqlite::params![&genre, since, MIX_LIMIT], |r| {
+                r.get::<_, i64>(0)
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let tracks = tracks_by_ids_in_order(conn, profile, &ids)?;
         if tracks.len() >= MIN_MIX_TRACKS {
             return Ok(Some((genre, tracks)));
         }
@@ -2923,10 +3610,15 @@ fn focus_mix_data(conn: &Connection, now: i64) -> Result<Option<(String, Vec<Tra
     Ok(None)
 }
 
-fn mix_detail_for_id(conn: &Connection, mix_id: &str, now: i64) -> Result<Option<HomeMixDetail>> {
+fn mix_detail_for_id(
+    conn: &Connection,
+    profile: ProfileId,
+    mix_id: &str,
+    now: i64,
+) -> Result<Option<HomeMixDetail>> {
     match mix_id {
         MIX_WEEKLY_FAVORITES => {
-            let tracks = weekly_favorites_tracks(conn, now)?;
+            let tracks = weekly_favorites_tracks(conn, profile, now)?;
             if tracks.len() < MIN_MIX_TRACKS {
                 return Ok(None);
             }
@@ -2941,7 +3633,7 @@ fn mix_detail_for_id(conn: &Connection, mix_id: &str, now: i64) -> Result<Option
             Ok(Some(HomeMixDetail { mix, tracks }))
         }
         MIX_ON_REPEAT => {
-            let tracks = on_repeat_tracks(conn, now)?;
+            let tracks = on_repeat_tracks(conn, profile, now)?;
             if tracks.len() < MIN_MIX_TRACKS {
                 return Ok(None);
             }
@@ -2956,7 +3648,7 @@ fn mix_detail_for_id(conn: &Connection, mix_id: &str, now: i64) -> Result<Option
             Ok(Some(HomeMixDetail { mix, tracks }))
         }
         MIX_REDISCOVER => {
-            let tracks = rediscover_tracks(conn, now)?;
+            let tracks = rediscover_tracks(conn, profile, now)?;
             if tracks.len() < MIN_MIX_TRACKS {
                 return Ok(None);
             }
@@ -2971,7 +3663,7 @@ fn mix_detail_for_id(conn: &Connection, mix_id: &str, now: i64) -> Result<Option
             Ok(Some(HomeMixDetail { mix, tracks }))
         }
         MIX_FOCUS => {
-            let Some((subject, tracks)) = focus_mix_data(conn, now)? else {
+            let Some((subject, tracks)) = focus_mix_data(conn, profile, now)? else {
                 return Ok(None);
             };
             let mix = build_mix_meta(
@@ -2988,12 +3680,22 @@ fn mix_detail_for_id(conn: &Connection, mix_id: &str, now: i64) -> Result<Option
     }
 }
 
-pub fn home_mix_detail(conn: &Connection, mix_id: &str, now: i64) -> Result<Option<HomeMixDetail>> {
-    mix_detail_for_id(conn, mix_id, now)
+pub fn home_mix_detail(
+    conn: &Connection,
+    profile: ProfileId,
+    mix_id: &str,
+    now: i64,
+) -> Result<Option<HomeMixDetail>> {
+    mix_detail_for_id(conn, profile, mix_id, now)
 }
 
-pub fn home_mix_queue_tracks(conn: &Connection, mix_id: &str, now: i64) -> Result<Vec<Track>> {
-    let Some(detail) = mix_detail_for_id(conn, mix_id, now)? else {
+pub fn home_mix_queue_tracks(
+    conn: &Connection,
+    profile: ProfileId,
+    mix_id: &str,
+    now: i64,
+) -> Result<Vec<Track>> {
+    let Some(detail) = mix_detail_for_id(conn, profile, mix_id, now)? else {
         return Ok(Vec::new());
     };
     Ok(detail
@@ -3029,30 +3731,31 @@ pub fn resolve_mix_start(
 
 pub fn save_mix_as_playlist(
     conn: &mut Connection,
+    profile: ProfileId,
     mix_id: &str,
     name: &str,
     now: i64,
 ) -> Result<PlaylistInfo> {
-    let detail = mix_detail_for_id(conn, mix_id, now)?
+    let detail = mix_detail_for_id(conn, profile, mix_id, now)?
         .ok_or_else(|| super::LibraryError::Other(format!("mix '{mix_id}' is unavailable")))?;
     let ids: Vec<i64> = detail.tracks.iter().map(|t| t.id).collect();
-    create_playlist(conn, name, &ids, now)
+    create_playlist(conn, profile, name, &ids, now)
 }
 
-pub fn home_feed(conn: &Connection, now: i64) -> Result<HomeFeed> {
-    let has_history = has_listen_history(conn)?;
+pub fn home_feed(conn: &Connection, profile: ProfileId, now: i64) -> Result<HomeFeed> {
+    let has_history = has_listen_history(conn, profile)?;
     let recently_played_albums = if has_history {
-        recently_played_albums(conn, 12)?
+        recently_played_albums(conn, profile, 12)?
     } else {
         Vec::new()
     };
     let recently_played_tracks = if has_history {
-        recently_played_tracks(conn, 8)?
+        recently_played_tracks(conn, profile, 8)?
     } else {
         Vec::new()
     };
     let recently_added_albums = recently_added_albums(conn, 12)?;
-    let favs = favorites_page(conn, 0, 8)?;
+    let favs = favorites_page(conn, profile, 0, 8)?;
 
     let mut mixes = Vec::new();
     for id in [
@@ -3061,7 +3764,7 @@ pub fn home_feed(conn: &Connection, now: i64) -> Result<HomeFeed> {
         MIX_REDISCOVER,
         MIX_FOCUS,
     ] {
-        if let Some(detail) = mix_detail_for_id(conn, id, now)? {
+        if let Some(detail) = mix_detail_for_id(conn, profile, id, now)? {
             mixes.push(detail.mix);
         }
     }

@@ -76,41 +76,102 @@
 </script>
 
 <div class="absolute inset-0 flex flex-col bg-zinc-950">
-  <!-- Back bar: the title fades in once the big title scrolled under it. -->
-  <header class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-1 px-1 transition-colors" class:bg-zinc-900={titleHidden}>
-    <button class="rounded-full bg-black/30 p-2.5 text-white active:bg-black/50" aria-label={t("Back")} onclick={onBack}>
+  <!-- Spotify-style bar over the page: back, the title once the big title
+       scrolled under it, and "⋮" (pr-[22px]: right above the play button). -->
+  <header
+    class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-2 pr-[22px] pl-2 transition-colors"
+    class:bg-zinc-900={titleHidden}
+  >
+    <button class="rounded-full bg-black/30 p-2.5 text-white active:bg-black/50" aria-label={t('Back')} onclick={onBack}>
       <Icon name="back" class="size-6" />
     </button>
-    {#if titleHidden && data}
-      <h1 class="min-w-0 flex-1 truncate text-base font-semibold">{data.album.title}</h1>
+    <h1 class={['min-w-0 flex-1 truncate pr-14 text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
+      {data?.album.title ?? ''}
+    </h1>
+    {#if data}
+      <ActionsMenu
+        label={t('More actions for “{title}”', { title: data.album.title })}
+        triggerClass="rounded-full bg-black/30 p-2.5 text-white outline-none active:bg-black/50"
+        iconClass="size-6"
+      >
+        {#snippet children(close)}
+          {#if appSettings.allowMetadata}
+            <button
+              type="button"
+              role="menuitem"
+              class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+              onclick={() => {
+                close()
+                metadataMatch.openAlbum(albumId)
+              }}
+            >
+              <Icon name="search" class="size-5 text-zinc-500" />
+              {t('Find info')}
+            </button>
+          {/if}
+          <button
+            type="button"
+            role="menuitem"
+            class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+            onclick={() => {
+              close()
+              void changeCover()
+            }}
+          >
+            <Icon name="image" class="size-5 text-zinc-500" />
+            {t('Choose cover…')}
+          </button>
+          {#if data?.album.cover !== null}
+            <button
+              type="button"
+              role="menuitem"
+              class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
+              onclick={() => {
+                close()
+                void resetCover()
+              }}
+            >
+              <Icon name="refresh" class="size-5 text-zinc-500" />
+              {t('Reset cover')}
+            </button>
+          {/if}
+        {/snippet}
+      </ActionsMenu>
     {/if}
   </header>
 
   <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
     {#if data}
-      <div class="relative isolate overflow-hidden px-4 pt-16 pb-4">
-        <TintedBackdrop background="linear-gradient(180deg, {tint.top} 0%, {tint.surface} 65%, var(--color-zinc-950) 100%)" />
-        <div class="relative">
-          <Cover cover={data.album.cover} title={data.album.title} class="mx-auto aspect-square w-3/5 max-w-64 rounded-md text-5xl shadow-2xl shadow-black/60" />
-          <h2 class="mt-5 text-2xl leading-tight font-bold" {@attach underTopBar((hidden) => (titleHidden = hidden))}>{data.album.title}</h2>
-          <p class="mt-1 text-sm font-medium text-zinc-200">
-            <ArtistLinks artist={data.album.albumArtist} />
+      <div class="relative isolate overflow-hidden px-4 pt-16 pb-3">
+        <TintedBackdrop background="linear-gradient(180deg, {tint.top} 0%, {tint.surface} 60%, var(--color-zinc-950) 100%)" />
+        <Cover
+          cover={data.album.cover}
+          title={data.album.title}
+          class="mx-auto aspect-square w-[62%] max-w-72 rounded-sm text-5xl shadow-2xl shadow-black/60"
+        />
+        <h2 class="mt-6 text-[1.7rem] leading-tight font-bold tracking-tight" {@attach underTopBar((hidden) => (titleHidden = hidden))}>
+          {data.album.title}
+        </h2>
+        {#if data.album.albumArtist}
+          <p class="mt-2.5 flex min-w-0 items-center gap-2 text-sm font-bold text-zinc-50">
+            <Cover cover={null} title={data.album.albumArtist} class="size-6 shrink-0 rounded-full text-[10px]" />
+            <span class="truncate"><ArtistLinks artist={data.album.albumArtist} /></span>
           </p>
-          <p class="mt-1 text-xs text-zinc-400">
-            {t('Album · {details}', {
-              details: [data.album.year, count(data.album.trackCount, '{n} song', '{n} songs'), formatTime(totalSeconds)]
-                .filter(Boolean)
-                .join(' · '),
-            })}
-          </p>
-        </div>
+        {/if}
+        <p class="mt-2 text-[13px] text-zinc-400">
+          {[t('Album'), data.album.year, count(data.album.trackCount, '{n} song', '{n} songs'), formatTime(totalSeconds)]
+            .filter(Boolean)
+            .join(' • ')}
+        </p>
       </div>
       <StickyPlay
-        top="44px"
+        dockShift={52}
         playing={playingThis}
         onclick={() => player.playOrToggle(`album:${albumId}`, () => library.playAlbum(albumId, 0))}
       />
-      <div class="flex h-16 items-center gap-2 px-4 pb-2">
+      <!-- Action row: save and pin on the left; shuffle and the big play
+           button (StickyPlay, in the size-14 gap) on the right. -->
+      <div class="flex h-16 items-center gap-1 px-2.5 pb-2">
         <AddToPlaylist {albumId} label="Add album to playlist" class="p-2.5 text-zinc-300" />
         <button
           class={['rounded-full p-2.5 active:bg-white/10', pinned.isPinned('album', albumId) ? 'text-accent-400' : 'text-zinc-300']}
@@ -120,53 +181,11 @@
         >
           <Icon name="pin" class="size-6" />
         </button>
-        {#if appSettings.allowMetadata}
-          <button
-            class="rounded-full px-3 py-2 text-sm font-medium text-zinc-300 active:bg-white/10"
-            onclick={() => metadataMatch.openAlbum(albumId)}
-          >
-            {t("Find info")}
-          </button>
-        {/if}
-        <ActionsMenu
-          label={t('More actions for “{title}”', { title: data.album.title })}
-          triggerClass="rounded-full p-2.5 text-zinc-300 outline-none active:bg-white/10"
-          iconClass="size-6"
-        >
-          {#snippet children(close)}
-            <button
-              type="button"
-              role="menuitem"
-              class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
-              onclick={() => {
-                close()
-                void changeCover()
-              }}
-            >
-              <Icon name="image" class="size-5 text-zinc-500" />
-              {t('Choose cover…')}
-            </button>
-            {#if data?.album.cover !== null}
-              <button
-                type="button"
-                role="menuitem"
-                class="flex w-full items-center gap-3 px-4 py-3 text-left outline-none active:bg-zinc-100 dark:active:bg-zinc-800"
-                onclick={() => {
-                  close()
-                  void resetCover()
-                }}
-              >
-                <Icon name="refresh" class="size-5 text-zinc-500" />
-                {t('Reset cover')}
-              </button>
-            {/if}
-          {/snippet}
-        </ActionsMenu>
         <span class="flex-1"></span>
-        <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t("Shuffle play")} onclick={shufflePlay}>
+        <button class="rounded-full p-3 text-zinc-300 active:bg-white/10" aria-label={t('Shuffle play')} onclick={shufflePlay}>
           <Icon name="shuffle" class="size-6" />
         </button>
-        <span class="size-14 shrink-0" aria-hidden="true"></span>
+        <span class="mr-1.5 size-14 shrink-0" aria-hidden="true"></span>
       </div>
       {#each data.tracks as track, i (track.id)}
         <TrackItem
@@ -176,7 +195,7 @@
           trackId={track.id}
           {track}
           album=""
-          number={track.trackNo ?? i + 1}
+          lead="none"
           onPlay={() => library.playAlbum(albumId, i)}
           selectScope={`m:album:${albumId}`}
           index={i}

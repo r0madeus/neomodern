@@ -23,6 +23,7 @@ use super::protocol::{ErrorCode, GuardSummary, Msg, SEND_LIMIT, SYNC_VERSION};
 use super::remote::{self, QueuePage, RemoteCmd, RemoteErrorCode, RemoteFailure};
 use super::service::{Shared, SyncResult, db, now_ms, run_blocking};
 use super::store::{self, ApplyOptions, SyncError};
+use crate::library::ProfileId;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -108,12 +109,37 @@ struct Conn {
     next_request: u32,
     pending: HashMap<u32, oneshot::Sender<Result<Option<QueuePage>, String>>>,
     last_position_emit: Option<Instant>,
+    /// The computer understands `upNextPage` (app 0.9.6+). For an older one
+    /// the phone asks for a plain queue page instead (see `send_remote`).
+    peer_up_next: bool,
+    /// Requests sent as a plain queue page for an `upNextPage`: request id
+    /// -> queue index the up-next list starts at.
+    up_next_shift: HashMap<u32, usize>,
+}
+
+/// First app version whose computer answers `upNextPage`.
+const UP_NEXT_SINCE: &str = "0.9.6";
+
+/// Whether a peer running `app_version` answers `upNextPage`. An unreadable
+/// version (a development build) is taken as new.
+fn supports_up_next(app_version: &str) -> bool {
+    !crate::update::is_newer(UP_NEXT_SINCE, app_version)
 }
 
 /// Runs one session until it ends (network error, the peer closes, or the
 /// service drops the session's control channel).
-pub(super) async fn run(sh: Arc<Shared>, session: Session, role: Role) -> Ended {
-    let peer_id = session.peer_id().to_owned();
+///
+/// `pairing`: the phone's `sync_peers` row key for this computer. It
+/// differs from the computer's own id when several phone profiles are
+/// paired with one computer (`store::pairing_key`); the computer passes
+/// `None` and keys the phone by the id the phone announced.
+pub(super) async fn run(
+    sh: Arc<Shared>,
+    session: Session,
+    role: Role,
+    pairing: Option<String>,
+) -> Ended {
+    let peer_id = pairing.unwrap_or_else(|| session.peer_id().to_owned());
     let (mut reader, writer) = session.into_split();
     reader.set_idle_timeout(Some(IDLE_TIMEOUT));
     let (in_tx, mut inbox) = mpsc::channel::<Result<Msg, String>>(16);
@@ -160,6 +186,8 @@ pub(super) async fn run(sh: Arc<Shared>, session: Session, role: Role) -> Ended 
         next_request: 1,
         pending: HashMap::new(),
         last_position_emit: None,
+        peer_up_next: true,
+        up_next_shift: HashMap::new(),
     };
     if let Err(e) = conn.handshake(&mut inbox).await {
         return Ended {
@@ -205,6 +233,9 @@ impl Conn {
             .ok_or("the connection closed")??;
         let version_error =
             "The other device runs a different sync version: update the app on both devices.";
+        if let (Role::Client, Msg::Welcome { app_version, .. }) = (self.role, &first) {
+            self.peer_up_next = supports_up_next(app_version);
+        }
         match (self.role, first) {
             (Role::Server, Msg::Hello { sync_version, .. })
             | (Role::Client, Msg::Welcome { sync_version, .. }) => {
@@ -323,6 +354,25 @@ impl Conn {
                 self.next_request = self.next_request.wrapping_add(1).max(1);
                 self.pending.retain(|_, r| !r.is_closed());
                 self.pending.insert(id, reply);
+                self.up_next_shift
+                    .retain(|k, _| self.pending.contains_key(k));
+                let cmd = match cmd {
+                    RemoteCmd::UpNextPage { offset, limit } if !self.peer_up_next => {
+                        // Older computer: the songs after the current one in
+                        // queue order (it cannot tell the shuffle order).
+                        let start = self
+                            .sh
+                            .remote_state_now()
+                            .and_then(|s| s.current_index)
+                            .map_or(0, |c| c + 1);
+                        self.up_next_shift.insert(id, start);
+                        RemoteCmd::QueuePage {
+                            offset: start.saturating_add(offset),
+                            limit,
+                        }
+                    }
+                    other => other,
+                };
                 self.send(&Msg::Remote { id, cmd }).await
             }
             (Ctl::Remote { reply, .. }, Role::Server) => {
@@ -365,8 +415,12 @@ impl Conn {
                 }
                 Ok(())
             }
-            Msg::Queue { id, page } => {
+            Msg::Queue { id, mut page } => {
                 if self.role == Role::Client {
+                    if let Some(start) = self.up_next_shift.remove(&id) {
+                        page.offset = page.offset.saturating_sub(start);
+                        page.total = page.total.saturating_sub(start);
+                    }
                     self.sh.emit("remote://queue", &page);
                     if let Some(reply) = self.pending.remove(&id) {
                         let _ = reply.send(Ok(Some(page)));
@@ -435,13 +489,15 @@ impl Conn {
     async fn send_page(&mut self, capture: bool) -> Result<(), String> {
         let peer = self.peer_id.clone();
         let limit = self.page_size;
+        let role = self.role;
         let lib = Arc::clone(&self.sh.lib);
         let page = db(&self.sh, move |conn| {
             let mut changed = false;
             if capture {
-                changed = store::capture(conn, now_ms())?.local_changed;
+                let bound = store::bound_profiles(conn)?;
+                changed = store::capture(conn, now_ms(), &bound)?.local_changed;
             }
-            let page = build_page(conn, &peer, limit, SEND_LIMIT)?;
+            let page = build_page(conn, &peer, limit, SEND_LIMIT, role)?;
             Ok((page, changed))
         })
         .await;
@@ -556,14 +612,26 @@ impl Conn {
                 .await;
         }
         let allow = self.sh.allow_once(&self.peer_id);
-        let opts = ApplyOptions {
+        let peer_id = self.peer_id.clone();
+        let mut opts = ApplyOptions {
+            // Read below, from the pairing as it is stored now.
+            profile: ProfileId::FIRST,
             peer_id: Some(self.peer_id.clone()),
             peer_name: self.peer_name.clone(),
             allow_mass_delete: allow,
             backup_dir: Some(self.sh.backup_dir.clone()),
             now_ms: now_ms(),
         };
-        let result = db(&self.sh, move |c| Ok(store::apply(c, &batch, &opts))).await?;
+        let result = db(&self.sh, move |c| {
+            // The profile the pairing is bound to, read fresh: a re-pairing
+            // may have re-bound it since the session started.
+            let Some(peer) = store::peer(c, &peer_id)? else {
+                return Err(SyncError::Other("unknown peer".into()));
+            };
+            opts.profile = peer.profile;
+            Ok(store::apply(c, &batch, &opts))
+        })
+        .await?;
         match result {
             Ok(report) => {
                 if report.local_changed {
@@ -684,13 +752,19 @@ pub(super) fn build_page(
     peer_id: &str,
     limit: usize,
     max_bytes: usize,
+    role: Role,
 ) -> store::Result<Page> {
-    let after = store::peer(conn, peer_id)?
-        .ok_or_else(|| SyncError::Other("unknown peer".into()))?
-        .last_seq_sent;
+    let peer =
+        store::peer(conn, peer_id)?.ok_or_else(|| SyncError::Other("unknown peer".into()))?;
+    let after = peer.last_seq_sent;
     let mut limit = limit.max(1);
     loop {
-        let batch = store::changes_since(conn, after, limit)?;
+        let mut batch = store::changes_since(conn, peer.profile, after, limit)?;
+        if role == Role::Client {
+            // The phone is a different device to the computer for each of
+            // its profiles (K25).
+            batch.from_device = store::link_device_id(conn, peer.profile)?;
+        }
         let (upto, more, len) = (batch.upto_seq, batch.more, batch.len());
         let bytes = Msg::SyncBatch { batch }.to_bytes();
         if bytes.len() <= max_bytes || limit == 1 {
@@ -703,5 +777,20 @@ pub(super) fn build_page(
             });
         }
         limit = (limit / 2).max(1);
+    }
+}
+
+#[cfg(test)]
+mod up_next_tests {
+    use super::supports_up_next;
+
+    #[test]
+    fn older_computers_get_a_plain_queue_page() {
+        assert!(!supports_up_next("0.9.5"));
+        assert!(!supports_up_next("0.8.0"));
+        assert!(supports_up_next("0.9.6"));
+        assert!(supports_up_next("1.0.0"));
+        // Development builds without a readable version are taken as new.
+        assert!(supports_up_next("dev"));
     }
 }

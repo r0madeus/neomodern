@@ -497,6 +497,42 @@ impl Queue {
         &self.entries[start..end]
     }
 
+    /// Number of entries that play after the current one (see `up_next`).
+    pub fn up_next_len(&self) -> usize {
+        if self.shuffle && !self.order.is_empty() {
+            let start = self.current_order_pos().map_or(0, |p| p + 1);
+            self.order.len().saturating_sub(start)
+        } else {
+            let start = self.current.map_or(0, |c| c + 1);
+            self.entries.len().saturating_sub(start)
+        }
+    }
+
+    /// Indexes of the entries that play after the current one, in play
+    /// order: the shuffle order when shuffle is on, else queue order. Without
+    /// a current entry, the whole play order. A repeat-all wrap is not shown.
+    pub fn up_next(&self, offset: usize, limit: usize) -> Vec<usize> {
+        if self.shuffle && !self.order.is_empty() {
+            let start = self.current_order_pos().map_or(0, |p| p + 1);
+            let index: std::collections::HashMap<EntryId, usize> = self
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(i, e)| (e.id, i))
+                .collect();
+            self.order
+                .iter()
+                .skip(start.saturating_add(offset))
+                .take(limit)
+                .filter_map(|id| index.get(id).copied())
+                .collect()
+        } else {
+            let start = self.current.map_or(0, |c| c + 1).saturating_add(offset);
+            let end = start.saturating_add(limit).min(self.entries.len());
+            (start.min(end)..end).collect()
+        }
+    }
+
     /// Incremented on every mutation of the entries (not on `set_current`).
     pub fn version(&self) -> u64 {
         self.version
@@ -714,6 +750,40 @@ mod tests {
         q.set_current(None);
         assert!(q.next().is_none());
         assert_eq!(q.previous_index(), None);
+    }
+
+    #[test]
+    fn up_next_follows_the_shuffle_order() {
+        let mut q = Queue::new();
+        q.replace(
+            (0..6)
+                .map(|i| PathBuf::from(format!("{i}.flac")))
+                .collect::<Vec<_>>(),
+            Some(2),
+        );
+        assert_eq!(q.up_next(0, 10), vec![3, 4, 5]);
+        assert_eq!(q.up_next_len(), 3);
+        assert_eq!(q.up_next(1, 1), vec![4]);
+
+        q.set_shuffle(true);
+        let order = q.up_next(0, 10);
+        assert_eq!(order.len(), 5);
+        assert_eq!(q.up_next_len(), 5);
+        assert!(!order.contains(&2), "the current entry is not up next");
+        // It is exactly what `next` will play, in that order.
+        let mut played = Vec::new();
+        while let Some(i) = q.next_index() {
+            played.push(i);
+            q.set_current(Some(i));
+        }
+        assert_eq!(played, order);
+        q.set_current(Some(2));
+        // Paging agrees with the whole list.
+        assert_eq!(q.up_next(2, 2), order[2..4].to_vec());
+        // "Add to queue" under shuffle comes up next.
+        q.enqueue(PathBuf::from("added.flac"));
+        let first = q.up_next(0, 1)[0];
+        assert_eq!(q.get(first).unwrap().path, PathBuf::from("added.flac"));
     }
 
     #[test]

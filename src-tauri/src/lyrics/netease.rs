@@ -5,13 +5,17 @@
 //! several field spellings) and the base URL is configurable for tests.
 
 use super::{LyricLine, LyricsError, LyricsResult, LyricsSource, TrackQuery, lrc};
-use crate::net::{Feature, NetPolicy};
+use crate::net::{Feature, NetPolicy, read_body_limited};
 use reqwest::Client;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 
 pub const DEFAULT_BASE_URL: &str = "https://music.163.com";
+/// Search answers.
+const MAX_SEARCH_BYTES: usize = 4 * 1024 * 1024;
+/// One lyric record.
+const MAX_LYRIC_BYTES: usize = 1024 * 1024;
 const REFERER: &str = "https://music.163.com";
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -353,7 +357,7 @@ impl NeteaseClient {
         if !res.status().is_success() {
             return Err(LyricsError::HttpStatus(res.status().as_u16()));
         }
-        parse_search(&res.bytes().await?)
+        parse_search(&read_body_limited(res, MAX_SEARCH_BYTES).await?)
     }
 
     async fn search_get(&self, term: &str) -> Result<Vec<Candidate>, LyricsError> {
@@ -367,7 +371,7 @@ impl NeteaseClient {
         if !res.status().is_success() {
             return Err(LyricsError::HttpStatus(res.status().as_u16()));
         }
-        parse_search(&res.bytes().await?)
+        parse_search(&read_body_limited(res, MAX_SEARCH_BYTES).await?)
     }
 
     /// POST first; when that fails, GET once (sources disagree on the method).
@@ -397,7 +401,7 @@ impl NeteaseClient {
         if !res.status().is_success() {
             return Err(LyricsError::HttpStatus(res.status().as_u16()));
         }
-        parse_lyric(&res.bytes().await?)
+        parse_lyric(&read_body_limited(res, MAX_LYRIC_BYTES).await?)
     }
 
     /// `Ok(None)` = no plausible song or no lyrics.

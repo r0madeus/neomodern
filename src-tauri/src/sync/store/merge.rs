@@ -67,12 +67,12 @@ fn observe_all(ctx: &mut Ctx<'_>, batch: &Batch) {
 }
 
 fn favorite(ctx: &mut Ctx<'_>, incoming: &FavoriteRecord) -> Result<bool> {
-    let current = rows::get_favorite(ctx.conn, &incoming.key)?;
+    let current = rows::get_favorite(ctx.conn, ctx.profile, &incoming.key)?;
     if current.as_ref().is_some_and(|c| c.hlc >= incoming.hlc) {
         return Ok(false);
     }
     let seq = ctx.next_seq();
-    rows::put_favorite(ctx.conn, incoming, seq)?;
+    rows::put_favorite(ctx.conn, ctx.profile, incoming, seq)?;
     Ok(true)
 }
 
@@ -88,11 +88,11 @@ fn lww<T: Clone>(mine: &mut T, mine_hlc: &mut String, theirs: &T, theirs_hlc: &s
 }
 
 fn playlist(ctx: &mut Ctx<'_>, incoming: &PlaylistRecord) -> Result<bool> {
-    let Some(row) = rows::get_playlist(ctx.conn, &incoming.uuid)? else {
+    let Some(row) = rows::get_playlist(ctx.conn, ctx.profile, &incoming.uuid)? else {
         // New here: it waits for first-sync reconciliation before it is
         // shown (see `reconcile`).
         let seq = ctx.next_seq();
-        rows::put_playlist(ctx.conn, incoming, false, seq)?;
+        rows::put_playlist(ctx.conn, ctx.profile, incoming, false, seq)?;
         return Ok(true);
     };
     let mut rec = row.rec;
@@ -116,15 +116,15 @@ fn playlist(ctx: &mut Ctx<'_>, incoming: &PlaylistRecord) -> Result<bool> {
     );
     if changed {
         let seq = ctx.next_seq();
-        rows::put_playlist(ctx.conn, &rec, row.reconciled, seq)?;
+        rows::put_playlist(ctx.conn, ctx.profile, &rec, row.reconciled, seq)?;
     }
     Ok(changed)
 }
 
 fn entry(ctx: &mut Ctx<'_>, incoming: &EntryRecord) -> Result<bool> {
-    let Some(mut rec) = rows::get_entry(ctx.conn, &incoming.uuid)? else {
+    let Some(mut rec) = rows::get_entry(ctx.conn, ctx.profile, &incoming.uuid)? else {
         let seq = ctx.next_seq();
-        rows::put_entry(ctx.conn, incoming, seq)?;
+        rows::put_entry(ctx.conn, ctx.profile, incoming, seq)?;
         return Ok(true);
     };
     let mut changed = lww(
@@ -141,7 +141,7 @@ fn entry(ctx: &mut Ctx<'_>, incoming: &EntryRecord) -> Result<bool> {
     );
     if changed {
         let seq = ctx.next_seq();
-        rows::put_entry(ctx.conn, &rec, seq)?;
+        rows::put_entry(ctx.conn, ctx.profile, &rec, seq)?;
     }
     Ok(changed)
 }
@@ -151,5 +151,5 @@ fn listen(ctx: &mut Ctx<'_>, incoming: &ListenRecord) -> Result<bool> {
         return Ok(false);
     }
     let seq = ctx.next_seq();
-    rows::insert_listen(ctx.conn, incoming, seq)
+    rows::insert_listen(ctx.conn, ctx.profile, incoming, seq)
 }

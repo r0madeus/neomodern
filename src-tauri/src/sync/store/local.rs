@@ -2,6 +2,7 @@
 
 use super::key::truncate_bytes;
 use super::{MAX_NAME_CHARS, MAX_STR_BYTES, Result};
+use crate::library::ProfileId;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
 
@@ -56,9 +57,11 @@ pub(super) fn field(s: &str) -> String {
     truncate_bytes(s, MAX_STR_BYTES).to_owned()
 }
 
-pub(super) fn playlists(conn: &Connection) -> Result<Vec<LocalPlaylist>> {
-    let mut st = conn.prepare("SELECT id, name, cover, created_at FROM playlists ORDER BY id")?;
-    let rows = st.query_map([], |r| {
+pub(super) fn playlists(conn: &Connection, p: ProfileId) -> Result<Vec<LocalPlaylist>> {
+    let mut st = conn.prepare(
+        "SELECT id, name, cover, created_at FROM playlists WHERE profile_id = ?1 ORDER BY id",
+    )?;
+    let rows = st.query_map([p.0], |r| {
         Ok(LocalPlaylist {
             id: r.get(0)?,
             name: r.get(1)?,
@@ -100,8 +103,8 @@ pub(super) fn rewrite_entries(
 }
 
 /// track id -> added_at of every local favourite.
-pub(super) fn favorites(conn: &Connection) -> Result<HashMap<i64, i64>> {
-    let mut st = conn.prepare("SELECT track_id, added_at FROM favorites")?;
-    let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+pub(super) fn favorites(conn: &Connection, p: ProfileId) -> Result<HashMap<i64, i64>> {
+    let mut st = conn.prepare("SELECT track_id, added_at FROM favorites WHERE profile_id = ?1")?;
+    let rows = st.query_map([p.0], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }

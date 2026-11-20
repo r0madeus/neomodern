@@ -31,6 +31,12 @@ pub mod tools;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(12);
 const USER_AGENT: &str = concat!("NeoModern/", env!("CARGO_PKG_VERSION"));
 const MAX_COVER_DOWNLOAD_BYTES: usize = 15 * 1024 * 1024;
+/// Small JSON APIs (Deezer, Wikipedia).
+const MAX_SMALL_JSON_BYTES: usize = 1024 * 1024;
+/// iTunes search / lookup answers.
+const MAX_SEARCH_JSON_BYTES: usize = 4 * 1024 * 1024;
+/// YouTube InnerTube answers (large).
+const MAX_INNERTUBE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_KEPT_JOBS: usize = 25;
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 const VISIONOS_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
@@ -45,6 +51,16 @@ const YTDLP_QUERY_TIMEOUT: Duration = Duration::from_secs(90);
 const YTDLP_RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
 #[cfg(not(target_os = "android"))]
 const YTDLP_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+
+impl From<crate::net::BodyError> for OnlineError {
+    fn from(e: crate::net::BodyError) -> Self {
+        match e {
+            crate::net::BodyError::Http(e) => Self::Http(e),
+            crate::net::BodyError::Json(e) => Self::Json(e),
+            e @ crate::net::BodyError::TooLarge { .. } => Self::Message(e.to_string()),
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum OnlineError {
@@ -1281,7 +1297,9 @@ async fn fetch_deezer_artist_image(
     if !resp.status().is_success() {
         return Err(());
     }
-    let text = resp.text().await.map_err(|_| ())?;
+    let text = crate::net::read_text_limited(resp, MAX_SMALL_JSON_BYTES)
+        .await
+        .map_err(|_| ())?;
     Ok(parse_deezer_artist_image(&text, artist))
 }
 
@@ -1330,7 +1348,7 @@ async fn fetch_wiki_for_lang(
         .await;
     match search {
         Ok(resp) if resp.status().is_success() => {
-            if let Ok(text) = resp.text().await
+            if let Ok(text) = crate::net::read_text_limited(resp, MAX_SMALL_JSON_BYTES).await
                 && let Ok(val) = serde_json::from_str::<serde_json::Value>(&text)
                 && let Some(items) = val.pointer("/query/search").and_then(|v| v.as_array())
             {
@@ -1362,7 +1380,7 @@ async fn fetch_wiki_for_lang(
             }
             continue;
         }
-        let Ok(body) = resp.text().await else {
+        let Ok(body) = crate::net::read_text_limited(resp, MAX_SMALL_JSON_BYTES).await else {
             complete = false;
             continue;
         };
@@ -2032,7 +2050,7 @@ async fn fetch_itunes_albums(
             resp.status()
         )));
     }
-    let text = resp.text().await?;
+    let text = crate::net::read_text_limited(resp, MAX_SEARCH_JSON_BYTES).await?;
     parse_itunes_albums(&text)
 }
 
@@ -2052,7 +2070,7 @@ async fn fetch_itunes_album_detail(
             resp.status()
         )));
     }
-    let text = resp.text().await?;
+    let text = crate::net::read_text_limited(resp, MAX_SEARCH_JSON_BYTES).await?;
     parse_itunes_album_detail(&text, fallback)
 }
 
@@ -2971,7 +2989,7 @@ async fn fetch_innertube_visitor_data(client: &reqwest::Client) -> String {
     if !resp.status().is_success() {
         return String::new();
     }
-    let Ok(text) = resp.text().await else {
+    let Ok(text) = crate::net::read_text_limited(resp, MAX_INNERTUBE_BYTES).await else {
         return String::new();
     };
     parse_visitor_data_token(&text)
@@ -3007,7 +3025,7 @@ async fn fetch_innertube_search_raw(
             resp.status()
         )));
     }
-    let text = resp.text().await?;
+    let text = crate::net::read_text_limited(resp, MAX_INNERTUBE_BYTES).await?;
     Ok(parse_innertube_search_candidates(&text, max_results))
 }
 
@@ -3158,7 +3176,7 @@ async fn resolve_innertube_m4a(
             resp.status()
         )));
     }
-    let text = resp.text().await?;
+    let text = crate::net::read_text_limited(resp, MAX_INNERTUBE_BYTES).await?;
     parse_innertube_player_m4a(&text)
 }
 

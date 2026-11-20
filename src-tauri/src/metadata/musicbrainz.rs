@@ -4,7 +4,7 @@
 //! fields are ignored, so a missing or new key never fails a whole lookup.
 
 use super::MetadataError;
-use crate::net::{Feature, NetPolicy};
+use crate::net::{BodyError, Feature, NetPolicy, read_text_limited};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
@@ -21,6 +21,18 @@ const USER_AGENT: &str = concat!(
 const DEFAULT_MIN_INTERVAL: Duration = Duration::from_millis(1100);
 const DEFAULT_RETRY_DELAY: Duration = Duration::from_secs(2);
 const MAX_COVER_DOWNLOAD_BYTES: usize = 15 * 1024 * 1024;
+/// Largest MusicBrainz JSON answer we accept.
+const MAX_JSON_BYTES: usize = 4 * 1024 * 1024;
+
+impl From<BodyError> for MetadataError {
+    fn from(e: BodyError) -> Self {
+        match e {
+            BodyError::Http(e) => Self::Http(e),
+            BodyError::Json(e) => Self::Json(e),
+            e @ BodyError::TooLarge { .. } => Self::Invalid(e.to_string()),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MbConfig {
@@ -277,7 +289,7 @@ impl MbClient {
                 .send()
                 .await?;
             match res.status() {
-                StatusCode::OK => return Ok(res.text().await?),
+                StatusCode::OK => return Ok(read_text_limited(res, MAX_JSON_BYTES).await?),
                 StatusCode::SERVICE_UNAVAILABLE if !retried => {
                     retried = true;
                     tokio::time::sleep(self.cfg.retry_delay).await;

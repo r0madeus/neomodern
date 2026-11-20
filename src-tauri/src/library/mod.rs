@@ -17,6 +17,7 @@ pub mod autoplay;
 pub mod cover_color;
 pub mod db;
 pub mod m3u;
+pub mod profiles;
 pub mod scan;
 pub mod tags;
 
@@ -25,10 +26,13 @@ use rusqlite::Connection;
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use db::{SortDir, SortOrder, SortSpec};
+pub use profiles::{
+    DEFAULT_FIRST_PROFILE_NAME, MAX_PROFILES, PROFILE_COLORS, Profile, ProfileId, ProfileSummary,
+};
 pub use scan::ScanStats;
 
 #[derive(Debug, thiserror::Error)]
@@ -410,16 +414,44 @@ pub struct Library {
     queue: Mutex<VecDeque<(i64, PathBuf)>>,
     cover_colors: Mutex<HashMap<String, Option<[u8; 3]>>>,
     hooks: Hooks,
+    /// The profile whose data the profile-less methods use (K24).
+    active: AtomicI64,
+    /// Wrong PIN guesses per profile: (count, last try) (K25).
+    pin_tries: Mutex<HashMap<i64, (u32, std::time::Instant)>>,
 }
 
+/// Name of the pre-profiles database copy, next to the database.
+pub const BEFORE_PROFILES_BACKUP: &str = "library-before-profiles.sqlite3";
+
 impl Library {
+    /// Opens the library; a database without profiles gets one named after
+    /// the OS user (see [`Library::open_with_first_profile_name`]).
     pub fn open(db_path: &Path, covers_dir: &Path, hooks: Hooks) -> Result<Self> {
+        Self::open_with_first_profile_name(
+            db_path,
+            covers_dir,
+            hooks,
+            &profiles::default_first_profile_name(),
+        )
+    }
+
+    /// Like [`Library::open`]; `first_profile_name` names profile 1 when the
+    /// schema v14 migration creates it. Before that migration rewrites
+    /// tables, the database is copied to `library-before-profiles.sqlite3`
+    /// next to it (kept if it already exists).
+    pub fn open_with_first_profile_name(
+        db_path: &Path,
+        covers_dir: &Path,
+        hooks: Hooks,
+        first_profile_name: &str,
+    ) -> Result<Self> {
         if let Some(dir) = db_path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         std::fs::create_dir_all(covers_dir)?;
         let conn = Connection::open(db_path)?;
-        db::init(&conn)?;
+        backup_before_profiles(&conn, db_path)?;
+        db::init_with_first_profile(&conn, first_profile_name)?;
         Ok(Self::with_connection(conn, covers_dir, hooks))
     }
 
@@ -433,6 +465,8 @@ impl Library {
             queue: Mutex::new(VecDeque::new()),
             cover_colors: Mutex::new(HashMap::new()),
             hooks,
+            active: AtomicI64::new(ProfileId::FIRST.0),
+            pin_tries: Mutex::new(HashMap::new()),
         }
     }
 
@@ -535,7 +569,7 @@ impl Library {
             return Ok(());
         }
         let covers = db::playlist_cover_paths(&self.conn())?;
-        for (id, cover) in covers {
+        for (profile, id, cover) in covers {
             let old = PathBuf::from(&cover);
             if !old.starts_with(&legacy) {
                 continue;
@@ -553,7 +587,7 @@ impl Library {
                 // The cache was already cleared: fall back to the collage.
                 _ => None,
             };
-            db::set_playlist_cover(&self.conn(), id, new_path.as_deref())?;
+            db::set_playlist_cover(&self.conn(), profile, id, new_path.as_deref())?;
         }
         Ok(())
     }
@@ -668,7 +702,13 @@ impl Library {
         limit: u64,
         sort: impl Into<SortSpec>,
     ) -> Result<Vec<TrackRow>> {
-        db::tracks_page(&self.conn(), offset, limit.min(1000), sort)
+        db::tracks_page(
+            &self.conn(),
+            self.active_profile(),
+            offset,
+            limit.min(1000),
+            sort,
+        )
     }
 
     pub fn search_tracks_page(
@@ -678,7 +718,14 @@ impl Library {
         sort: impl Into<SortSpec>,
         query: &str,
     ) -> Result<Page<TrackRow>> {
-        db::search_tracks_page(&self.conn(), offset, limit.min(1000), sort, query)
+        db::search_tracks_page(
+            &self.conn(),
+            self.active_profile(),
+            offset,
+            limit.min(1000),
+            sort,
+            query,
+        )
     }
 
     pub fn track_meta(&self, path: &str) -> Result<Option<TrackMeta>> {
@@ -739,7 +786,7 @@ impl Library {
     }
 
     pub fn album(&self, album_id: i64) -> Result<AlbumDetail> {
-        db::album_detail(&self.conn(), album_id)
+        db::album_detail(&self.conn(), self.active_profile(), album_id)
     }
 
     /// Tracks of an album in play order, ready for the queue.
@@ -762,19 +809,25 @@ impl Library {
     }
 
     pub fn playlists(&self) -> Result<Vec<PlaylistInfo>> {
-        db::playlists(&self.conn())
+        db::playlists(&self.conn(), self.active_profile())
     }
 
     pub fn create_playlist(&self, name: &str, track_ids: &[i64]) -> Result<PlaylistInfo> {
-        db::create_playlist(&mut self.conn(), name, track_ids, unix_now())
+        db::create_playlist(
+            &mut self.conn(),
+            self.active_profile(),
+            name,
+            track_ids,
+            unix_now(),
+        )
     }
 
     pub fn rename_playlist(&self, id: i64, name: &str) -> Result<()> {
-        db::rename_playlist(&self.conn(), id, name)
+        db::rename_playlist(&self.conn(), self.active_profile(), id, name)
     }
 
     pub fn delete_playlist(&self, id: i64) -> Result<()> {
-        let old = db::delete_playlist(&self.conn(), id)?;
+        let old = db::delete_playlist(&self.conn(), self.active_profile(), id)?;
         self.remove_playlist_cover_if_cached(old);
         Ok(())
     }
@@ -789,7 +842,7 @@ impl Library {
         scan::write_atomic(&dest, &buf)?;
         let dest_str = scan::display_path(&dest);
 
-        match db::set_playlist_cover(&self.conn(), id, Some(&dest_str)) {
+        match db::set_playlist_cover(&self.conn(), self.active_profile(), id, Some(&dest_str)) {
             Ok(old) => {
                 if old.as_deref() != Some(dest_str.as_str()) {
                     self.remove_playlist_cover_if_cached(old);
@@ -807,13 +860,13 @@ impl Library {
         if !preset.starts_with("preset:") || preset.len() > 64 {
             return Err(LibraryError::Other("invalid cover preset".into()));
         }
-        let old = db::set_playlist_cover(&self.conn(), id, Some(preset))?;
+        let old = db::set_playlist_cover(&self.conn(), self.active_profile(), id, Some(preset))?;
         self.remove_playlist_cover_if_cached(old);
         Ok(())
     }
 
     pub fn clear_playlist_cover(&self, id: i64) -> Result<()> {
-        let old = db::set_playlist_cover(&self.conn(), id, None)?;
+        let old = db::set_playlist_cover(&self.conn(), self.active_profile(), id, None)?;
         self.remove_playlist_cover_if_cached(old);
         Ok(())
     }
@@ -832,51 +885,63 @@ impl Library {
     }
 
     pub fn playlist_tracks(&self, id: i64, offset: u64, limit: u64) -> Result<Vec<TrackRow>> {
-        db::playlist_tracks(&self.conn(), id, offset, limit.min(1000))
+        db::playlist_tracks(
+            &self.conn(),
+            self.active_profile(),
+            id,
+            offset,
+            limit.min(1000),
+        )
     }
 
     /// Playlist contents in order, ready for the queue.
     pub fn playlist_queue_tracks(&self, id: i64) -> Result<Vec<Track>> {
-        db::playlist_queue_tracks(&self.conn(), id)
+        db::playlist_queue_tracks(&self.conn(), self.active_profile(), id)
     }
 
     /// Appends tracks; ids that are not in the library are skipped.
     /// Returns the number of entries added.
     pub fn playlist_add_tracks(&self, id: i64, track_ids: &[i64]) -> Result<usize> {
-        db::playlist_add_tracks(&mut self.conn(), id, track_ids)
+        db::playlist_add_tracks(&mut self.conn(), self.active_profile(), id, track_ids)
     }
 
     pub fn playlist_add_album(&self, id: i64, album_id: i64) -> Result<usize> {
-        db::playlist_add_album(&mut self.conn(), id, album_id)
+        db::playlist_add_album(&mut self.conn(), self.active_profile(), id, album_id)
     }
 
     /// Removes the entries at the given indexes.
     pub fn playlist_remove(&self, id: i64, indexes: &[usize]) -> Result<()> {
-        db::playlist_remove(&mut self.conn(), id, indexes)
+        db::playlist_remove(&mut self.conn(), self.active_profile(), id, indexes)
     }
 
     pub fn playlists_with_track(&self, track_id: i64) -> Result<Vec<i64>> {
-        db::playlists_with_track(&self.conn(), track_id)
+        db::playlists_with_track(&self.conn(), self.active_profile(), track_id)
     }
 
     pub fn playlist_remove_track(&self, id: i64, track_id: i64) -> Result<()> {
-        db::playlist_remove_track(&mut self.conn(), id, track_id)
+        db::playlist_remove_track(&mut self.conn(), self.active_profile(), id, track_id)
     }
 
     pub fn playlist_move(&self, id: i64, from: usize, to: usize) -> Result<()> {
-        db::playlist_move(&mut self.conn(), id, from, to)
+        db::playlist_move(&mut self.conn(), self.active_profile(), id, from, to)
     }
 
     pub fn favorites(&self) -> Result<Vec<FavoriteRef>> {
-        db::favorites(&self.conn())
+        db::favorites(&self.conn(), self.active_profile())
     }
 
     pub fn set_favorites(&self, track_ids: &[i64], on: bool) -> Result<usize> {
-        db::set_favorites(&mut self.conn(), track_ids, on, unix_now())
+        db::set_favorites(
+            &mut self.conn(),
+            self.active_profile(),
+            track_ids,
+            on,
+            unix_now(),
+        )
     }
 
     pub fn toggle_favorite(&self, track_id: i64) -> Result<bool> {
-        db::toggle_favorite(&self.conn(), track_id, unix_now())
+        db::toggle_favorite(&self.conn(), self.active_profile(), track_id, unix_now())
     }
 
     pub fn toggle_favorite_by_path(&self, path: &str) -> Result<bool> {
@@ -893,15 +958,15 @@ impl Library {
         let Some(track_id) = found.into_iter().flatten().next() else {
             return Err(LibraryError::Other("track is not in the library".into()));
         };
-        db::toggle_favorite(&conn, track_id, unix_now())
+        db::toggle_favorite(&conn, self.active_profile(), track_id, unix_now())
     }
 
     pub fn favorites_page(&self, offset: u64, limit: u64) -> Result<Page<TrackRow>> {
-        db::favorites_page(&self.conn(), offset, limit.min(500))
+        db::favorites_page(&self.conn(), self.active_profile(), offset, limit.min(500))
     }
 
     pub fn favorites_queue_tracks(&self) -> Result<Vec<Track>> {
-        db::favorites_queue_tracks(&self.conn())
+        db::favorites_queue_tracks(&self.conn(), self.active_profile())
     }
 
     /// Creates a playlist from file paths (e.g. the queue). Files that are
@@ -921,7 +986,8 @@ impl Library {
         let mut conn = self.conn();
         let found = db::track_ids_by_paths(&conn, &keys)?;
         let ids: Vec<i64> = found.iter().flatten().copied().collect();
-        let playlist = db::create_playlist(&mut conn, name, &ids, unix_now())?;
+        let playlist =
+            db::create_playlist(&mut conn, self.active_profile(), name, &ids, unix_now())?;
         Ok(SavedPlaylist {
             playlist,
             skipped: found.len() - ids.len(),
@@ -930,7 +996,8 @@ impl Library {
 
     /// The playlist as extended M3U text.
     pub fn export_m3u(&self, id: i64) -> Result<String> {
-        let rows = db::playlist_tracks(&self.conn(), id, 0, u32::MAX as u64)?;
+        let rows =
+            db::playlist_tracks(&self.conn(), self.active_profile(), id, 0, u32::MAX as u64)?;
         Ok(m3u::render(&rows))
     }
 
@@ -955,7 +1022,8 @@ impl Library {
         let library = db::match_candidates(&conn)?;
         let found = m3u::resolve(&entries, &library);
         let ids: Vec<i64> = found.iter().flatten().copied().collect();
-        let playlist = db::create_playlist(&mut conn, name, &ids, unix_now())?;
+        let playlist =
+            db::create_playlist(&mut conn, self.active_profile(), name, &ids, unix_now())?;
         Ok(ImportedPlaylist {
             playlist,
             matched: ids.len(),
@@ -965,17 +1033,17 @@ impl Library {
 
     /// Records one completed or interrupted playback session.
     pub fn record_listen_event(&self, event: NewListenEvent) -> Result<()> {
-        db::record_listen_event(&self.conn(), &event)
+        db::record_listen_event(&self.conn(), self.active_profile(), &event)
     }
 
     /// Aggregated listening statistics for the `[from, to)` Unix-second range.
     pub fn listening_stats(&self, from: Option<i64>, to: Option<i64>) -> Result<ListeningStats> {
-        db::listening_stats(&self.conn(), from, to, 15)
+        db::listening_stats(&self.conn(), self.active_profile(), from, to, 15)
     }
 
     /// Removes all recorded listening history entries and returns rows deleted.
     pub fn clear_listen_history(&self) -> Result<u64> {
-        db::clear_listen_history(&self.conn())
+        db::clear_listen_history(&self.conn(), self.active_profile())
     }
 
     pub fn search_artists_page(
@@ -984,11 +1052,11 @@ impl Library {
         limit: u64,
         query: &str,
     ) -> Result<Page<ArtistRow>> {
-        db::search_artists_page(&self.conn(), offset, limit, query)
+        db::search_artists_page(&self.conn(), self.active_profile(), offset, limit, query)
     }
 
     pub fn artist_profile(&self, name: &str) -> Result<ArtistProfile> {
-        db::artist_profile(&self.conn(), name)
+        db::artist_profile(&self.conn(), self.active_profile(), name)
     }
 
     pub fn artist_tracks(&self, name: &str) -> Result<Vec<Track>> {
@@ -1004,7 +1072,7 @@ impl Library {
     }
 
     pub fn genre_tracks_page(&self, name: &str, offset: u64, limit: u64) -> Result<Page<TrackRow>> {
-        db::genre_tracks_page(&self.conn(), name, offset, limit)
+        db::genre_tracks_page(&self.conn(), self.active_profile(), name, offset, limit)
     }
 
     pub fn genre_tracks(&self, name: &str) -> Result<Vec<Track>> {
@@ -1030,7 +1098,15 @@ impl Library {
         let seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(1, |d| d.as_nanos() as u64);
-        autoplay::pick(&self.conn(), seeds, exclude, n, unix_now(), seed)
+        autoplay::pick(
+            &self.conn(),
+            self.active_profile(),
+            seeds,
+            exclude,
+            n,
+            unix_now(),
+            seed,
+        )
     }
 
     pub fn save_artist_meta(
@@ -1055,12 +1131,12 @@ impl Library {
     }
 
     pub fn track_by_id(&self, track_id: i64) -> Result<Option<TrackRow>> {
-        db::track_by_id(&self.conn(), track_id)
+        db::track_by_id(&self.conn(), self.active_profile(), track_id)
     }
 
     pub fn track_row_by_path(&self, path: &str) -> Result<Option<TrackRow>> {
         let key = scan::display_path(Path::new(path));
-        db::track_row_by_path(&self.conn(), &key)
+        db::track_row_by_path(&self.conn(), self.active_profile(), &key)
     }
 
     pub fn track_id_by_path(&self, path: &str) -> Result<Option<i64>> {
@@ -1185,19 +1261,25 @@ impl Library {
     /// Home overview feed: recent albums & tracks, favorites, recently added,
     /// and local rule-based dynamic mixes.
     pub fn home_feed(&self) -> Result<HomeFeed> {
-        db::home_feed(&self.conn(), unix_now())
+        db::home_feed(&self.conn(), self.active_profile(), unix_now())
     }
 
     pub fn home_mix_detail(&self, mix_id: &str) -> Result<Option<HomeMixDetail>> {
-        db::home_mix_detail(&self.conn(), mix_id, unix_now())
+        db::home_mix_detail(&self.conn(), self.active_profile(), mix_id, unix_now())
     }
 
     pub fn home_mix_queue_tracks(&self, mix_id: &str) -> Result<Vec<Track>> {
-        db::home_mix_queue_tracks(&self.conn(), mix_id, unix_now())
+        db::home_mix_queue_tracks(&self.conn(), self.active_profile(), mix_id, unix_now())
     }
 
     pub fn save_mix_as_playlist(&self, mix_id: &str, name: &str) -> Result<PlaylistInfo> {
-        db::save_mix_as_playlist(&mut self.conn(), mix_id, name, unix_now())
+        db::save_mix_as_playlist(
+            &mut self.conn(),
+            self.active_profile(),
+            mix_id,
+            name,
+            unix_now(),
+        )
     }
 
     pub fn tag_history_batch(&self, batch_id: i64) -> Result<Vec<db::TagHistoryRow>> {
@@ -1261,6 +1343,32 @@ impl Library {
     }
 }
 
+/// Writes `library-before-profiles.sqlite3` next to the database when it is
+/// about to be migrated to schema v14 (the migration rebuilds tables).
+fn backup_before_profiles(conn: &Connection, db_path: &Path) -> Result<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let has_tables: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table')",
+        [],
+        |r| r.get(0),
+    )?;
+    if version >= 14 || !has_tables {
+        return Ok(());
+    }
+    let backup = db_path.with_file_name(BEFORE_PROFILES_BACKUP);
+    if backup.exists() {
+        return Ok(());
+    }
+    // VACUUM INTO writes a consistent copy (WAL included) and refuses to
+    // overwrite; build it under a temporary name so a crash never leaves a
+    // half-written file that would pass the exists() check.
+    let tmp = backup.with_extension("tmp");
+    let _ = std::fs::remove_file(&tmp);
+    conn.execute("VACUUM INTO ?1", [tmp.to_string_lossy().as_ref()])?;
+    std::fs::rename(&tmp, &backup)?;
+    Ok(())
+}
+
 fn encode_cover_jpeg(image_path: &Path) -> Result<Vec<u8>> {
     const MAX_COVER_FILE_BYTES: u64 = 15 * 1024 * 1024;
     if std::fs::metadata(image_path)?.len() > MAX_COVER_FILE_BYTES {
@@ -1290,6 +1398,12 @@ fn unix_now() -> i64 {
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod large_library;
+
+#[cfg(test)]
+mod profile_tests;
 
 #[cfg(test)]
 mod tests;

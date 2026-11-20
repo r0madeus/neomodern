@@ -12,7 +12,7 @@ use super::{OnlineError, no_window_cmd};
 #[cfg(any(windows, test))]
 #[cfg(any(windows, test))]
 use crate::library::scan::display_path;
-use crate::net::client_builder;
+use crate::net::{client_builder, read_text_limited};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::Write;
@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// Largest checksum list we accept.
+const MAX_CHECKSUM_LIST_BYTES: usize = 1024 * 1024;
 const YTDLP_BASE: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download";
 const YTDLP_SUMS: &str = "SHA2-256SUMS";
 const FFMPEG_BASE: &str = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest";
@@ -387,7 +389,7 @@ async fn fetch_text(
         return Err(OnlineError::Disabled);
     }
     let resp = client.get(url).send().await?.error_for_status()?;
-    Ok(resp.text().await?)
+    Ok(read_text_limited(resp, MAX_CHECKSUM_LIST_BYTES).await?)
 }
 
 /// Streams `url` into `path` and returns the SHA-256 of what was written.

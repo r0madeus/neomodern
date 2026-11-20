@@ -1,5 +1,8 @@
 <script lang="ts">
   import Logo from './lib/Logo.svelte'
+  import ProfileMenu from './lib/ProfileMenu.svelte'
+  import ProfileLock from './lib/ProfileLock.svelte'
+  import { profiles } from './lib/profiles.svelte'
   import { count, i18n, t } from './lib/i18n.svelte'
   import { onMount, tick, untrack } from 'svelte'
   import { fly } from 'svelte/transition'
@@ -254,6 +257,7 @@
 
   onMount(() => {
     void artists.initScan()
+    void profiles.init()
     player.init().catch((e) => (player.error = String(e)))
     library.init().catch((e) => (player.error = String(e)))
     playlists.init().catch((e) => (player.error = String(e)))
@@ -423,15 +427,16 @@
         onKeyDown={sidebarResize.onKeyDown}
         onReset={sidebarResize.reset}
       />
-      <div class={['flex items-center', sidebarCollapsed ? 'justify-center' : 'justify-between px-1.5']}>
+      <div class={['flex items-center', sidebarCollapsed ? 'flex-col gap-3' : 'justify-between gap-2 px-1.5']}>
         {#if !sidebarCollapsed}
-          <div class="flex min-w-0 items-center gap-2">
+          <div class="flex min-w-0 flex-1 items-center gap-2">
             <span class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent-400 to-accent-700 text-white shadow-xs">
               <Logo class="size-4" />
             </span>
             <h1 class="truncate text-base font-bold tracking-tight">NeoModern</h1>
           </div>
         {/if}
+        <ProfileMenu />
         <button
           type="button"
           class="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200/80 hover:text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
@@ -845,3 +850,7 @@
   {/await}
 {/if}
 <TrackMenu />
+
+{#if profiles.state?.locked}
+  <ProfileLock />
+{/if}

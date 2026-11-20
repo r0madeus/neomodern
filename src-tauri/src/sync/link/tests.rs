@@ -672,3 +672,298 @@ async fn the_server_caps_sessions_and_stop_closes_everything() {
     let refused = tokio::net::TcpStream::connect(addr).await;
     assert!(refused.is_err());
 }
+
+#[tokio::test]
+async fn one_address_cannot_take_every_slot() {
+    let listener = bind(0).await.unwrap().with_per_address_limit(2);
+    let port = listener.port();
+    let r = Arc::new(responder(Arc::new(PairingWindow::new())));
+    let server = listener.serve(MAX_SESSIONS, move |stream, _peer, _stop| {
+        let r = Arc::clone(&r);
+        async move {
+            if let Ok(Accepted::Session(mut s)) = accept(stream, &r).await {
+                while let Ok(m) = s.recv().await {
+                    if s.send(&m).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+
+    // Two silent connections (no handshake) from the same address...
+    let _a = dial(addr, Duration::from_secs(1)).await.unwrap();
+    let _b = dial(addr, Duration::from_secs(1)).await.unwrap();
+    wait_until(|| server.active_connections() == 2).await;
+    // ...and a third from it is closed at once, although slots are free.
+    let mut extra = dial(addr, Duration::from_secs(1)).await.unwrap();
+    let mut buf = [0u8; 1];
+    let n = tokio::time::timeout(Duration::from_secs(2), extra.read(&mut buf))
+        .await
+        .expect("closed promptly")
+        .unwrap_or(0);
+    assert_eq!(n, 0);
+    assert_eq!(server.active_connections(), 2);
+
+    // When one ends, the address may connect again.
+    drop(_a);
+    wait_until(|| server.active_connections() < 2).await;
+    let mut s = connect(addr, &phone().id, &PC_SECRET).await.unwrap();
+    s.send(b"ok").await.unwrap();
+    assert_eq!(s.recv().await.unwrap(), b"ok");
+    server.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// LAN discovery
+// ---------------------------------------------------------------------------
+
+const PC_ID: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+
+async fn responder_on_loopback(name: &str) -> (DiscoveryResponder, SocketAddr) {
+    let r = DiscoveryResponder::start(0, 47_321, PC_ID.into(), name.into())
+        .await
+        .unwrap();
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), r.port());
+    (r, addr)
+}
+
+/// Sends `datagram` to `to` from a fresh socket and returns the answer, if
+/// one comes within a short time.
+async fn ask(to: SocketAddr, datagram: &[u8]) -> Option<Vec<u8>> {
+    let socket = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    socket.send_to(datagram, to).await.unwrap();
+    let mut buf = [0u8; 1024];
+    match tokio::time::timeout(Duration::from_millis(300), socket.recv_from(&mut buf)).await {
+        Ok(Ok((n, _))) => Some(buf[..n].to_vec()),
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn discovery_answers_a_valid_probe_from_a_lan_address() {
+    let (r, addr) = responder_on_loopback("Desk PC").await;
+    let answer = ask(addr, &discovery::probe()).await.expect("an answer");
+    assert!(answer.len() < 512);
+    let found = discovery::parse_reply(&answer).unwrap();
+    assert_eq!(found.device_id, PC_ID);
+    assert_eq!(found.name, "Desk PC");
+    assert_eq!(found.port, 47_321);
+    // A rename shows up in later answers.
+    r.set_name("Living room");
+    let again = discovery::parse_reply(&ask(addr, &discovery::probe()).await.unwrap()).unwrap();
+    assert_eq!(again.name, "Living room");
+    r.shutdown().await;
+}
+
+#[tokio::test]
+async fn discovery_ignores_garbage_and_inexact_probes() {
+    let (r, addr) = responder_on_loopback("Desk PC").await;
+    let good = discovery::probe();
+    let mut longer = good.clone();
+    longer.push(0);
+    let mut other_version = good.clone();
+    // The version sits right after the 10-byte magic.
+    other_version[11] ^= 0x7f;
+    let mut bad_padding = good.clone();
+    *bad_padding.last_mut().unwrap() = 1;
+    for bad in [
+        &b""[..],
+        b"hello",
+        b"NMDISCOVER",
+        &good[..good.len() - 1],
+        &longer,
+        &other_version,
+        &bad_padding,
+        &[0u8; 2000],
+    ] {
+        assert!(ask(addr, bad).await.is_none(), "answered {bad:?}");
+    }
+    // No amplification: the longest possible reply is not bigger than the
+    // probe that asks for it.
+    let longest = discovery::reply(&"a".repeat(64), &"名".repeat(200), 47_321).unwrap();
+    assert!(
+        longest.len() <= good.len(),
+        "{} > {}",
+        longest.len(),
+        good.len()
+    );
+    // Still answers a good one afterwards.
+    assert!(ask(addr, &good).await.is_some());
+    r.shutdown().await;
+}
+
+#[test]
+fn discovery_never_answers_non_lan_sources() {
+    let probe = discovery::probe();
+    for ip in ["8.8.8.8", "100.64.0.1", "2001:db8::1", "::ffff:8.8.8.8"] {
+        assert!(
+            !discovery::should_answer(ip.parse().unwrap(), &probe),
+            "{ip}"
+        );
+    }
+    for ip in [
+        "192.168.1.7",
+        "10.0.0.2",
+        "172.16.5.5",
+        "169.254.1.1",
+        "127.0.0.1",
+        "fe80::1",
+    ] {
+        assert!(
+            discovery::should_answer(ip.parse().unwrap(), &probe),
+            "{ip}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn discovery_replies_are_rate_limited_per_source() {
+    let (r, addr) = responder_on_loopback("Desk PC").await;
+    let socket = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    for _ in 0..10 {
+        socket.send_to(&discovery::probe(), addr).await.unwrap();
+    }
+    let mut answers = 0;
+    let mut buf = [0u8; 1024];
+    while tokio::time::timeout(Duration::from_millis(300), socket.recv_from(&mut buf))
+        .await
+        .is_ok()
+    {
+        answers += 1;
+    }
+    assert!(
+        (1..=discovery::MAX_REPLIES_PER_SOURCE).contains(&answers),
+        "{answers} answers to 10 probes"
+    );
+    r.shutdown().await;
+}
+
+#[test]
+fn the_reply_limiter_caps_total_and_per_source_and_recovers() {
+    let t0 = Instant::now();
+    let mut l = discovery::ReplyLimiter::new(t0);
+    let a: IpAddr = "192.168.1.2".parse().unwrap();
+    assert!(l.allow(a, t0));
+    assert!(l.allow(a, t0));
+    assert!(!l.allow(a, t0));
+    // The IPv4-mapped form is the same source.
+    assert!(!l.allow("::ffff:192.168.1.2".parse().unwrap(), t0));
+    // Many sources: stops at the overall cap.
+    let mut granted = 2;
+    for i in 3..200u8 {
+        if l.allow(IpAddr::V4(Ipv4Addr::new(192, 168, 1, i)), t0) {
+            granted += 1;
+        }
+    }
+    assert_eq!(granted, discovery::MAX_REPLIES_PER_SEC);
+    // A second later everything is allowed again.
+    assert!(l.allow(a, t0 + Duration::from_millis(1100)));
+}
+
+#[test]
+fn replies_are_small_and_strictly_parsed() {
+    let long = "é".repeat(200);
+    let reply = discovery::reply(PC_ID, &long, 47_321).unwrap();
+    assert!(reply.len() <= discovery::MAX_REPLY);
+    let found = discovery::parse_reply(&reply).unwrap();
+    assert!(found.name.chars().count() <= 200);
+    assert!(long.starts_with(&found.name));
+
+    let good = discovery::reply(PC_ID, "Desk PC", 47_321).unwrap();
+    assert!(discovery::parse_reply(&good).is_some());
+    // Wrong magic, version, port 0, short, bad id, control characters.
+    let mut bad = good.clone();
+    bad[0] = b'X';
+    assert!(discovery::parse_reply(&bad).is_none());
+    let mut bad = good.clone();
+    bad[8] ^= 1;
+    assert!(discovery::parse_reply(&bad).is_none());
+    let mut bad = good.clone();
+    bad[9] = 0;
+    bad[10] = 0;
+    assert!(discovery::parse_reply(&bad).is_none());
+    assert!(discovery::parse_reply(&good[..9]).is_none());
+    assert!(discovery::parse_reply(&[]).is_none());
+    let mut bad = good.clone();
+    bad[12] = b'!';
+    assert!(discovery::parse_reply(&bad).is_none());
+    let mut bad = good.clone();
+    bad.push(7);
+    assert!(discovery::parse_reply(&bad).is_none());
+    // A bad id is never announced.
+    assert!(discovery::reply("not an id", "x", 1).is_none());
+}
+
+#[tokio::test]
+async fn discover_finds_a_responder_end_to_end_on_loopback() {
+    let (r, addr) = responder_on_loopback("Desk PC").await;
+    let found = discover(&[addr], Duration::from_millis(400)).await.unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].device_id, PC_ID);
+    assert_eq!(found[0].name, "Desk PC");
+    // The TCP port comes from the reply, the address from the source.
+    assert_eq!(
+        found[0].address,
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 47_321)
+    );
+    // Nothing there: an empty list after the timeout, no error.
+    r.shutdown().await;
+    assert!(
+        discover(&[addr], Duration::from_millis(300))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn discover_validates_and_dedups_replies() {
+    // A fake network: two sockets that answer every probe, one of them
+    // twice, one with garbage first.
+    let id_a = PC_ID;
+    let id_b = "00112233445566778899aabbccddeeff";
+    let mut targets = Vec::new();
+    for (id, name, times) in [(id_a, "A", 2), (id_a, "A again", 1), (id_b, "B", 1)] {
+        let s = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        targets.push(s.local_addr().unwrap());
+        let reply = discovery::reply(id, name, 47_321).unwrap();
+        tokio::spawn(async move {
+            // Big enough for the padded probe: on Windows a datagram larger
+            // than the buffer is an error, not a truncated read.
+            let mut buf = [0u8; 1024];
+            if let Ok((_, from)) = s.recv_from(&mut buf).await {
+                let _ = s.send_to(b"garbage", from).await;
+                for _ in 0..times {
+                    let _ = s.send_to(&reply, from).await;
+                }
+            }
+        });
+    }
+    let found = discover(&targets, Duration::from_millis(500))
+        .await
+        .unwrap();
+    let mut ids: Vec<_> = found.iter().map(|f| f.device_id.as_str()).collect();
+    ids.sort_unstable();
+    let mut want = vec![id_a, id_b];
+    want.sort_unstable();
+    assert_eq!(ids, want);
+    assert_eq!(found.len(), 2);
+}
+
+#[test]
+fn discovery_targets_start_with_the_limited_broadcast() {
+    let t = discovery_targets(47_321);
+    assert_eq!(
+        t[0],
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), 47_321)
+    );
+    assert!(t.iter().all(|a| a.port() == 47_321));
+}

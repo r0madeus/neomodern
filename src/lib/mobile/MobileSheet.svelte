@@ -6,7 +6,10 @@
 
   // Container for pushed mobile sheets: horizontal slide transition plus a
   // left-edge swipe-back gesture matching native Android/iOS navigation.
-  let { onBack, children }: { onBack: () => void; children: Snippet } = $props()
+  // `nested`: a sheet opened from inside another page (e.g. an album from an
+  // artist page). It must cover that page's sticky play button (z-20), so it
+  // sits above it; it is still inside the parent sheet's stacking context.
+  let { onBack, children, nested = false }: { onBack: () => void; children: Snippet; nested?: boolean } = $props()
 
   const EDGE_PX = 28
   const TRIGGER_PX = 90
@@ -61,7 +64,7 @@
      it (Home's chips, an artist header) and keeps its own headers inside;
      the bottom bar (z-20) and notices (z-30) stay on top. -->
 <div
-  class="absolute inset-0 isolate z-10 bg-zinc-950 shadow-2xl shadow-black/50"
+  class={['absolute inset-0 isolate bg-zinc-950 shadow-2xl shadow-black/50', nested ? 'z-30' : 'z-10']}
   style:transform={pullX > 0 ? `translateX(${pullX}px)` : undefined}
   style:transition={pullX > 0 ? 'none' : 'transform 200ms ease-out'}
   in:fly={{ x: viewportWidth(), duration: motionDuration(230), opacity: 1, easing: cubicOut }}

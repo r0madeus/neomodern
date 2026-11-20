@@ -16,6 +16,7 @@
 //!
 //! Sockets are only opened in `server.rs` (see the guard test in `net.rs`).
 
+mod discovery;
 mod error;
 mod frame;
 mod pair;
@@ -31,7 +32,8 @@ pub use frame::{read_frame, read_frame_idle, write_frame};
 pub use pair::{CODE_TTL, Paired, PairingStatus, PairingWindow, pair, pair_connect};
 pub use rate::RateLimiter;
 pub use server::{
-    Listener, ServerHandle, StopSignal, bind, dial, is_lan_address, lan_ipv4_addresses,
+    DiscoveryResponder, FoundComputer, Listener, ServerHandle, StopSignal, bind, dial, discover,
+    discovery_targets, is_lan_address, lan_ipv4_addresses,
 };
 pub use session::{Session, SessionReader, SessionWriter, connect, handshake};
 
@@ -46,6 +48,10 @@ pub const PROTOCOL_VERSION: u16 = 1;
 pub const DEFAULT_PORT: u16 = 47_321;
 /// Most simultaneous connections the desktop serves (docs/SYNC.md).
 pub const MAX_SESSIONS: usize = 4;
+/// Most simultaneous connections from one address: a phone needs at most two
+/// (a new session while the old one times out, or pairing next to a
+/// session), and one device cannot fill every slot.
+pub const MAX_PER_ADDRESS: usize = 2;
 /// The opening frame and the Noise handshake must finish within this.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// The whole pairing exchange (after the opening frame) must finish within

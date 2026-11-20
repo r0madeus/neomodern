@@ -27,6 +27,54 @@ fn android_tls() -> rustls::ClientConfig {
     .with_no_client_auth()
 }
 
+/// Why a size-limited body read failed.
+#[derive(Debug, thiserror::Error)]
+pub enum BodyError {
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("response is larger than {limit} bytes")]
+    TooLarge { limit: usize },
+    #[error("unexpected response: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+/// Reads a response body into memory, refusing anything over `limit` bytes.
+///
+/// A declared `Content-Length` over the limit is refused before any byte is
+/// read; otherwise the body is read chunk by chunk and abandoned as soon as
+/// the total would exceed the limit (chunked or lying servers).
+pub async fn read_body_limited(
+    mut resp: reqwest::Response,
+    limit: usize,
+) -> Result<Vec<u8>, BodyError> {
+    if resp.content_length().is_some_and(|n| n > limit as u64) {
+        return Err(BodyError::TooLarge { limit });
+    }
+    let mut out = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if out.len() + chunk.len() > limit {
+            return Err(BodyError::TooLarge { limit });
+        }
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
+}
+
+/// [`read_body_limited`] decoded as UTF-8 (invalid bytes are replaced).
+pub async fn read_text_limited(resp: reqwest::Response, limit: usize) -> Result<String, BodyError> {
+    let bytes = read_body_limited(resp, limit).await?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// [`read_body_limited`] parsed as JSON.
+pub async fn read_json_limited<T: serde::de::DeserializeOwned>(
+    resp: reqwest::Response,
+    limit: usize,
+) -> Result<T, BodyError> {
+    let bytes = read_body_limited(resp, limit).await?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
 /// The internet-related features the user can switch off in Settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -287,9 +335,14 @@ mod tests {
             // used for an explicit pairing or for a PC paired before.
             ("sync/link/server.rs", "TcpListener::bind(", 2),
             ("sync/link/server.rs", "TcpStream::connect(", 1),
-            // Local route lookup for showing the PC's LAN address; a UDP
-            // connect sends no packet.
-            ("sync/link/server.rs", "UdpSocket::bind(", 1),
+            // UDP sockets, three, all LAN-only: (1) local route lookup for
+            // showing the PC's LAN address (a UDP connect sends no packet);
+            // (2) the desktop's discovery responder, bound only while "Allow
+            // phone connections" is on, answering exact probes from LAN
+            // addresses with a small rate-limited unicast reply; (3) the
+            // phone's discovery probe (broadcast, sent only when the user
+            // opens the "Find computers" list or taps search).
+            ("sync/link/server.rs", "UdpSocket::bind(", 3),
         ];
         let mut seen = std::collections::HashMap::new();
         for f in &files {
@@ -350,5 +403,86 @@ mod tests {
                 .count();
             assert_eq!(raw, 1, "{file}: `{field}` used outside its gate method");
         }
+    }
+}
+
+#[cfg(test)]
+mod body_tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    /// Serves one canned raw HTTP response, returns the URL.
+    fn serve(raw: Vec<u8>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(&raw);
+            }
+        });
+        url
+    }
+
+    fn with_length(body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    fn chunked(body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n{body}\r\n0\r\n\r\n",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    async fn get(url: &str) -> reqwest::Response {
+        reqwest::Client::new().get(url).send().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn body_under_the_limit_is_read() {
+        let url = serve(with_length("{\"a\":1}"));
+        let value: serde_json::Value = read_json_limited(get(&url).await, 64).await.unwrap();
+        assert_eq!(value["a"], 1);
+    }
+
+    #[tokio::test]
+    async fn text_is_decoded_lossily() {
+        let mut raw = b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\n".to_vec();
+        raw.extend_from_slice(&[b'a', 0xff, b'b']);
+        let url = serve(raw);
+        let text = read_text_limited(get(&url).await, 16).await.unwrap();
+        assert_eq!(text, "a\u{fffd}b");
+    }
+
+    #[tokio::test]
+    async fn declared_length_over_the_limit_is_refused() {
+        let url = serve(with_length(&"x".repeat(100)));
+        let err = read_body_limited(get(&url).await, 10).await.unwrap_err();
+        assert!(matches!(err, BodyError::TooLarge { limit: 10 }));
+    }
+
+    #[tokio::test]
+    async fn chunked_body_over_the_limit_is_refused() {
+        let url = serve(chunked(&"x".repeat(100)));
+        let resp = get(&url).await;
+        assert!(resp.content_length().is_none());
+        let err = read_body_limited(resp, 10).await.unwrap_err();
+        assert!(matches!(err, BodyError::TooLarge { limit: 10 }));
+    }
+
+    #[tokio::test]
+    async fn invalid_json_is_a_json_error() {
+        let url = serve(with_length("nope"));
+        let err = read_json_limited::<serde_json::Value>(get(&url).await, 64)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BodyError::Json(_)));
     }
 }

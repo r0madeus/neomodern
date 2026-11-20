@@ -59,6 +59,69 @@ pub struct SavedTrack {
     pub artist: Option<String>,
 }
 
+/// Profiles (K24): the player state of a profile that is not active, kept
+/// until it is switched to again. The active profile's state lives in the
+/// top-level fields of [`SessionState`], so older versions still read it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProfileSession {
+    pub queue: Vec<SavedTrack>,
+    pub current_index: Option<usize>,
+    pub position_seconds: f64,
+    pub shuffle: bool,
+    pub repeat: RepeatMode,
+    pub pinned: Vec<PinnedRef>,
+    pub autoplay: bool,
+}
+
+impl Default for ProfileSession {
+    fn default() -> Self {
+        Self {
+            queue: Vec::new(),
+            current_index: None,
+            position_seconds: 0.0,
+            shuffle: false,
+            repeat: RepeatMode::Off,
+            pinned: Vec::new(),
+            autoplay: default_autoplay(),
+        }
+    }
+}
+
+impl ProfileSession {
+    /// The per-profile part of `state`.
+    pub fn from_state(state: &SessionState) -> Self {
+        Self {
+            queue: state.queue.clone(),
+            current_index: state.current_index,
+            position_seconds: state.position_seconds,
+            shuffle: state.shuffle,
+            repeat: state.repeat,
+            pinned: state.pinned.clone(),
+            autoplay: state.autoplay,
+        }
+    }
+
+    /// `device` with this profile's part put in.
+    pub fn into_state(self, device: &SessionState) -> SessionState {
+        SessionState {
+            queue: self.queue,
+            current_index: self.current_index,
+            position_seconds: self.position_seconds,
+            shuffle: self.shuffle,
+            repeat: self.repeat,
+            pinned: self.pinned,
+            autoplay: self.autoplay,
+            ..device.clone()
+        }
+        .normalized()
+    }
+}
+
+fn default_active_profile() -> i64 {
+    1
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SessionState {
@@ -130,6 +193,12 @@ pub struct SessionState {
     /// [`SessionStore`].
     #[serde(default)]
     pub allow_phone_connections: bool,
+    /// Profiles (K24): the profile the top-level player fields belong to.
+    #[serde(default = "default_active_profile")]
+    pub active_profile: i64,
+    /// Profiles (K24): parked player state of the other profiles.
+    #[serde(default)]
+    pub profiles: std::collections::BTreeMap<i64, ProfileSession>,
 }
 
 impl Default for SessionState {
@@ -161,6 +230,8 @@ impl Default for SessionState {
             crossfade_seconds: 0.0,
             net_updates: true,
             allow_phone_connections: false,
+            active_profile: default_active_profile(),
+            profiles: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -297,6 +368,8 @@ pub struct SessionStore {
     autoplay: AtomicBool,
     welcome_done: AtomicBool,
     allow_phone_connections: AtomicBool,
+    active_profile: std::sync::atomic::AtomicI64,
+    parked: Mutex<std::collections::BTreeMap<i64, ProfileSession>>,
     net: Arc<NetPolicy>,
 }
 
@@ -314,6 +387,8 @@ impl SessionStore {
             autoplay: AtomicBool::new(default_autoplay()),
             welcome_done: AtomicBool::new(false),
             allow_phone_connections: AtomicBool::new(false),
+            active_profile: std::sync::atomic::AtomicI64::new(default_active_profile()),
+            parked: Mutex::new(std::collections::BTreeMap::new()),
             net: Arc::new(NetPolicy::default()),
         }
     }
@@ -347,6 +422,14 @@ impl SessionStore {
             .store(state.welcome_done, Ordering::SeqCst);
         self.allow_phone_connections
             .store(state.allow_phone_connections, Ordering::SeqCst);
+        self.active_profile
+            .store(state.active_profile, Ordering::SeqCst);
+        {
+            let mut parked = self.parked.lock().unwrap_or_else(|e| e.into_inner());
+            *parked = state.profiles.clone();
+            // Never park the active profile's own state twice.
+            parked.remove(&state.active_profile);
+        }
         self.net.set_offline(state.offline_mode);
         self.net.set_feature(Feature::Lyrics, state.net_lyrics);
         self.net.set_feature(Feature::Online, state.net_online);
@@ -463,6 +546,51 @@ impl SessionStore {
         }
     }
 
+    /// Profiles (K24): the profile whose player state the top-level fields
+    /// hold.
+    pub fn active_profile(&self) -> i64 {
+        self.active_profile.load(Ordering::SeqCst)
+    }
+
+    /// Profiles (K24): parks `leaving` (the active profile's full state, from
+    /// `Player::take_for_profile_switch`) and returns the state to load for
+    /// profile `to`: its parked queue, pins and autoplay with this device's
+    /// settings. Saves at once.
+    pub fn switch_profile(&self, leaving: SessionState, to: i64) -> SessionState {
+        let from = self.active_profile();
+        let mut leaving = leaving;
+        self.apply_store_fields(&mut leaving);
+        let next = {
+            let mut parked = self.parked.lock().unwrap_or_else(|e| e.into_inner());
+            parked.insert(from, ProfileSession::from_state(&leaving));
+            parked.remove(&to).unwrap_or_default()
+        };
+        let state = next.into_state(&leaving);
+        *self.pinned.lock().unwrap_or_else(|e| e.into_inner()) = state.pinned.clone();
+        self.autoplay.store(state.autoplay, Ordering::SeqCst);
+        self.active_profile.store(to, Ordering::SeqCst);
+        self.save_now(&state);
+        state
+    }
+
+    /// Profiles (K24): the saved active profile no longer exists; the
+    /// top-level player state now belongs to `id`.
+    pub fn adopt_active_profile(&self, id: i64) {
+        self.active_profile.store(id, Ordering::SeqCst);
+        self.parked
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+    }
+
+    /// Profiles (K24): forgets a deleted profile's parked state.
+    pub fn forget_profile(&self, id: i64) {
+        self.parked
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+    }
+
     fn apply_store_fields(&self, state: &mut SessionState) {
         state.close_to_tray = self.close_to_tray();
         state.download_dir = self.download_dir();
@@ -473,6 +601,12 @@ impl SessionStore {
         state.autoplay = self.autoplay();
         state.welcome_done = self.welcome_done();
         state.allow_phone_connections = self.allow_phone_connections();
+        state.active_profile = self.active_profile();
+        state.profiles = self
+            .parked
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         state.offline_mode = self.net.offline();
         state.net_lyrics = self.net.feature_enabled(Feature::Lyrics);
         state.net_online = self.net.feature_enabled(Feature::Online);
@@ -641,6 +775,8 @@ mod tests {
             },
             crossfade_seconds: 6.0,
             allow_phone_connections: true,
+            active_profile: 2,
+            profiles: [(1, ProfileSession::default())].into_iter().collect(),
         };
         save(&file, &state).unwrap();
         assert_eq!(load(&file), state);
@@ -715,6 +851,74 @@ mod tests {
         // Later saves driven by player events keep the value.
         again.maybe_save_position(SessionState::default);
         assert!(!load(&file).close_to_tray);
+    }
+
+    fn track(name: &str) -> SavedTrack {
+        SavedTrack {
+            path: PathBuf::from(name),
+            title: None,
+            artist: None,
+        }
+    }
+
+    #[test]
+    fn each_profile_keeps_its_own_queue_pins_and_autoplay() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("session.json");
+        // A file from before profiles: everything is profile 1's.
+        std::fs::write(
+            &file,
+            r#"{"volume":40.0,"queue":[{"path":"a.flac"}],"currentIndex":0,"positionSeconds":12.5,"shuffle":true,"pinned":[{"kind":"album","id":3}]}"#,
+        )
+        .unwrap();
+        let store = SessionStore::new(file.clone());
+        let loaded = store.load();
+        assert_eq!(store.active_profile(), 1);
+        assert_eq!(loaded.queue, vec![track("a.flac")]);
+
+        // Switch to a new profile 2: an empty queue, device settings kept.
+        let for_two = store.switch_profile(loaded.clone(), 2);
+        assert_eq!(store.active_profile(), 2);
+        assert!(for_two.queue.is_empty());
+        assert!(!for_two.shuffle);
+        assert!(store.pinned().is_empty());
+        assert_eq!(for_two.volume, 40.0);
+
+        // Profile 2 builds its own state; it survives a restart.
+        let mut two = for_two;
+        two.queue = vec![track("b.flac")];
+        two.current_index = Some(0);
+        store.set_autoplay(false);
+        store.save_now(&two);
+        let again = SessionStore::new(file.clone());
+        let reloaded = again.load();
+        assert_eq!(again.active_profile(), 2);
+        assert_eq!(reloaded.queue, vec![track("b.flac")]);
+        assert!(!again.autoplay());
+
+        // Back to profile 1: its queue, position, shuffle and pins return.
+        let one = again.switch_profile(reloaded, 1);
+        assert_eq!(one.queue, vec![track("a.flac")]);
+        assert_eq!(one.current_index, Some(0));
+        assert_eq!(one.position_seconds, 12.5);
+        assert!(one.shuffle);
+        assert!(again.autoplay());
+        assert_eq!(
+            again.pinned(),
+            vec![PinnedRef {
+                kind: PinnedKind::Album,
+                id: 3
+            }]
+        );
+        // ...and profile 2's is parked for later.
+        let on_disk = load(&file);
+        assert_eq!(on_disk.active_profile, 1);
+        assert_eq!(on_disk.profiles[&2].queue, vec![track("b.flac")]);
+        assert!(!on_disk.profiles.contains_key(&1));
+
+        again.forget_profile(2);
+        again.save_now(&one);
+        assert!(load(&file).profiles.is_empty());
     }
 
     #[test]

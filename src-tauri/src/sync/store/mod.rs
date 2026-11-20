@@ -37,15 +37,17 @@ mod tests;
 
 pub use backup::{BACKUP_INTERVAL_MS, BACKUPS_KEPT, backup_if_due};
 pub use changes::{changes_since, max_seq};
-pub use ctx::{device_id, device_name, set_device_name};
+pub use ctx::{device_id, device_name, forget_link_device_id, link_device_id, set_device_name};
 pub use hlc::Hlc;
 pub use key::{norm, track_key};
 pub use peers::{
-    Peer, ack_sent, peer, peer_address, peers, remove_peer, set_peer_address, upsert_peer,
+    Peer, ack_sent, bound_profiles, pairing_key, peer, peer_address, peer_wire_id, peers,
+    profile_names, remove_peer, set_peer_address, set_peer_wire_id, upsert_peer,
 };
 pub use plan::{GuardTrip, Plan, PlaylistLoss};
 pub use validate::check_batch;
 
+use crate::library::ProfileId;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -188,8 +190,11 @@ impl Batch {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ApplyOptions {
+    /// The local profile the sending peer is bound to: the batch is merged
+    /// into, and materialised for, this profile only.
+    pub profile: ProfileId,
     /// Moves this peer's "received" watermark to `batch.upto_seq` in the
     /// same transaction. The peer must be in `sync_peers`.
     pub peer_id: Option<String>,
@@ -235,25 +240,39 @@ pub struct CaptureReport {
     pub local_changed: bool,
 }
 
-/// Copies local changes into the sync tables (one transaction).
-pub fn capture(conn: &Connection, now_ms: i64) -> Result<CaptureReport> {
+/// Copies local changes of the given profiles (the bound ones, see
+/// [`bound_profiles`]) into the sync tables in one transaction. The presence
+/// snapshot is library-wide, so it is read once and saved once for all of
+/// them.
+pub fn capture(conn: &Connection, now_ms: i64, profiles: &[ProfileId]) -> Result<CaptureReport> {
+    let first = profiles.first().copied().unwrap_or(ProfileId::FIRST);
     let tx = conn.unchecked_transaction()?;
-    let mut ctx = ctx::Ctx::load(&tx, now_ms)?;
+    let mut ctx = ctx::Ctx::load(&tx, now_ms, first)?;
     let res = key::Resolver::load(&tx)?;
-    let report = capture::run(&mut ctx, &res)?;
+    let report = capture::run(&mut ctx, &res, profiles)?;
     ctx.save()?;
     tx.commit()?;
     Ok(report)
 }
 
-/// What applying `batch` would do, without writing anything (the local
-/// capture it needs runs in a transaction that is rolled back).
-pub fn plan(conn: &Connection, batch: &Batch, now_ms: i64) -> Result<Plan> {
+/// The profiles an operation for `profile` captures: every bound profile,
+/// plus `profile` itself.
+fn capture_set(conn: &Connection, profile: ProfileId) -> Result<Vec<ProfileId>> {
+    let mut all = bound_profiles(conn)?;
+    if !all.contains(&profile) {
+        all.push(profile);
+    }
+    Ok(all)
+}
+
+/// What applying `batch` to `profile` would do, without writing anything
+/// (the local capture it needs runs in a transaction that is rolled back).
+pub fn plan(conn: &Connection, profile: ProfileId, batch: &Batch, now_ms: i64) -> Result<Plan> {
     check_batch(batch)?;
     let tx = conn.unchecked_transaction()?;
-    let mut ctx = ctx::Ctx::load(&tx, now_ms)?;
+    let mut ctx = ctx::Ctx::load(&tx, now_ms, profile)?;
     let res = key::Resolver::load(&tx)?;
-    capture::run(&mut ctx, &res)?;
+    capture::run(&mut ctx, &res, &capture_set(&tx, profile)?)?;
     let plan = plan::compute(&ctx, &res, batch)?;
     tx.rollback()?;
     Ok(plan)
@@ -264,51 +283,76 @@ pub fn plan(conn: &Connection, batch: &Batch, now_ms: i64) -> Result<Plan> {
 /// together or not at all. A `PRAGMA quick_check` runs afterwards.
 pub fn apply(conn: &Connection, batch: &Batch, opts: &ApplyOptions) -> Result<ApplyReport> {
     check_batch(batch)?;
-    let own = device_id(conn)?;
-    if batch.from_device == own {
+    if ctx::is_own_id(conn, &batch.from_device)? {
         return Err(SyncError::Invalid("batch comes from this device".into()));
     }
-    if let Some(peer) = &opts.peer_id
-        && *peer != batch.from_device
-    {
-        return Err(SyncError::Invalid("batch is not from this peer".into()));
+    if let Some(peer) = &opts.peer_id {
+        // The peer's id on the wire (a computer paired by several phone
+        // profiles has one row per pairing, see `peers::pairing_key`).
+        if peers::wire_id(conn, peer)? != batch.from_device {
+            return Err(SyncError::Invalid("batch is not from this peer".into()));
+        }
+        match self::peer(conn, peer)? {
+            Some(p) if p.profile != opts.profile => {
+                return Err(SyncError::Invalid(
+                    "batch is for a different profile than the pairing".into(),
+                ));
+            }
+            _ => {}
+        }
     }
     if let Some(dir) = &opts.backup_dir {
         // VACUUM INTO cannot run inside the apply transaction, so the
         // (read-only) plan decides first whether this batch changes data.
-        let p = plan(conn, batch, opts.now_ms)?;
+        let p = plan(conn, opts.profile, batch, opts.now_ms)?;
         if p.changes_anything() && (p.guard.is_none() || opts.allow_mass_delete) {
             backup_if_due(conn, dir, opts.now_ms)?;
         }
     }
     let report = {
         let tx = conn.unchecked_transaction()?;
-        let mut ctx = ctx::Ctx::load(&tx, opts.now_ms)?;
+        let mut ctx = ctx::Ctx::load(&tx, opts.now_ms, opts.profile)?;
         let res = key::Resolver::load(&tx)?;
-        let captured = capture::run(&mut ctx, &res)?;
+        // Every bound profile is captured, not just this peer's: the
+        // presence snapshot is saved for the whole library, and a profile
+        // left out would miss a song that reappeared.
+        let captured = capture::run(&mut ctx, &res, &capture_set(&tx, opts.profile)?)?;
         let plan = plan::compute(&ctx, &res, batch)?;
         if plan.guard.is_some() && !opts.allow_mass_delete {
             // Dropping `tx` rolls the capture back too.
             return Err(SyncError::MassDelete(Box::new(plan)));
         }
         let merged = merge::run(&mut ctx, batch)?;
-        if !batch.more {
-            reconcile::run(&mut ctx, &res, &opts.peer_name)?;
-        }
+        let reconciled = !batch.more && reconcile::run(&mut ctx, &res, &opts.peer_name)?;
         let materialized = materialize::run(&ctx, &res, &merged.new_listens)?;
         if let Some(peer) = &opts.peer_id {
             peers::mark_received(&tx, peer, batch.upto_seq, opts.now_ms)?;
         }
         ctx.save()?;
         tx.commit()?;
-        ApplyReport {
-            plan,
-            merged: merged.stats,
-            local_changed: captured.local_changed || materialized.changed,
-            orphan_covers: materialized.orphan_covers,
-        }
+        // An idle round (the periodic sync with nothing new on either side)
+        // writes only bookkeeping (clock, watermark); the full-database
+        // `quick_check` is then skipped, so it does not hold the library
+        // lock every ten minutes for nothing.
+        let wrote_data = !batch.is_empty()
+            || captured.stamped > 0
+            || captured.local_changed
+            || reconciled
+            || materialized.changed;
+        (
+            ApplyReport {
+                plan,
+                merged: merged.stats,
+                local_changed: captured.local_changed || materialized.changed,
+                orphan_covers: materialized.orphan_covers,
+            },
+            wrote_data,
+        )
     };
-    quick_check(conn)?;
+    let (report, wrote_data) = report;
+    if wrote_data {
+        quick_check(conn)?;
+    }
     Ok(report)
 }
 

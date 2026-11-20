@@ -229,3 +229,42 @@ export function throttleLatest<T>(
     },
   }
 }
+
+/** A computer the phone found on the network (`sync_discover`). */
+export interface FoundComputer {
+  deviceId: string
+  name: string
+  /** `ip:port`, ready to pair with. */
+  address: string
+}
+
+/** The pairing rows the phone shows for its active profile (K25): one
+ *  computer per phone profile. */
+export function computerFor<P extends { kind: string; profileId: number }>(
+  peers: readonly P[],
+  activeProfile: number | null,
+): P | null {
+  if (activeProfile === null) return null
+  return peers.find((p) => p.kind === 'computer' && p.profileId === activeProfile) ?? null
+}
+
+/** What the "Find computers" list shows. */
+export type DiscoveryView = 'searching' | 'found' | 'none' | 'idle'
+
+export function discoveryView(searching: boolean, searched: boolean, found: readonly FoundComputer[]): DiscoveryView {
+  if (searching) return 'searching'
+  if (found.length > 0) return 'found'
+  return searched ? 'none' : 'idle'
+}
+
+/** Keeps well-formed answers of the backend, one per device id, by name. */
+export function cleanFound(list: readonly FoundComputer[]): FoundComputer[] {
+  const seen = new Set<string>()
+  const out: FoundComputer[] = []
+  for (const f of list) {
+    if (seen.has(f.deviceId) || !checkAddress(f.address).ok) continue
+    seen.add(f.deviceId)
+    out.push(f)
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}

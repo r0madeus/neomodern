@@ -3,6 +3,9 @@ import { mock, test } from 'node:test'
 import {
   addressWithPort,
   checkAddress,
+  cleanFound,
+  computerFor,
+  discoveryView,
   formatCountdown,
   formatPairCode,
   guardLines,
@@ -134,4 +137,42 @@ test('throttleLatest sends at most once per interval and keeps the last value', 
   } finally {
     mock.timers.reset()
   }
+})
+
+test('the phone shows the pairing of its active profile only', () => {
+  const peers = [
+    { kind: 'computer', profileId: 1, id: 'a' },
+    { kind: 'computer', profileId: 2, id: 'b' },
+    { kind: 'phone', profileId: 3, id: 'c' },
+  ]
+  assert.equal(computerFor(peers, 1)?.id, 'a')
+  assert.equal(computerFor(peers, 2)?.id, 'b')
+  // No pairing for this profile: the connect form is shown.
+  assert.equal(computerFor(peers, 3), null)
+  assert.equal(computerFor(peers, null), null)
+  assert.equal(computerFor([], 1), null)
+})
+
+test('found computers: one per device, valid LAN addresses, sorted by name', () => {
+  const list = cleanFound([
+    { deviceId: 'b', name: 'Study', address: '192.168.1.5:47321' },
+    { deviceId: 'a', name: 'Desk', address: '192.168.1.9:47321' },
+    { deviceId: 'a', name: 'Desk again', address: '192.168.1.10:47321' },
+    { deviceId: 'c', name: 'Far away', address: '8.8.8.8:47321' },
+    { deviceId: 'd', name: 'Broken', address: 'nonsense' },
+  ])
+  assert.deepEqual(
+    list.map((f) => f.name),
+    ['Desk', 'Study'],
+  )
+  assert.equal(list[0].address, '192.168.1.9:47321')
+})
+
+test('the discovery list says searching, found, none or nothing yet', () => {
+  const one = [{ deviceId: 'a', name: 'Desk', address: '192.168.1.9:47321' }]
+  assert.equal(discoveryView(true, false, []), 'searching')
+  assert.equal(discoveryView(true, true, one), 'searching')
+  assert.equal(discoveryView(false, true, one), 'found')
+  assert.equal(discoveryView(false, true, []), 'none')
+  assert.equal(discoveryView(false, false, []), 'idle')
 })

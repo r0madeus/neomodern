@@ -4,8 +4,8 @@
 // commands land in `error` / `remoteError`, shown inline by the views.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { GuardSummary, RepeatMode } from './syncLogic'
-import { interpolatePosition, remoteErrorKind, throttleLatest } from './syncLogic'
+import type { FoundComputer, GuardSummary, RepeatMode } from './syncLogic'
+import { cleanFound, computerFor, interpolatePosition, remoteErrorKind, throttleLatest } from './syncLogic'
 
 export interface SyncResult {
   peerId: string
@@ -30,6 +30,8 @@ export interface PeerStatus {
   lastSyncAt: number | null
   /** The local profile this pairing syncs (K24). */
   profileName: string
+  /** Its id: the phone shows the pairing of its active profile (K25). */
+  profileId: number
   lastError: string | null
   pendingGuard: GuardSummary | null
   lastResult: SyncResult | null
@@ -42,6 +44,8 @@ export interface SyncStatus {
   role: 'desktop' | 'phone'
   deviceId: string
   deviceName: string
+  /** The library's active profile. */
+  activeProfile: number
   allowPhoneConnections: boolean
   listening: { port: number; addresses: string[] } | null
   pairing: { state: PairingState; code: string | null; remainingSecs: number | null; profileName: string | null }
@@ -121,6 +125,7 @@ export type SyncAction =
   | 'connect'
   | 'syncNow'
   | 'forget'
+  | 'discover'
   | 'remove'
   | 'guard'
 
@@ -152,8 +157,15 @@ class SyncStore {
   #started = false
   #openRemote: (() => void) | null = null
 
-  /** This phone's computer (role phone), if paired. */
-  computer = $derived(this.status?.peers.find((p) => p.kind === 'computer') ?? null)
+  /** Computers found on the network by the last search (phone). */
+  found = $state<FoundComputer[]>([])
+  searching = $state(false)
+  /** A search has finished since the app started (so "none found" is true). */
+  searched = $state(false)
+
+  /** The computer the active profile is paired with (role phone), if any.
+   *  Each phone profile has its own pairing (K25). */
+  computer = $derived(computerFor(this.status?.peers ?? [], this.status?.activeProfile ?? null))
   /** The phones paired with this computer (role desktop). */
   phones = $derived(this.status?.peers.filter((p) => p.kind === 'phone') ?? [])
   duration = $derived(this.#durationOverride ?? this.remote?.current?.duration ?? null)
@@ -228,6 +240,21 @@ class SyncStore {
       return false
     }
     return this.#status('connect', 'sync_connect_pair_link', { link })
+  }
+  /** Phone: looks for computers on the Wi-Fi (about 1.5 s). */
+  discover = async (): Promise<void> => {
+    if (this.searching) return
+    this.searching = true
+    if (this.error?.action === 'discover') this.error = null
+    try {
+      this.found = cleanFound(await invoke<FoundComputer[]>('sync_discover'))
+    } catch (e) {
+      this.found = []
+      this.error = { action: 'discover', message: String(e) }
+    } finally {
+      this.searching = false
+      this.searched = true
+    }
   }
   syncNow = () => this.#status('syncNow', 'sync_now')
   forget = () =>

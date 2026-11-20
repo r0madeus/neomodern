@@ -513,6 +513,7 @@ pub fn run() {
             sync::commands::sync_remove_peer,
             sync::commands::sync_connect_pair,
             sync::commands::sync_connect_pair_link,
+            sync::commands::sync_discover,
             sync::commands::sync_now,
             sync::commands::sync_forget,
             sync::commands::sync_guard_decide,

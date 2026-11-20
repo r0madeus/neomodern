@@ -826,6 +826,11 @@ const TR: Record<string, string> = {
   'Pairing QR code': 'Eşleştirme QR kodu',
   'or enter this code': 'ya da bu kodu gir',
   'Scan the QR code': 'QR kodu tara',
+  'Computers on this Wi-Fi': 'Bu Wi-Fi’deki bilgisayarlar',
+  'Search again': 'Yeniden ara',
+  'Choose your computer, then type the code it shows.': 'Bilgisayarını seç, sonra onun gösterdiği kodu yaz.',
+  'No computer found. On the computer, turn on “Allow phone connections”; or scan the QR code or enter the address below.':
+    'Bilgisayar bulunamadı. Bilgisayarda “Telefon bağlantılarına izin ver”i aç; ya da QR kodu tara veya adresi aşağıya yaz.',
   'or enter the address and code': 'ya da adresi ve kodu gir',
   'This is not a NeoModern pairing code. Scan the code shown in Settings › Phone on the computer.':
     'Bu bir NeoModern eşleştirme kodu değil. Bilgisayarda Ayarlar › Telefon’da görünen kodu tara.',

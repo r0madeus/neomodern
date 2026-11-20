@@ -37,12 +37,12 @@ mod tests;
 
 pub use backup::{BACKUP_INTERVAL_MS, BACKUPS_KEPT, backup_if_due};
 pub use changes::{changes_since, max_seq};
-pub use ctx::{device_id, device_name, set_device_name};
+pub use ctx::{device_id, device_name, forget_link_device_id, link_device_id, set_device_name};
 pub use hlc::Hlc;
 pub use key::{norm, track_key};
 pub use peers::{
-    Peer, ack_sent, bound_profiles, peer, peer_address, peers, profile_names, remove_peer,
-    set_peer_address, upsert_peer,
+    Peer, ack_sent, bound_profiles, pairing_key, peer, peer_address, peer_wire_id, peers,
+    profile_names, remove_peer, set_peer_address, set_peer_wire_id, upsert_peer,
 };
 pub use plan::{GuardTrip, Plan, PlaylistLoss};
 pub use validate::check_batch;
@@ -283,12 +283,13 @@ pub fn plan(conn: &Connection, profile: ProfileId, batch: &Batch, now_ms: i64) -
 /// together or not at all. A `PRAGMA quick_check` runs afterwards.
 pub fn apply(conn: &Connection, batch: &Batch, opts: &ApplyOptions) -> Result<ApplyReport> {
     check_batch(batch)?;
-    let own = device_id(conn)?;
-    if batch.from_device == own {
+    if ctx::is_own_id(conn, &batch.from_device)? {
         return Err(SyncError::Invalid("batch comes from this device".into()));
     }
     if let Some(peer) = &opts.peer_id {
-        if *peer != batch.from_device {
+        // The peer's id on the wire (a computer paired by several phone
+        // profiles has one row per pairing, see `peers::pairing_key`).
+        if peers::wire_id(conn, peer)? != batch.from_device {
             return Err(SyncError::Invalid("batch is not from this peer".into()));
         }
         match self::peer(conn, peer)? {

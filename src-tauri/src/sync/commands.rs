@@ -2,7 +2,7 @@
 //! Thin wrappers around [`SyncService`]; small payloads only.
 
 use super::remote::{QueuePage, RemoteCmd, RemoteState};
-use super::service::{PairingOpen, SyncService, SyncStatus};
+use super::service::{FoundComputerInfo, PairingOpen, SyncService, SyncStatus};
 use crate::player::Player;
 use crate::session::SessionStore;
 use std::sync::Arc;
@@ -66,6 +66,13 @@ pub async fn sync_connect_pair(
 #[tauri::command]
 pub async fn sync_connect_pair_link(sync: State<'_, SyncService>, link: String) -> Res<SyncStatus> {
     sync.connect_pair_link(&link).await
+}
+
+/// Phone: computers on the local network that allow phone connections
+/// (takes about 1.5 s; an empty list when none answered).
+#[tauri::command]
+pub async fn sync_discover(sync: State<'_, SyncService>) -> Res<Vec<FoundComputerInfo>> {
+    sync.discover().await
 }
 
 #[tauri::command]

@@ -8,13 +8,14 @@
 //! (100.64/10) is excluded on purpose: on mobile networks it is shared
 //! with strangers.
 
+use super::discovery::{self, Found, ReplyLimiter};
 use super::error::{LinkError, LinkResult};
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 
@@ -332,4 +333,166 @@ impl Drop for ServerHandle {
     fn drop(&mut self) {
         self.stop.send_replace(true);
     }
+}
+
+// ---------------------------------------------------------------------------
+// LAN discovery (docs/SYNC.md, "Finding the computer")
+// ---------------------------------------------------------------------------
+
+/// The desktop's answer to "who is there?" probes. Lives exactly as long as
+/// the TCP listener ("Allow phone connections" on). Dropping it closes the
+/// socket.
+#[derive(Debug)]
+pub struct DiscoveryResponder {
+    task: Option<JoinHandle<()>>,
+    port: u16,
+    name: Arc<Mutex<String>>,
+}
+
+impl DiscoveryResponder {
+    /// Answers probes on UDP `udp_port` (0 = any free port) with this
+    /// computer's `id`, its name and the TCP `tcp_port`. Probes from
+    /// non-LAN addresses, anything but the exact probe datagram and
+    /// anything over the rate limits (20/s overall, 2/s per source) get no
+    /// answer at all.
+    pub async fn start(udp_port: u16, tcp_port: u16, id: String, name: String) -> LinkResult<Self> {
+        if !super::valid_device_id(&id) {
+            return Err(LinkError::InvalidIdentity);
+        }
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, udp_port)).await?;
+        let port = socket.local_addr()?.port();
+        let name = Arc::new(Mutex::new(name));
+        let task = tokio::spawn(respond_loop(socket, tcp_port, id, Arc::clone(&name)));
+        Ok(Self {
+            task: Some(task),
+            port,
+            name,
+        })
+    }
+
+    /// The UDP port probes are answered on.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// The device was renamed: later answers carry the new name.
+    pub fn set_name(&self, name: &str) {
+        *self.name.lock().unwrap_or_else(|e| e.into_inner()) = name.to_owned();
+    }
+
+    /// Stops answering and waits until the socket is closed.
+    pub async fn shutdown(mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+}
+
+impl Drop for DiscoveryResponder {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
+}
+
+async fn respond_loop(socket: UdpSocket, tcp_port: u16, id: String, name: Arc<Mutex<String>>) {
+    let mut limiter = ReplyLimiter::new(std::time::Instant::now());
+    // Much longer than the probe: a longer datagram is cut, so it is not the
+    // exact probe any more.
+    let mut buf = [0u8; discovery::PROBE_LEN + 64];
+    loop {
+        let (n, from) = match socket.recv_from(&mut buf).await {
+            Ok(r) => r,
+            Err(e) => {
+                // E.g. an ICMP "unreachable" for an earlier reply (Windows
+                // reports it on the next receive): keep going.
+                log::debug!("sync: discovery receive: {e}");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            }
+        };
+        if !discovery::should_answer(from.ip(), &buf[..n]) {
+            continue;
+        }
+        if !limiter.allow(from.ip(), std::time::Instant::now()) {
+            continue;
+        }
+        let name = name.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(reply) = discovery::reply(&id, &name, tcp_port) {
+            let _ = socket.send_to(&reply, from).await;
+        }
+    }
+}
+
+/// A computer found on the local network.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundComputer {
+    pub device_id: String,
+    pub name: String,
+    /// `ip:port` to pair with.
+    pub address: SocketAddr,
+}
+
+/// Where the phone sends its probe: the limited broadcast address and, for
+/// each of its LAN IPv4 addresses, the directed broadcast of the /24 around
+/// it (a guess that is right on almost every home network).
+pub fn discovery_targets(port: u16) -> Vec<SocketAddr> {
+    let mut out = vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), port)];
+    for ip in lan_ipv4_addresses() {
+        let [a, b, c, _] = ip.octets();
+        let target = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(a, b, c, 255)), port);
+        if !out.contains(&target) {
+            out.push(target);
+        }
+    }
+    out
+}
+
+/// Sends the probe to every `targets` address and collects answers for
+/// `timeout`. Only well-formed answers from LAN addresses count; one entry
+/// per device id (the first answer wins). The targets are not checked
+/// here: the real ones are broadcast addresses, tests use loopback.
+pub async fn discover(targets: &[SocketAddr], timeout: Duration) -> LinkResult<Vec<FoundComputer>> {
+    /// A hostile network cannot make the list grow without bound.
+    const MAX_FOUND: usize = 32;
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
+    socket.set_broadcast(true)?;
+    let probe = discovery::probe();
+    for target in targets {
+        // A target that cannot be reached (no route, no such interface) is
+        // just skipped.
+        if let Err(e) = socket.send_to(&probe, target).await {
+            log::debug!("sync: discovery probe to {target}: {e}");
+        }
+    }
+    let deadline = tokio::time::Instant::now() + timeout;
+    let mut found: Vec<FoundComputer> = Vec::new();
+    let mut buf = [0u8; 1024];
+    while found.len() < MAX_FOUND {
+        let received = tokio::time::timeout_at(deadline, socket.recv_from(&mut buf)).await;
+        let Ok(received) = received else { break };
+        let Ok((n, from)) = received else { continue };
+        if !is_lan_address(from.ip()) {
+            continue;
+        }
+        let Some(Found {
+            device_id,
+            name,
+            port,
+        }) = discovery::parse_reply(&buf[..n])
+        else {
+            continue;
+        };
+        if found.iter().any(|f| f.device_id == device_id) {
+            continue;
+        }
+        found.push(FoundComputer {
+            device_id,
+            name,
+            address: SocketAddr::new(from.ip().to_canonical(), port),
+        });
+    }
+    Ok(found)
 }

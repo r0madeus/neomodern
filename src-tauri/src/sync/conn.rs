@@ -128,8 +128,18 @@ fn supports_up_next(app_version: &str) -> bool {
 
 /// Runs one session until it ends (network error, the peer closes, or the
 /// service drops the session's control channel).
-pub(super) async fn run(sh: Arc<Shared>, session: Session, role: Role) -> Ended {
-    let peer_id = session.peer_id().to_owned();
+///
+/// `pairing`: the phone's `sync_peers` row key for this computer. It
+/// differs from the computer's own id when several phone profiles are
+/// paired with one computer (`store::pairing_key`); the computer passes
+/// `None` and keys the phone by the id the phone announced.
+pub(super) async fn run(
+    sh: Arc<Shared>,
+    session: Session,
+    role: Role,
+    pairing: Option<String>,
+) -> Ended {
+    let peer_id = pairing.unwrap_or_else(|| session.peer_id().to_owned());
     let (mut reader, writer) = session.into_split();
     reader.set_idle_timeout(Some(IDLE_TIMEOUT));
     let (in_tx, mut inbox) = mpsc::channel::<Result<Msg, String>>(16);
@@ -479,6 +489,7 @@ impl Conn {
     async fn send_page(&mut self, capture: bool) -> Result<(), String> {
         let peer = self.peer_id.clone();
         let limit = self.page_size;
+        let role = self.role;
         let lib = Arc::clone(&self.sh.lib);
         let page = db(&self.sh, move |conn| {
             let mut changed = false;
@@ -486,7 +497,7 @@ impl Conn {
                 let bound = store::bound_profiles(conn)?;
                 changed = store::capture(conn, now_ms(), &bound)?.local_changed;
             }
-            let page = build_page(conn, &peer, limit, SEND_LIMIT)?;
+            let page = build_page(conn, &peer, limit, SEND_LIMIT, role)?;
             Ok((page, changed))
         })
         .await;
@@ -741,13 +752,19 @@ pub(super) fn build_page(
     peer_id: &str,
     limit: usize,
     max_bytes: usize,
+    role: Role,
 ) -> store::Result<Page> {
     let peer =
         store::peer(conn, peer_id)?.ok_or_else(|| SyncError::Other("unknown peer".into()))?;
     let after = peer.last_seq_sent;
     let mut limit = limit.max(1);
     loop {
-        let batch = store::changes_since(conn, peer.profile, after, limit)?;
+        let mut batch = store::changes_since(conn, peer.profile, after, limit)?;
+        if role == Role::Client {
+            // The phone is a different device to the computer for each of
+            // its profiles (K25).
+            batch.from_device = store::link_device_id(conn, peer.profile)?;
+        }
         let (upto, more, len) = (batch.upto_seq, batch.more, batch.len());
         let bytes = Msg::SyncBatch { batch }.to_bytes();
         if bytes.len() <= max_bytes || limit == 1 {

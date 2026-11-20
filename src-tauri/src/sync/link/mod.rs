@@ -16,6 +16,7 @@
 //!
 //! Sockets are only opened in `server.rs` (see the guard test in `net.rs`).
 
+mod discovery;
 mod error;
 mod frame;
 mod pair;
@@ -31,7 +32,8 @@ pub use frame::{read_frame, read_frame_idle, write_frame};
 pub use pair::{CODE_TTL, Paired, PairingStatus, PairingWindow, pair, pair_connect};
 pub use rate::RateLimiter;
 pub use server::{
-    Listener, ServerHandle, StopSignal, bind, dial, is_lan_address, lan_ipv4_addresses,
+    DiscoveryResponder, FoundComputer, Listener, ServerHandle, StopSignal, bind, dial, discover,
+    discovery_targets, is_lan_address, lan_ipv4_addresses,
 };
 pub use session::{Session, SessionReader, SessionWriter, connect, handshake};
 

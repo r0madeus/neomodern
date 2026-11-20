@@ -125,15 +125,20 @@ pub async fn profile_delete(
 /// Switches to profile `id`: the current profile's queue and position are
 /// kept for later and its running listen is recorded for it; the other
 /// profile's queue is loaded paused where it was left.
-#[tauri::command(async)]
-pub fn profile_switch(
+#[tauri::command]
+pub async fn profile_switch(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
     store: State<'_, Arc<SessionStore>>,
     player: State<'_, Arc<Player>>,
+    sync: State<'_, SyncService>,
     id: i64,
 ) -> Res<PlayerSnapshot> {
     switch(&lib, &store, &player, ProfileId(id))?;
+    // The phone talks to the computer the new profile is paired with.
+    if let Err(e) = sync.profile_switched().await {
+        log::warn!("sync: could not follow the profile switch: {e}");
+    }
     let s = state(&lib)?;
     changed(&app, &s);
     Ok(player.snapshot())

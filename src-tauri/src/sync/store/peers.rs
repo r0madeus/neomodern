@@ -1,6 +1,6 @@
 //! Paired devices and their sync watermarks (local only).
 
-use super::ctx::{get_meta, set_meta};
+use super::ctx::{get_meta, random_id, set_meta};
 use super::hlc::is_id;
 use super::{MAX_NAME_CHARS, Result, SyncError};
 use crate::library::ProfileId;
@@ -127,10 +127,55 @@ pub fn upsert_peer(
 /// Synced data stays.
 pub fn remove_peer(conn: &Connection, device_id: &str) -> Result<bool> {
     conn.execute(
-        "DELETE FROM sync_meta WHERE key = ?1",
-        [address_key(device_id)],
+        "DELETE FROM sync_meta WHERE key IN (?1, ?2)",
+        [address_key(device_id), wire_key(device_id)],
     )?;
     Ok(conn.execute("DELETE FROM sync_peers WHERE device_id = ?1", [device_id])? > 0)
+}
+
+fn wire_key(device_id: &str) -> String {
+    format!("peer_wire:{device_id}")
+}
+
+/// The id the peer of row `key` uses on the wire: the row key itself,
+/// except for a computer that a second phone profile paired with (see
+/// [`pairing_key`]).
+pub fn peer_wire_id(conn: &Connection, key: &str) -> Result<String> {
+    wire_id(conn, key)
+}
+
+/// Remembers that the row `key` is a pairing with the computer `wire`.
+pub fn set_peer_wire_id(conn: &Connection, key: &str, wire: &str) -> Result<()> {
+    if peer(conn, key)?.is_none() || !is_id(wire) {
+        return Err(SyncError::Other("unknown peer".into()));
+    }
+    set_meta(conn, &wire_key(key), wire)
+}
+
+pub(super) fn wire_id(conn: &Connection, key: &str) -> Result<String> {
+    Ok(get_meta(conn, &wire_key(key))?
+        .filter(|w| is_id(w))
+        .unwrap_or_else(|| key.to_owned()))
+}
+
+/// The `sync_peers` row key for the pairing of local `profile` with the
+/// computer whose wire id is `wire` (phone side, K25). One computer can be
+/// paired by several phone profiles, each over its own link identity, so
+/// each pairing needs its own row: an existing pairing of this profile with
+/// that computer keeps its row; otherwise the computer's own id is used when
+/// that row is free (pairings made before K25 look like this), else a fresh
+/// random key (the caller then records the wire id with
+/// [`set_peer_wire_id`]).
+pub fn pairing_key(conn: &Connection, wire: &str, profile: ProfileId) -> Result<String> {
+    for p in peers(conn)? {
+        if p.profile == profile && wire_id(conn, &p.device_id)? == wire {
+            return Ok(p.device_id);
+        }
+    }
+    if peer(conn, wire)?.is_none() {
+        return Ok(wire.to_owned());
+    }
+    random_id(conn)
 }
 
 fn address_key(device_id: &str) -> String {

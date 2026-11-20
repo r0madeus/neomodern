@@ -5,15 +5,18 @@
   import PairQr from './PairQr.svelte'
   import { addedAgo } from './dates'
   import { i18n, t } from './i18n.svelte'
+  import { untrack } from 'svelte'
   import { sync, type PeerStatus, type SyncAction } from './sync.svelte'
   import {
     addressWithPort,
     checkAddress,
+    discoveryView,
     formatCountdown,
     formatPairCode,
     normalizePairCode,
     pairErrorKind,
     PAIR_CODE_DIGITS,
+    type FoundComputer,
   } from './syncLogic'
 
   // Settings › Phone (on the computer) or › Computer (on the phone): the
@@ -130,6 +133,22 @@
       address = ''
       addressTouched = false
     }
+  }
+
+  // Phone: find computers on the Wi-Fi (no typing the address) ----------------
+  const phone = $derived(status?.role === 'phone')
+  const view = $derived(discoveryView(sync.searching, sync.searched, sync.found))
+  let codeInput = $state<HTMLInputElement | null>(null)
+  // Look once when the connect form opens (a profile without a computer, or
+  // after "Forget"); the button searches again.
+  $effect(() => {
+    if (phone && !computer) untrack(() => void sync.discover())
+  })
+
+  function pickFound(f: FoundComputer) {
+    address = f.address
+    addressTouched = false
+    codeInput?.focus()
   }
 
   let confirmForget = $state(false)
@@ -394,6 +413,39 @@
             {t('On the computer, open Settings › Phone, turn on “Allow phone connections” and choose “Pair a phone”. Both devices must be on the same Wi-Fi.')}
           </p>
         </div>
+        <div class="flex flex-col gap-2" aria-live="polite">
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs font-medium text-zinc-600 dark:text-zinc-300">{t('Computers on this Wi-Fi')}</p>
+            <button type="button" class={quietBtn} disabled={sync.searching} onclick={() => void sync.discover()}>
+              {sync.searching ? t('Searching…') : t('Search again')}
+            </button>
+          </div>
+          {#if view === 'found'}
+            <ul class="flex flex-col gap-1">
+              {#each sync.found as f (f.deviceId)}
+                <li>
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-3 rounded-xl border border-zinc-200 px-3 py-2 text-left hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/60"
+                    onclick={() => pickFound(f)}
+                  >
+                    <Icon name="computer" class="size-4 shrink-0 text-zinc-500" />
+                    <span class="min-w-0 flex-1 truncate text-sm font-medium">{f.name}</span>
+                    <span class="shrink-0 text-xs text-zinc-400">{f.address}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+            <p class={help}>{t('Choose your computer, then type the code it shows.')}</p>
+          {:else if view === 'none'}
+            <p class={help}>
+              {t('No computer found. On the computer, turn on “Allow phone connections”; or scan the QR code or enter the address below.')}
+            </p>
+          {/if}
+          {#if errorFor('discover')}
+            <p class={errorText} role="alert">{errorFor('discover')}</p>
+          {/if}
+        </div>
         <button
           type="button"
           class={[primaryBtn, 'flex items-center justify-center gap-2 py-2.5 text-sm']}
@@ -430,6 +482,7 @@
               pattern="[0-9]*"
               maxlength="7"
               placeholder="000000"
+              bind:this={codeInput}
               value={code}
               oninput={(e) => {
                 code = normalizePairCode(e.currentTarget.value)

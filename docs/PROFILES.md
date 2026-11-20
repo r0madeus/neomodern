@@ -81,8 +81,9 @@ profile; what says something about the device or the files is shared.
 - Remote control drives the computer's player as it is: songs played that
   way count for the computer's active profile, and the phone's remote screen
   shows which profile that is.
-- One phone keeps one pairing (as today), so a phone with several profiles
-  syncs only the profile it paired from. Later: one pairing per profile.
+- A phone keeps one pairing per phone profile (K25, `SYNC.md`): each profile
+  pairs with the same computer or another, under its own link id, and only
+  the active profile's pairing is connected.
 
 ## Tests
 

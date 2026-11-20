@@ -48,6 +48,58 @@ pub fn device_id(conn: &Connection) -> Result<String> {
     Ok(id)
 }
 
+/// The id this phone uses on the wire for the pairing of `profile`
+/// (decision K25). The PC keys `sync_peers` by device id, so each phone
+/// profile that pairs needs an id of its own. The first profile keeps the
+/// install's device id (pairings made before profiles keep working); every
+/// other profile gets a random id, created on first use and kept in
+/// `sync_meta` (`device_id:profile:<id>`).
+///
+/// The clock's node id stays the install's device id on purpose: one clock
+/// serves all profiles (stamps stay strictly increasing and the sequence
+/// number is global), and two profiles never share a record, so ties
+/// cannot occur.
+pub fn link_device_id(conn: &Connection, profile: ProfileId) -> Result<String> {
+    if profile == ProfileId::FIRST {
+        return device_id(conn);
+    }
+    let key = profile_id_key(profile);
+    if let Some(id) = get_meta(conn, &key)?
+        && is_id(&id)
+    {
+        return Ok(id);
+    }
+    let id = random_id(conn)?;
+    set_meta(conn, &key, &id)?;
+    Ok(id)
+}
+
+fn profile_id_key(profile: ProfileId) -> String {
+    format!("{META_DEVICE_ID}:profile:{}", profile.0)
+}
+
+/// Forgets the wire id of a deleted profile.
+pub fn forget_link_device_id(conn: &Connection, profile: ProfileId) -> Result<()> {
+    conn.execute(
+        "DELETE FROM sync_meta WHERE key = ?1",
+        [profile_id_key(profile)],
+    )?;
+    Ok(())
+}
+
+/// Is `id` one of this install's own ids (the device id or a profile's)?
+pub(super) fn is_own_id(conn: &Connection, id: &str) -> Result<bool> {
+    if id == device_id(conn)? {
+        return Ok(true);
+    }
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_meta WHERE key LIKE 'device\\_id:profile:%' ESCAPE '\\'
+                         AND value = ?1)",
+        [id],
+        |r| r.get(0),
+    )?)
+}
+
 /// The display name other devices see, if one was set.
 pub fn device_name(conn: &Connection) -> Result<Option<String>> {
     get_meta(conn, META_DEVICE_NAME)

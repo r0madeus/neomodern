@@ -335,9 +335,14 @@ mod tests {
             // used for an explicit pairing or for a PC paired before.
             ("sync/link/server.rs", "TcpListener::bind(", 2),
             ("sync/link/server.rs", "TcpStream::connect(", 1),
-            // Local route lookup for showing the PC's LAN address; a UDP
-            // connect sends no packet.
-            ("sync/link/server.rs", "UdpSocket::bind(", 1),
+            // UDP sockets, three, all LAN-only: (1) local route lookup for
+            // showing the PC's LAN address (a UDP connect sends no packet);
+            // (2) the desktop's discovery responder, bound only while "Allow
+            // phone connections" is on, answering exact probes from LAN
+            // addresses with a small rate-limited unicast reply; (3) the
+            // phone's discovery probe (broadcast, sent only when the user
+            // opens the "Find computers" list or taps search).
+            ("sync/link/server.rs", "UdpSocket::bind(", 3),
         ];
         let mut seen = std::collections::HashMap::new();
         for f in &files {

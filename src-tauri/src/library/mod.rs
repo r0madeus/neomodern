@@ -1292,6 +1292,9 @@ fn unix_now() -> i64 {
 }
 
 #[cfg(test)]
+mod large_library;
+
+#[cfg(test)]
 mod tests;
 
 /// Marks a tag-history row that records a cover "Find info" added (its undo

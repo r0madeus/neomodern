@@ -7,7 +7,11 @@
   // Android arm64, the Windows installer and the Linux AppImage install from
   // inside the app; anything else opens the release page.
   const inApp = $derived(updates.available?.installable === true)
-  const percent = $derived(updates.progress === null ? null : Math.round(updates.progress * 100))
+  // Until the first bytes arrive there is nothing to measure: the bar sweeps
+  // (and the text says so) instead of showing an empty or frozen stub.
+  const percent = $derived(
+    updates.progress === null || updates.progress <= 0 ? null : Math.round(updates.progress * 100),
+  )
 </script>
 
 {#if updates.available && appSettings.allowUpdates}
@@ -18,7 +22,7 @@
     <div class="flex items-center gap-3">
       <span class="min-w-0 flex-1">
         {#if updates.installing}
-          {percent === null ? t('Downloading the update…') : t('Downloading the update… {p}%', { p: percent })}
+          {percent === null ? t('Preparing the download…') : t('Downloading the update… {p}%', { p: percent })}
         {:else}
           {t('NeoModern {v} is available.', { v: updates.available.version })}
         {/if}
@@ -43,11 +47,10 @@
       {/if}
     </div>
     {#if updates.installing}
-      <div class="h-1 overflow-hidden rounded-full bg-white/20">
-        <div
-          class={['h-full rounded-full bg-white transition-[width] duration-300', percent === null && 'w-1/3 animate-pulse']}
-          style:width={percent === null ? undefined : `${percent}%`}
-        ></div>
+      <div class={['relative h-1 overflow-hidden rounded-full bg-white/20 text-white', percent === null && 'bar-indeterminate']}>
+        {#if percent !== null}
+          <div class="h-full rounded-full bg-white transition-[width] duration-300" style:width="{percent}%"></div>
+        {/if}
       </div>
     {/if}
     {#if updates.installError}

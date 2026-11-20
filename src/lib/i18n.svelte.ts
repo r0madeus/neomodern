@@ -705,6 +705,7 @@ const TR: Record<string, string> = {
   // In-app update (Android)
   Update: 'Güncelle',
   'Downloading the update…': 'Güncelleme indiriliyor…',
+  'Preparing the download…': 'İndirme hazırlanıyor…',
   'Downloading the update… {p}%': 'Güncelleme indiriliyor… %{p}',
   'Allow NeoModern to install apps, then tap Update again.':
     'NeoModern’in uygulama yüklemesine izin ver, sonra yeniden Güncelle’ye dokun.',

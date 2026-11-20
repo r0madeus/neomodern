@@ -16,11 +16,20 @@
   } from './online.svelte'
   import { formatTime, player } from './player.svelte'
   import { tintFrom } from './tint'
+  import StickyPlay from './mobile/StickyPlay.svelte'
+  import { underTopBar } from './mobile/titleWatch'
 
-  let { album, onBack }: { album: OnlineAlbum; onBack: () => void } = $props()
+  // `mobile`: the phone's full-screen album page (Spotify layout with its own
+  // top bar and sticky play button); otherwise the desktop panel.
+  let { album, onBack, mobile = false }: { album: OnlineAlbum; onBack: () => void; mobile?: boolean } = $props()
+
 
   const activeAlbum = $derived(online.albumDetail?.album ?? album)
   const tracks = $derived(online.albumDetail?.tracks ?? [])
+  let titleHidden = $state(false)
+  const playingHere = $derived(
+    online.playingId !== null && tracks.some((tr) => tr.id === online.playingId),
+  )
   const ytdlpAvailable = $derived(online.status?.ytdlpAvailable ?? false)
   const albumJob = $derived(online.jobFor('album', activeAlbum.title, activeAlbum.artist))
 
@@ -91,6 +100,109 @@
   })
 </script>
 
+{#if mobile}
+  <div class="absolute inset-0 flex flex-col bg-zinc-950">
+    <header class="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-2 pr-4 pl-2 transition-colors" class:bg-zinc-900={titleHidden}>
+      <button class="rounded-full bg-black/30 p-2.5 text-white active:bg-black/50" aria-label={t('Back')} onclick={onBack}>
+        <Icon name="back" class="size-6" />
+      </button>
+      <h1 class={['min-w-0 flex-1 truncate pr-14 text-base font-semibold transition-opacity', !titleHidden && 'opacity-0']}>
+        {activeAlbum.title}
+      </h1>
+    </header>
+    <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
+      <div class="relative isolate overflow-hidden px-4 pt-16 pb-3">
+        <TintedBackdrop background="linear-gradient(180deg, {tint.top} 0%, {tint.surface} 60%, var(--color-zinc-950) 100%)" />
+        <Cover
+          cover={activeAlbum.cover ?? activeAlbum.coverUrl}
+          title={activeAlbum.title}
+          class="mx-auto aspect-square w-[62%] max-w-72 rounded-sm text-5xl shadow-2xl shadow-black/60"
+        />
+        <h2 class="mt-6 text-[1.7rem] leading-tight font-bold tracking-tight" {@attach underTopBar((hidden) => (titleHidden = hidden))}>
+          {activeAlbum.title}
+        </h2>
+        {#if activeAlbum.artist}
+          <p class="mt-2.5 flex min-w-0 items-center gap-2 text-sm font-bold text-zinc-50">
+            <Cover cover={null} title={activeAlbum.artist} class="size-6 shrink-0 rounded-full text-[10px]" />
+            <span class="truncate">{activeAlbum.artist}</span>
+          </p>
+        {/if}
+        <p class="mt-2 text-[13px] text-zinc-400">
+          {[t('Album'), activeAlbum.year, count(tracks.length || activeAlbum.trackCount, '{n} song', '{n} songs')]
+            .filter(Boolean)
+            .join(' • ')}
+        </p>
+      </div>
+      <StickyPlay
+        playing={false}
+        disabled={!ytdlpAvailable || tracks.length === 0 || online.playingId !== null}
+        onclick={() => void online.playTracks(tracks, 0)}
+      />
+      <div class="flex h-16 items-center gap-2 px-2.5 pb-2">
+        <button
+          type="button"
+          disabled={!ytdlpAvailable || tracks.length === 0 || isAlbumBusy()}
+          title={albumDownloadLabel}
+          aria-label={albumDownloadLabel}
+          class={['rounded-full p-2.5 active:bg-white/10 disabled:opacity-40', albumJob?.state === 'done' ? 'text-accent-400' : 'text-zinc-300']}
+          onclick={() => void online.downloadAlbum(activeAlbum, tracks)}
+        >
+          {#if albumJob?.state === 'done'}
+            <Icon name="checkCircle" class="size-6" />
+          {:else}
+            <Icon name="download" class={albumJob?.state === 'downloading' ? 'size-6 animate-pulse' : 'size-6'} />
+          {/if}
+        </button>
+        {#if albumJob?.state === 'downloading' || albumJob?.state === 'queued'}
+          <span class="truncate text-xs text-zinc-400">{albumDownloadLabel}</span>
+        {:else if albumInLibrary}
+          <span class="truncate rounded-full border border-zinc-600 px-3 py-1 text-xs font-semibold text-zinc-200">{t('In library')}</span>
+        {/if}
+        <span class="flex-1"></span>
+        {#if playingHere}
+          <span class="text-xs text-accent-400">{t('Loading…')}</span>
+        {/if}
+        <span class="mr-1.5 size-14 shrink-0" aria-hidden="true"></span>
+      </div>
+
+      {#if online.loadingAlbum && tracks.length === 0}
+        <p class="px-4 text-sm text-zinc-400">{t('Loading…')}</p>
+      {:else if online.albumError}
+        <div class="mx-4 flex items-center gap-3 rounded-xl bg-red-950/40 px-4 py-3 text-sm text-red-300">
+          <span class="min-w-0 flex-1">{online.albumError}</span>
+          <button type="button" class="rounded-full bg-red-600 px-3 py-1 text-xs font-medium text-white" onclick={() => void online.openAlbum(album)}>
+            {t('Retry')}
+          </button>
+        </div>
+      {:else if tracks.length === 0}
+        <p class="px-4 text-sm text-zinc-400">{t('No tracks found for this album.')}</p>
+      {:else}
+        <ol>
+          {#each tracks as track, i (track.id)}
+            {@const job = trackJob(track)}
+            {@const isCurrent =
+              online.playingId === track.id ||
+              (player.snapshot.current?.title === track.title && player.snapshot.current?.path.startsWith('http'))}
+            <li class="flex h-16 items-center gap-1 pr-1 pl-4 active:bg-white/5">
+              <button
+                type="button"
+                disabled={!ytdlpAvailable || online.playingId !== null}
+                class="flex min-w-0 flex-1 flex-col justify-center text-left disabled:opacity-60"
+                onclick={() => void online.playTracks(tracks, i)}
+              >
+                <span class={['truncate text-[15px] leading-tight', isCurrent ? 'text-accent-400' : 'text-zinc-50']}>{track.title}</span>
+                <span class="mt-1 truncate text-[13px] leading-tight text-zinc-400">
+                  {online.playingId === track.id ? t('Loading…') : track.artist || activeAlbum.artist}
+                </span>
+              </button>
+              <TrackDownloadButton {track} {job} disabled={!ytdlpAvailable} />
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    </div>
+  </div>
+{:else}
 <div class="h-full overflow-y-auto px-5 pb-6">
   <button
     type="button"
@@ -229,3 +341,4 @@
     </ol>
   {/if}
 </div>
+{/if}

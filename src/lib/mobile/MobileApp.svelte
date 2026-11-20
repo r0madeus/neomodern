@@ -258,15 +258,14 @@
         {:else if sheet.type === 'album'}
           <AlbumPage albumId={sheet.id} onBack={popLayer} />
         {:else if sheet.type === 'onlineAlbum'}
-          <div class="absolute inset-0 bg-zinc-950 pt-3 pb-[var(--mobile-bar-clear,5rem)]">
-            <OnlineAlbumDetail
-              album={sheet.album}
-              onBack={() => {
-                online.closeAlbum()
-                popLayer()
-              }}
-            />
-          </div>
+          <OnlineAlbumDetail
+            mobile
+            album={sheet.album}
+            onBack={() => {
+              online.closeAlbum()
+              popLayer()
+            }}
+          />
         {/if}
       </MobileSheet>
     {/each}

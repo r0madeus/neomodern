@@ -27,6 +27,7 @@
     albumId,
     extraMeta = '',
     number = null,
+    lead = 'auto',
     selectScope = null,
     index = 0,
     onPlay,
@@ -44,6 +45,8 @@
     extraMeta?: string
     /** Show a track number instead of the cover (album pages). */
     number?: number | null
+    /** `none`: no cover or number in front (Spotify-style album rows). */
+    lead?: 'auto' | 'none'
     /** Enables multi-select (long press) in this list; `index` orders it. */
     selectScope?: string | null
     index?: number
@@ -126,7 +129,9 @@
         {#if picked}<Icon name="check" class="size-4" />{/if}
       </span>
     {/if}
-    {#if number !== null}
+    {#if lead === 'none'}
+      <!-- no leading cover or number -->
+    {:else if number !== null}
       <span class={['w-6 shrink-0 text-center text-sm tabular-nums', current ? 'text-accent-400' : 'text-zinc-500']}>
         {#if playing}<Equalizer />{:else}{number}{/if}
       </span>
@@ -141,7 +146,10 @@
       </span>
     {/if}
     <span class="min-w-0 flex-1">
-      <span class={['block truncate text-[15px] leading-tight', current ? 'text-accent-400' : 'text-zinc-50']}>{title}</span>
+      <span class={['flex items-center gap-1.5 text-[15px] leading-tight', current ? 'text-accent-400' : 'text-zinc-50']}>
+        {#if lead === 'none' && playing}<span class="shrink-0"><Equalizer /></span>{/if}
+        <span class="truncate">{title}</span>
+      </span>
       <span class="mt-1 block truncate text-[13px] leading-tight text-zinc-400">
         {#if useLinks}
           {#if extraMeta}{extraMeta}{#if effArtist || effAlbum} · {/if}{/if}{#if effArtist}<ArtistLinks

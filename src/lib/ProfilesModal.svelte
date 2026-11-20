@@ -4,6 +4,7 @@
   import { t } from './i18n.svelte'
   import { motionDuration } from './motion'
   import ProfileAvatar from './ProfileAvatar.svelte'
+  import PinPrompt from './PinPrompt.svelte'
   import { profiles, type Profile, type ProfileSummary } from './profiles.svelte'
 
   // Manage profiles (K24): add, rename, colour, delete.
@@ -44,14 +45,77 @@
 
   async function confirmDelete() {
     if (!confirming || busy) return
+    if (confirming.profile.hasPin) {
+      deletingWithPin = confirming.profile
+      return
+    }
     busy = true
     await profiles.remove(confirming.profile.id)
     confirming = null
     busy = false
   }
+
+  // PIN (K25): the profile in use can set, change or remove its own PIN;
+  // changing or removing asks for the current one first.
+  type PinStep = { kind: 'current'; then: 'change' | 'remove' } | { kind: 'new'; current: string | null }
+  let pinStep = $state<PinStep | null>(null)
+  let deletingWithPin = $state<Profile | null>(null)
+  const active = $derived(list.find((p) => p.id === profiles.state?.active) ?? null)
+
+  async function pinSubmit(pin: string): Promise<string | null> {
+    const step = pinStep
+    if (!step) return null
+    if (step.kind === 'current') {
+      if (step.then === 'remove') {
+        const ok = await profiles.setPin(null, pin)
+        if (!ok) return profiles.error
+        pinStep = null
+        return null
+      }
+      pinStep = { kind: 'new', current: pin }
+      return null
+    }
+    const ok = await profiles.setPin(pin, step.current)
+    if (!ok) {
+      const err = profiles.error
+      // A wrong current PIN: start again from asking for it.
+      if (step.current && /PIN/.test(err ?? '')) pinStep = { kind: 'current', then: 'change' }
+      return err
+    }
+    pinStep = null
+    return null
+  }
+
+  async function deleteWithPin(pin: string): Promise<string | null> {
+    if (!deletingWithPin) return null
+    const ok = await profiles.remove(deletingWithPin.id, pin)
+    if (!ok) return profiles.error
+    deletingWithPin = null
+    confirming = null
+    return null
+  }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (confirming ? (confirming = null) : onClose())} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && !pinStep && !deletingWithPin && (confirming ? (confirming = null) : onClose())} />
+
+{#if pinStep}
+  {#key pinStep}
+    <PinPrompt
+      title={pinStep.kind === 'current' ? t('Current PIN') : t('New PIN (4 to 8 digits)')}
+      profile={active}
+      onSubmit={pinSubmit}
+      onClose={() => (pinStep = null)}
+    />
+  {/key}
+{/if}
+{#if deletingWithPin}
+  <PinPrompt
+    title={t('PIN for {name}', { name: deletingWithPin.name })}
+    profile={deletingWithPin}
+    onSubmit={deleteWithPin}
+    onClose={() => (deletingWithPin = null)}
+  />
+{/if}
 
 <div
   transition:fade={{ duration: motionDuration(150) }}
@@ -127,6 +191,30 @@
         </li>
       {/each}
     </ul>
+
+    {#if active}
+      <div class="mt-4 flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-950/60">
+        <p class="min-w-0 text-xs text-zinc-600 dark:text-zinc-300">
+          {active.hasPin
+            ? t('“{name}” asks for a PIN when someone switches to it.', { name: active.name })
+            : t('Add a PIN so others do not switch into “{name}” by accident.', { name: active.name })}
+        </p>
+        <div class="flex shrink-0 gap-1">
+          {#if active.hasPin}
+            <button type="button" class="rounded-full px-3 py-1.5 text-xs font-medium hover:bg-zinc-200 dark:hover:bg-zinc-800" onclick={() => (pinStep = { kind: 'current', then: 'change' })}>
+              {t('Change PIN')}
+            </button>
+            <button type="button" class="rounded-full px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40" onclick={() => (pinStep = { kind: 'current', then: 'remove' })}>
+              {t('Remove PIN')}
+            </button>
+          {:else}
+            <button type="button" class="rounded-full px-3 py-1.5 text-xs font-medium hover:bg-zinc-200 dark:hover:bg-zinc-800" onclick={() => (pinStep = { kind: 'new', current: null })}>
+              {t('Set PIN')}
+            </button>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     <form class="mt-4 flex gap-2" onsubmit={add}>
       <input

@@ -6,7 +6,7 @@
 //! [`Library`] passes its active profile.
 
 use super::{Library, LibraryError, Result, unix_now};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 
@@ -39,6 +39,8 @@ pub struct Profile {
     pub name: String,
     pub color: String,
     pub created_at: i64,
+    /// Switching to it asks for a PIN (K25).
+    pub has_pin: bool,
 }
 
 /// What deleting a profile would remove (shown in the confirmation).
@@ -80,6 +82,116 @@ fn profile_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {
         name: r.get(1)?,
         color: r.get(2)?,
         created_at: r.get(3)?,
+        has_pin: r.get::<_, Option<String>>(4)?.is_some(),
+    })
+}
+
+// --- PIN (K25) -------------------------------------------------------------
+//
+// An optional 4-8 digit PIN keeps people from switching into each other's
+// profile by accident. It is separation, not security (K24): whoever can read
+// the database file can read the data, and a short PIN can be guessed offline.
+// It is still never stored in clear: `v1$<salt>$<hash>`, hash = HMAC-SHA256
+// iterated over a random 16-byte salt.
+
+/// PINs are 4 to 8 ASCII digits.
+pub fn valid_pin(pin: &str) -> bool {
+    (4..=8).contains(&pin.len()) && pin.bytes().all(|b| b.is_ascii_digit())
+}
+
+const PIN_ROUNDS: u32 = 20_000;
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn pin_digest(salt: &[u8], pin: &str) -> [u8; 32] {
+    use hmac::{Hmac, Mac};
+    type H = Hmac<sha2::Sha256>;
+    let mut block = [0u8; 32];
+    let mut acc = [0u8; 32];
+    for round in 0..PIN_ROUNDS {
+        let mut m = <H as Mac>::new_from_slice(pin.as_bytes()).expect("HMAC takes any key");
+        if round == 0 {
+            m.update(salt);
+        } else {
+            m.update(&block);
+        }
+        block = m.finalize().into_bytes().into();
+        for (a, b) in acc.iter_mut().zip(block) {
+            *a ^= b;
+        }
+    }
+    acc
+}
+
+fn hash_pin(pin: &str) -> Result<String> {
+    let mut salt = [0u8; 16];
+    getrandom::fill(&mut salt)
+        .map_err(|_| LibraryError::Other("the random number generator failed".into()))?;
+    Ok(format!(
+        "v1${}${}",
+        hex(&salt),
+        hex(&pin_digest(&salt, pin))
+    ))
+}
+
+fn pin_matches(stored: &str, pin: &str) -> bool {
+    let mut parts = stored.split('$');
+    let (Some("v1"), Some(salt), Some(want), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    let Some(salt) = (0..salt.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(salt.get(i..i + 2)?, 16).ok())
+        .collect::<Option<Vec<u8>>>()
+    else {
+        return false;
+    };
+    let got = hex(&pin_digest(&salt, pin));
+    // Constant time over the hex strings.
+    got.len() == want.len()
+        && got
+            .bytes()
+            .zip(want.bytes())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0
+}
+
+fn stored_pin(conn: &Connection, id: ProfileId) -> Result<Option<String>> {
+    conn.query_row("SELECT pin FROM profiles WHERE id = ?1", [id.0], |r| {
+        r.get(0)
+    })
+    .optional()?
+    .ok_or_else(|| profile_not_found(id))
+}
+
+/// Sets (`Some`) or removes (`None`) the profile's PIN.
+pub fn set_profile_pin(conn: &Connection, id: ProfileId, pin: Option<&str>) -> Result<()> {
+    let value = match pin {
+        Some(p) if !valid_pin(p) => {
+            return Err(LibraryError::Other("the PIN must be 4 to 8 digits".into()));
+        }
+        Some(p) => Some(hash_pin(p)?),
+        None => None,
+    };
+    let n = conn.execute(
+        "UPDATE profiles SET pin = ?2 WHERE id = ?1",
+        rusqlite::params![id.0, value],
+    )?;
+    if n == 0 {
+        return Err(profile_not_found(id));
+    }
+    Ok(())
+}
+
+/// Whether `pin` opens the profile (always true for a profile without one).
+pub fn profile_pin_ok(conn: &Connection, id: ProfileId, pin: Option<&str>) -> Result<bool> {
+    Ok(match stored_pin(conn, id)? {
+        None => true,
+        Some(stored) => pin.is_some_and(|p| pin_matches(&stored, p)),
     })
 }
 
@@ -88,7 +200,8 @@ fn profile_not_found(id: ProfileId) -> LibraryError {
 }
 
 pub fn profiles(conn: &Connection) -> Result<Vec<Profile>> {
-    let mut st = conn.prepare("SELECT id, name, color, created_at FROM profiles ORDER BY id")?;
+    let mut st =
+        conn.prepare("SELECT id, name, color, created_at, pin FROM profiles ORDER BY id")?;
     let rows = st.query_map([], profile_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
@@ -134,6 +247,7 @@ pub fn create_profile(conn: &Connection, name: &str, now: i64) -> Result<Profile
         name,
         color: (*color).to_owned(),
         created_at: now,
+        has_pin: false,
     })
 }
 
@@ -286,7 +400,76 @@ impl Library {
     }
 
     /// Whether the profile exists (for validating a remembered id).
+    /// Sets or removes a profile's PIN (K25).
+    pub fn set_profile_pin(&self, id: ProfileId, pin: Option<&str>) -> Result<()> {
+        set_profile_pin(&self.conn(), id, pin)
+    }
+
+    /// Checks a profile's PIN, with a pause after repeated wrong guesses:
+    /// after 5 wrong PINs for a profile, every try in the next 30 s is
+    /// refused (without being checked).
+    pub fn check_profile_pin(&self, id: ProfileId, pin: Option<&str>) -> Result<()> {
+        const MAX_WRONG: u32 = 5;
+        const PAUSE: std::time::Duration = std::time::Duration::from_secs(30);
+        let now = std::time::Instant::now();
+        {
+            let tries = self.pin_tries.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(&(wrong, last)) = tries.get(&id.0)
+                && wrong >= MAX_WRONG
+                && now.saturating_duration_since(last) < PAUSE
+            {
+                return Err(LibraryError::Other(
+                    "too many wrong PINs; wait 30 seconds and try again".into(),
+                ));
+            }
+        }
+        let ok = profile_pin_ok(&self.conn(), id, pin)?;
+        let mut tries = self.pin_tries.lock().unwrap_or_else(|e| e.into_inner());
+        if ok {
+            tries.remove(&id.0);
+            Ok(())
+        } else {
+            let entry = tries.entry(id.0).or_insert((0, now));
+            if now.saturating_duration_since(entry.1) >= PAUSE && entry.0 >= MAX_WRONG {
+                *entry = (0, now);
+            }
+            entry.0 += 1;
+            entry.1 = now;
+            Err(LibraryError::Other(if pin.is_none() {
+                "this profile needs its PIN".into()
+            } else {
+                "wrong PIN".into()
+            }))
+        }
+    }
+
+    /// Whether the profile has a PIN.
+    pub fn profile_has_pin(&self, id: ProfileId) -> Result<bool> {
+        Ok(stored_pin(&self.conn(), id)?.is_some())
+    }
+
     pub fn profile_exists(&self, id: ProfileId) -> Result<bool> {
         profile_exists(&self.conn(), id)
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::*;
+
+    #[test]
+    fn pins_are_validated_salted_and_checked() {
+        assert!(valid_pin("1234") && valid_pin("12345678"));
+        for bad in ["", "123", "123456789", "12a4", " 1234", "١٢٣٤"] {
+            assert!(!valid_pin(bad), "{bad}");
+        }
+        let a = hash_pin("2468").unwrap();
+        let b = hash_pin("2468").unwrap();
+        assert_ne!(a, b, "a fresh salt every time");
+        assert!(!a.contains("2468"));
+        assert!(pin_matches(&a, "2468") && pin_matches(&b, "2468"));
+        assert!(!pin_matches(&a, "2469"));
+        assert!(!pin_matches("v1$zz$00", "2468"));
+        assert!(!pin_matches("garbage", "2468"));
     }
 }

@@ -10,6 +10,8 @@ export interface Profile {
   name: string
   color: string
   createdAt: number
+  /** Switching to it asks for a PIN (K25). */
+  hasPin: boolean
 }
 
 export interface ProfilesState {
@@ -17,6 +19,13 @@ export interface ProfilesState {
   profiles: Profile[]
   colors: string[]
   maxProfiles: number
+  /** The app opened on a profile with a PIN that was not entered yet. */
+  locked: boolean
+}
+
+/** PINs are 4 to 8 digits. */
+export function validPin(pin: string): boolean {
+  return /^[0-9]{4,8}$/.test(pin)
 }
 
 export interface ProfileSummary {
@@ -46,25 +55,34 @@ class ProfilesStore {
     await this.#run(() => invoke<ProfilesState>('profiles_list'))
   }
 
-  /** Switches profile. Every list, the stats and the queue belong to the
-   *  profile, so the page reloads to start clean from Rust's state. */
-  async switchTo(id: number): Promise<void> {
-    if (this.switching || id === this.state?.active) return
+  /** Switches profile (`pin` for a profile that has one). Every list, the
+   *  stats and the queue belong to the profile, so the page reloads to start
+   *  clean from Rust's state. Returns the error message, or null. */
+  async switchTo(id: number, pin: string | null = null): Promise<string | null> {
+    if (this.switching) return null
+    if (id === this.state?.active && !this.state?.locked) return null
     this.switching = true
     try {
-      await invoke('profile_switch', { id })
+      if (id === this.state?.active) await invoke('profile_unlock', { pin: pin ?? '' })
+      else await invoke('profile_switch', { id, pin })
       location.reload()
+      return null
     } catch (e) {
-      this.error = String(e)
       this.switching = false
+      return String(e)
     }
   }
+
+  /** Sets, changes or (`pin` null) removes the PIN of the profile in use. */
+  setPin = (pin: string | null, current: string | null) =>
+    this.#run(() => invoke<ProfilesState>('profile_set_pin', { pin, current }))
 
   create = (name: string) => this.#run(() => invoke<ProfilesState>('profile_create', { name }))
   rename = (id: number, name: string) => this.#run(() => invoke<ProfilesState>('profile_rename', { id, name }))
   setColor = (id: number, color: string) =>
     this.#run(() => invoke<ProfilesState>('profile_set_color', { id, color }))
-  remove = (id: number) => this.#run(() => invoke<ProfilesState>('profile_delete', { id }))
+  remove = (id: number, pin: string | null = null) =>
+    this.#run(() => invoke<ProfilesState>('profile_delete', { id, pin }))
   summary = (id: number) => invoke<ProfileSummary>('profile_summary', { id })
 
   async #run(call: () => Promise<ProfilesState>): Promise<boolean> {

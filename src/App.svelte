@@ -1,6 +1,7 @@
 <script lang="ts">
   import Logo from './lib/Logo.svelte'
   import ProfileMenu from './lib/ProfileMenu.svelte'
+  import ProfileLock from './lib/ProfileLock.svelte'
   import { profiles } from './lib/profiles.svelte'
   import { count, i18n, t } from './lib/i18n.svelte'
   import { onMount, tick, untrack } from 'svelte'
@@ -849,3 +850,7 @@
   {/await}
 {/if}
 <TrackMenu />
+
+{#if profiles.state?.locked}
+  <ProfileLock />
+{/if}

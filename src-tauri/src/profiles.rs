@@ -10,12 +10,28 @@ use crate::session::SessionStore;
 use crate::sync::SyncService;
 use serde::Serialize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, State};
 
 type Res<T> = Result<T, String>;
 
 fn le<T>(r: Result<T, crate::library::LibraryError>) -> Res<T> {
     r.map_err(|e| e.to_string())
+}
+
+/// The app opened (or stays) on a profile with a PIN that was not entered
+/// yet: the UI shows the lock screen (K25). Separation, not security.
+#[derive(Debug, Default)]
+pub struct ProfileLock(AtomicBool);
+
+impl ProfileLock {
+    pub fn locked(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    pub fn set(&self, locked: bool) {
+        self.0.store(locked, Ordering::SeqCst);
+    }
 }
 
 /// The profiles and which one is in use.
@@ -27,9 +43,11 @@ pub struct ProfilesState {
     /// The colours a profile can have.
     pub colors: Vec<String>,
     pub max_profiles: usize,
+    /// The active profile has a PIN that was not entered yet.
+    pub locked: bool,
 }
 
-fn state(lib: &Library) -> Res<ProfilesState> {
+fn state(lib: &Library, lock: &ProfileLock) -> Res<ProfilesState> {
     Ok(ProfilesState {
         active: lib.active_profile().0,
         profiles: le(lib.profiles())?,
@@ -38,6 +56,7 @@ fn state(lib: &Library) -> Res<ProfilesState> {
             .map(|c| (*c).to_owned())
             .collect(),
         max_profiles: crate::library::MAX_PROFILES,
+        locked: lock.locked(),
     })
 }
 
@@ -48,8 +67,11 @@ fn changed(app: &AppHandle, s: &ProfilesState) {
 }
 
 #[tauri::command(async)]
-pub fn profiles_list(lib: State<'_, Arc<Library>>) -> Res<ProfilesState> {
-    state(&lib)
+pub fn profiles_list(
+    lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
+) -> Res<ProfilesState> {
+    state(&lib, &lock)
 }
 
 /// Adds a profile (it is not switched to).
@@ -57,10 +79,11 @@ pub fn profiles_list(lib: State<'_, Arc<Library>>) -> Res<ProfilesState> {
 pub fn profile_create(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
     name: String,
 ) -> Res<ProfilesState> {
     le(lib.create_profile(&name))?;
-    let s = state(&lib)?;
+    let s = state(&lib, &lock)?;
     changed(&app, &s);
     Ok(s)
 }
@@ -69,11 +92,12 @@ pub fn profile_create(
 pub fn profile_rename(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
     id: i64,
     name: String,
 ) -> Res<ProfilesState> {
     le(lib.rename_profile(ProfileId(id), &name))?;
-    let s = state(&lib)?;
+    let s = state(&lib, &lock)?;
     changed(&app, &s);
     Ok(s)
 }
@@ -82,11 +106,12 @@ pub fn profile_rename(
 pub fn profile_set_color(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
     id: i64,
     color: String,
 ) -> Res<ProfilesState> {
     le(lib.set_profile_color(ProfileId(id), &color))?;
-    let s = state(&lib)?;
+    let s = state(&lib, &lock)?;
     changed(&app, &s);
     Ok(s)
 }
@@ -99,25 +124,67 @@ pub fn profile_summary(lib: State<'_, Arc<Library>>, id: i64) -> Res<ProfileSumm
 
 /// Deletes a profile that is not in use, with its favourites, playlists,
 /// listens, parked queue and pins (the last profile cannot be deleted).
+// Tauri hands each managed state in as its own argument.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn profile_delete(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
     store: State<'_, Arc<SessionStore>>,
     player: State<'_, Arc<Player>>,
     sync: State<'_, SyncService>,
     id: i64,
+    pin: Option<String>,
 ) -> Res<ProfilesState> {
     if lib.active_profile().0 == id {
         return Err("switch to another profile before deleting this one".into());
     }
+    // Someone else's profile with a PIN is only deleted with that PIN.
+    le(lib.check_profile_pin(ProfileId(id), pin.as_deref()))?;
     le(lib.delete_profile(ProfileId(id)))?;
     // The database removed the profile's pairings; the sync service forgets
     // their sessions and secrets.
     sync.profile_deleted(ProfileId(id)).await?;
     store.forget_profile(id);
     store.save_now(&player.export_session());
-    let s = state(&lib)?;
+    let s = state(&lib, &lock)?;
+    changed(&app, &s);
+    Ok(s)
+}
+
+/// Opens the lock screen's profile with its PIN.
+#[tauri::command(async)]
+pub fn profile_unlock(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
+    pin: String,
+) -> Res<ProfilesState> {
+    le(lib.check_profile_pin(lib.active_profile(), Some(&pin)))?;
+    lock.set(false);
+    let s = state(&lib, &lock)?;
+    changed(&app, &s);
+    Ok(s)
+}
+
+/// Sets, changes (`pin`) or removes (`None`) the PIN of the profile in use.
+/// Changing or removing an existing PIN needs it (`current`).
+#[tauri::command(async)]
+pub fn profile_set_pin(
+    app: AppHandle,
+    lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
+    pin: Option<String>,
+    current: Option<String>,
+) -> Res<ProfilesState> {
+    if lock.locked() {
+        return Err("unlock the profile first".into());
+    }
+    let id = lib.active_profile();
+    le(lib.check_profile_pin(id, current.as_deref()))?;
+    le(lib.set_profile_pin(id, pin.as_deref()))?;
+    let s = state(&lib, &lock)?;
     changed(&app, &s);
     Ok(s)
 }
@@ -125,21 +192,31 @@ pub async fn profile_delete(
 /// Switches to profile `id`: the current profile's queue and position are
 /// kept for later and its running listen is recorded for it; the other
 /// profile's queue is loaded paused where it was left.
+// Tauri hands each managed state in as its own argument.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn profile_switch(
     app: AppHandle,
     lib: State<'_, Arc<Library>>,
+    lock: State<'_, ProfileLock>,
     store: State<'_, Arc<SessionStore>>,
     player: State<'_, Arc<Player>>,
     sync: State<'_, SyncService>,
     id: i64,
+    pin: Option<String>,
 ) -> Res<PlayerSnapshot> {
+    // A profile with a PIN opens only with it, also from the lock screen.
+    // Staying on the locked profile is "unlock" (`profile_unlock`).
+    if lib.active_profile().0 != id {
+        le(lib.check_profile_pin(ProfileId(id), pin.as_deref()))?;
+    }
     switch(&lib, &store, &player, ProfileId(id))?;
+    lock.set(false);
     // The phone talks to the computer the new profile is paired with.
     if let Err(e) = sync.profile_switched().await {
         log::warn!("sync: could not follow the profile switch: {e}");
     }
-    let s = state(&lib)?;
+    let s = state(&lib, &lock)?;
     changed(&app, &s);
     Ok(player.snapshot())
 }

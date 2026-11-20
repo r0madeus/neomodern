@@ -5,12 +5,24 @@
   import { motionDuration } from './motion'
   import ProfileAvatar from './ProfileAvatar.svelte'
   import ProfilesModal from './ProfilesModal.svelte'
-  import { profiles } from './profiles.svelte'
+  import PinPrompt from './PinPrompt.svelte'
+  import { profiles, type Profile } from './profiles.svelte'
 
   // The profile button (K24): who is listening, switch, add, manage.
   let { size = 'size-7 text-xs', align = 'left' }: { size?: string; align?: 'left' | 'right' } = $props()
 
   let open = $state(false)
+  // A profile with a PIN asks for it first.
+  let asking = $state<Profile | null>(null)
+
+  async function choose(p: Profile) {
+    open = false
+    if (p.hasPin) asking = p
+    else {
+      const err = await profiles.switchTo(p.id)
+      if (err) profiles.error = err
+    }
+  }
   let managing = $state(false)
   let root = $state<HTMLDivElement | null>(null)
 
@@ -57,10 +69,13 @@
             aria-checked={active}
             disabled={profiles.switching}
             class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-zinc-100 disabled:opacity-60 dark:hover:bg-zinc-800"
-            onclick={() => (active ? (open = false) : void profiles.switchTo(p.id))}
+            onclick={() => (active ? (open = false) : void choose(p))}
           >
             <ProfileAvatar profile={p} class="size-7 text-xs" />
             <span class="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+            {#if p.hasPin && !active}
+              <span class="text-[11px] text-zinc-400" title={t('Has a PIN')}>🔒</span>
+            {/if}
             {#if active}
               <Icon name="check" class="size-4 text-accent-500" />
             {/if}
@@ -84,6 +99,14 @@
       </div>
     {/if}
   </div>
+  {#if asking}
+    <PinPrompt
+      title={t('PIN for {name}', { name: asking.name })}
+      profile={asking}
+      onSubmit={(pin) => profiles.switchTo(asking!.id, pin)}
+      onClose={() => (asking = null)}
+    />
+  {/if}
   {#if managing}
     <ProfilesModal onClose={() => (managing = false)} />
   {/if}

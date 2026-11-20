@@ -283,6 +283,14 @@ pub fn run() {
                     store.adopt_active_profile(library.active_profile().0);
                 }
             }
+            // A profile with a PIN opens behind the lock screen (K25).
+            let lock = profiles::ProfileLock::default();
+            lock.set(
+                library
+                    .profile_has_pin(library.active_profile())
+                    .unwrap_or(false),
+            );
+            app.manage(lock);
             app.manage(library);
             app.manage(sync_service.clone());
             let allow_phones = app.state::<Arc<SessionStore>>().allow_phone_connections();
@@ -365,6 +373,8 @@ pub fn run() {
             profiles::profile_summary,
             profiles::profile_delete,
             profiles::profile_switch,
+            profiles::profile_unlock,
+            profiles::profile_set_pin,
             ui::app_heartbeat,
             commands::queue_replace,
             commands::queue_append,

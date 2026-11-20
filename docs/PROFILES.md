@@ -7,7 +7,7 @@ pinned, and the queue never mix between profiles.
 
 Profiles are **separation, not security**: anyone at the computer can switch
 profile (no password, like Spotify's account switcher on a shared device).
-A PIN is on the "later" list.
+A profile can have an optional PIN (K25, see "PIN" below).
 
 ## What belongs to a profile, what is shared
 
@@ -95,3 +95,18 @@ profile; what says something about the device or the files is shared.
   profile 1 and the pre-migration copy present.
 - Sync: the convergence tests run with two profiles per device and a pairing
   bound to one of them; the other profile's rows never travel.
+
+## PIN (decision K25, schema v16)
+
+- Optional, 4 to 8 digits, per profile. Only the profile in use sets,
+  changes or removes its own PIN; changing or removing asks for the current
+  one.
+- Asked when switching to that profile, when deleting it from another
+  profile, and at start-up when the app opens on it (a "Who is listening?"
+  lock screen; choosing a profile without a PIN also opens the app).
+- Stored as `v1$<salt>$<hash>` in `profiles.pin`: a random 16-byte salt and
+  20 000 rounds of HMAC-SHA256, compared in constant time; never in clear.
+- After 5 wrong PINs for a profile, tries are refused for 30 s.
+- Still separation, not security: anyone who can read the database file can
+  read the data, and the lock screen only hides the UI.
+

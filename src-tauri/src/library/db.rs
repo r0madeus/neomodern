@@ -14,7 +14,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 15;
+const SCHEMA_VERSION: i64 = 16;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -389,6 +389,18 @@ fn migrate_v15(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Schema v16: an optional PIN per profile (K25), stored salted and hashed
+/// (see `library::profiles`). Repeating it is harmless.
+fn migrate_v16(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    if !has_column(&tx, "profiles", "pin")? {
+        tx.execute_batch("ALTER TABLE profiles ADD COLUMN pin TEXT;")?;
+    }
+    tx.pragma_update(None, "user_version", 16)?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Opens-time setup: pragmas and migrations. A database that gets its first
 /// profile in this call names it [`DEFAULT_FIRST_PROFILE_NAME`].
 pub fn init(conn: &Connection) -> Result<()> {
@@ -553,6 +565,9 @@ pub fn init_with_first_profile(conn: &Connection, first_profile_name: &str) -> R
         let res = migrate_v15(conn);
         conn.pragma_update(None, "foreign_keys", true)?;
         res?;
+    }
+    if version < 16 {
+        migrate_v16(conn)?;
     }
     // Indexes of the profile-scoped queries lead with `profile_id`.
     conn.execute_batch(

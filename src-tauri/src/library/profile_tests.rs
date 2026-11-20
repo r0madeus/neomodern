@@ -137,7 +137,7 @@ fn migrating_a_v13_database_puts_everything_in_profile_1_and_keeps_a_copy() {
         count("SELECT COUNT(*) FROM listen_events WHERE profile_id = 1"),
         2
     );
-    assert_eq!(count("PRAGMA user_version"), 15);
+    assert_eq!(count("PRAGMA user_version"), 16);
     assert_eq!(
         count("SELECT COUNT(*) FROM pragma_foreign_key_list('favorites')"),
         2
@@ -937,4 +937,43 @@ fn deleting_a_profile_removes_its_data_and_playlist_cover_files() {
     drop(c);
     assert!(lib.profile_summary(BOB).is_err());
     let _ = &fx.tmp;
+}
+
+#[test]
+fn a_profile_pin_is_needed_and_wrong_guesses_pause() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lib = Library::open(
+        &tmp.path().join("lib.sqlite3"),
+        &tmp.path().join("c"),
+        Hooks::none(),
+    )
+    .unwrap();
+    let two = lib.create_profile("Zeynep").unwrap().id;
+    // No PIN: anything (even nothing) opens it.
+    lib.check_profile_pin(two, None).unwrap();
+    assert!(lib.set_profile_pin(two, Some("12")).is_err(), "too short");
+    lib.set_profile_pin(two, Some("4826")).unwrap();
+    assert!(lib.profile_has_pin(two).unwrap());
+    assert!(
+        lib.profiles()
+            .unwrap()
+            .iter()
+            .any(|p| p.id == two && p.has_pin)
+    );
+    assert!(lib.check_profile_pin(two, None).is_err());
+    lib.check_profile_pin(two, Some("4826")).unwrap();
+    // Five wrong guesses: even the right PIN is refused for a while.
+    for _ in 0..5 {
+        assert!(lib.check_profile_pin(two, Some("0000")).is_err());
+    }
+    let err = lib
+        .check_profile_pin(two, Some("4826"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("wait"), "{err}");
+    // Another profile is not affected.
+    lib.check_profile_pin(ProfileId::FIRST, None).unwrap();
+    // Removing the PIN.
+    lib.set_profile_pin(two, None).unwrap();
+    assert!(!lib.profile_has_pin(two).unwrap());
 }

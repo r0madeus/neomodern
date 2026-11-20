@@ -416,6 +416,8 @@ pub struct Library {
     hooks: Hooks,
     /// The profile whose data the profile-less methods use (K24).
     active: AtomicI64,
+    /// Wrong PIN guesses per profile: (count, last try) (K25).
+    pin_tries: Mutex<HashMap<i64, (u32, std::time::Instant)>>,
 }
 
 /// Name of the pre-profiles database copy, next to the database.
@@ -464,6 +466,7 @@ impl Library {
             cover_colors: Mutex::new(HashMap::new()),
             hooks,
             active: AtomicI64::new(ProfileId::FIRST.0),
+            pin_tries: Mutex::new(HashMap::new()),
         }
     }
 

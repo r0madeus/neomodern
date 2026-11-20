@@ -211,6 +211,18 @@ contributors and agents.
   Typing the address and code still works.
 - "Next up" follows the shuffle order (desktop, phone, remote).
 
+### Profiles (K24, K25; v0.9.6)
+- Several people on one device, each with their own favourites, playlists,
+  history and stats, home feed, pins and queue (`docs/PROFILES.md`).
+  Switch from the sidebar (desktop) or the Home header (phone); optional
+  4–8 digit PIN with a "Who is listening?" lock screen.
+- Sync is per profile: each pairing binds one profile on each side; each
+  phone profile can have its own pairing. The phone finds the computer on
+  the Wi-Fi by itself (LAN discovery), or pairs by QR code.
+- Large libraries: stats, home feed, artist directory and deep song pages
+  are fast again (`docs/PERFORMANCE.md`).
+- The Windows libmpv build is pinned and its SHA-256 checked.
+
 ### Desktop stability (K22: keep the system webview)
 - No high-rate events while the page is hidden (WebView2 freezes it);
   a UI watchdog logs stalls; on Windows a failed or hung page renderer is
@@ -220,10 +232,9 @@ contributors and agents.
 
 ## Next
 
-0. **Large-library speed** (`docs/PERFORMANCE.md`, 50k tracks / 200k
-   listens): stats view 0.4–3.1 s, home feed 2.1 s, artist directory and
-   deep song pages 0.1–0.3 s, ~0.6 s of sync work per idle round. Fixes
-   are listed there.
+0. **Large-library leftovers** (`docs/PERFORMANCE.md`): stats for 90 days
+   and all time (0.3 / 0.9 s at 200k listens) and ~0.6 s of sync work per
+   idle round.
 1. **Try metadata matching on real albums** (desktop and phone): the
    MusicBrainz responses so far are recorded fixtures. A live check:
    `cd src-tauri && cargo test live_musicbrainz -- --ignored --nocapture`.

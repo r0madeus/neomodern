@@ -108,6 +108,21 @@ struct Conn {
     next_request: u32,
     pending: HashMap<u32, oneshot::Sender<Result<Option<QueuePage>, String>>>,
     last_position_emit: Option<Instant>,
+    /// The computer understands `upNextPage` (app 0.9.6+). For an older one
+    /// the phone asks for a plain queue page instead (see `send_remote`).
+    peer_up_next: bool,
+    /// Requests sent as a plain queue page for an `upNextPage`: request id
+    /// -> queue index the up-next list starts at.
+    up_next_shift: HashMap<u32, usize>,
+}
+
+/// First app version whose computer answers `upNextPage`.
+const UP_NEXT_SINCE: &str = "0.9.6";
+
+/// Whether a peer running `app_version` answers `upNextPage`. An unreadable
+/// version (a development build) is taken as new.
+fn supports_up_next(app_version: &str) -> bool {
+    !crate::update::is_newer(UP_NEXT_SINCE, app_version)
 }
 
 /// Runs one session until it ends (network error, the peer closes, or the
@@ -160,6 +175,8 @@ pub(super) async fn run(sh: Arc<Shared>, session: Session, role: Role) -> Ended 
         next_request: 1,
         pending: HashMap::new(),
         last_position_emit: None,
+        peer_up_next: true,
+        up_next_shift: HashMap::new(),
     };
     if let Err(e) = conn.handshake(&mut inbox).await {
         return Ended {
@@ -205,6 +222,9 @@ impl Conn {
             .ok_or("the connection closed")??;
         let version_error =
             "The other device runs a different sync version: update the app on both devices.";
+        if let (Role::Client, Msg::Welcome { app_version, .. }) = (self.role, &first) {
+            self.peer_up_next = supports_up_next(app_version);
+        }
         match (self.role, first) {
             (Role::Server, Msg::Hello { sync_version, .. })
             | (Role::Client, Msg::Welcome { sync_version, .. }) => {
@@ -323,6 +343,25 @@ impl Conn {
                 self.next_request = self.next_request.wrapping_add(1).max(1);
                 self.pending.retain(|_, r| !r.is_closed());
                 self.pending.insert(id, reply);
+                self.up_next_shift
+                    .retain(|k, _| self.pending.contains_key(k));
+                let cmd = match cmd {
+                    RemoteCmd::UpNextPage { offset, limit } if !self.peer_up_next => {
+                        // Older computer: the songs after the current one in
+                        // queue order (it cannot tell the shuffle order).
+                        let start = self
+                            .sh
+                            .remote_state_now()
+                            .and_then(|s| s.current_index)
+                            .map_or(0, |c| c + 1);
+                        self.up_next_shift.insert(id, start);
+                        RemoteCmd::QueuePage {
+                            offset: start.saturating_add(offset),
+                            limit,
+                        }
+                    }
+                    other => other,
+                };
                 self.send(&Msg::Remote { id, cmd }).await
             }
             (Ctl::Remote { reply, .. }, Role::Server) => {
@@ -365,8 +404,12 @@ impl Conn {
                 }
                 Ok(())
             }
-            Msg::Queue { id, page } => {
+            Msg::Queue { id, mut page } => {
                 if self.role == Role::Client {
+                    if let Some(start) = self.up_next_shift.remove(&id) {
+                        page.offset = page.offset.saturating_sub(start);
+                        page.total = page.total.saturating_sub(start);
+                    }
                     self.sh.emit("remote://queue", &page);
                     if let Some(reply) = self.pending.remove(&id) {
                         let _ = reply.send(Ok(Some(page)));
@@ -703,5 +746,20 @@ pub(super) fn build_page(
             });
         }
         limit = (limit / 2).max(1);
+    }
+}
+
+#[cfg(test)]
+mod up_next_tests {
+    use super::supports_up_next;
+
+    #[test]
+    fn older_computers_get_a_plain_queue_page() {
+        assert!(!supports_up_next("0.9.5"));
+        assert!(!supports_up_next("0.8.0"));
+        assert!(supports_up_next("0.9.6"));
+        assert!(supports_up_next("1.0.0"));
+        // Development builds without a readable version are taken as new.
+        assert!(supports_up_next("dev"));
     }
 }

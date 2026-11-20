@@ -62,6 +62,12 @@ pub async fn sync_connect_pair(
     sync.connect_pair(&address, &code).await
 }
 
+/// Phone: pairs with the computer from its scanned QR code (K23).
+#[tauri::command]
+pub async fn sync_connect_pair_link(sync: State<'_, SyncService>, link: String) -> Res<SyncStatus> {
+    sync.connect_pair_link(&link).await
+}
+
 #[tauri::command]
 pub async fn sync_now(sync: State<'_, SyncService>) -> Res<SyncStatus> {
     sync.sync_now().await

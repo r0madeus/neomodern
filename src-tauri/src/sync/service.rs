@@ -143,6 +143,9 @@ pub struct PairingOpen {
     pub addresses: Vec<String>,
     pub port: u16,
     pub remaining_secs: u64,
+    /// The same code as a QR code with the addresses (K23); `None` if it
+    /// could not be made.
+    pub qr: Option<super::pair_link::PairQr>,
 }
 
 /// Runtime state of one peer (not persisted).
@@ -384,6 +387,11 @@ impl Shared {
         });
     }
 
+    /// The computer's last known player state (phone side).
+    pub(super) fn remote_state_now(&self) -> Option<RemoteState> {
+        self.state().remote.clone()
+    }
+
     pub(super) fn set_remote_state(&self, state: Option<RemoteState>) {
         self.state().remote = state;
     }
@@ -606,6 +614,7 @@ impl SyncService {
             },
         ));
         let sh = Arc::clone(&self.sh);
+        let listener = listener.with_per_address_limit(link::MAX_PER_ADDRESS);
         let handle = listener.serve(link::MAX_SESSIONS, move |stream, _addr, _stop| {
             let sh = Arc::clone(&sh);
             let responder = Arc::clone(&responder);
@@ -650,11 +659,18 @@ impl SyncService {
             tokio::time::sleep(link::CODE_TTL + Duration::from_millis(200)).await;
             sh.dirty();
         });
+        let sockets: Vec<SocketAddr> = addresses
+            .iter()
+            .filter_map(|a| a.parse::<std::net::IpAddr>().ok())
+            .map(|ip| SocketAddr::new(ip, port))
+            .collect();
+        let qr = super::pair_link::qr(&super::pair_link::build_link(&code, &sockets));
         Ok(PairingOpen {
             code,
             addresses,
             port,
             remaining_secs: link::CODE_TTL.as_secs(),
+            qr,
         })
     }
 
@@ -703,6 +719,36 @@ impl SyncService {
         let paired = link::pair_connect(addr, &local, code.trim())
             .await
             .map_err(|e| e.to_string())?;
+        self.finish_pairing(paired, addr).await
+    }
+
+    /// Pairs with the computer from its scanned QR code (K23): tries the
+    /// addresses in it in order; stops at the first one that answers.
+    pub async fn connect_pair_link(&self, link_text: &str) -> Result<SyncStatus, String> {
+        let parsed = super::pair_link::parse_link(link_text)?;
+        let local = self.sh.local_device().await?;
+        let mut last = String::new();
+        for addr in parsed.addresses {
+            match link::pair_connect(addr, &local, &parsed.code).await {
+                Ok(paired) => return self.finish_pairing(paired, addr).await,
+                // Not reachable this way (another network adapter): next one.
+                Err(
+                    e @ (link::LinkError::Io(_)
+                    | link::LinkError::Timeout
+                    | link::LinkError::Closed
+                    | link::LinkError::NotLocalAddress),
+                ) => last = e.to_string(),
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        Err(last)
+    }
+
+    async fn finish_pairing(
+        &self,
+        paired: link::Paired,
+        addr: SocketAddr,
+    ) -> Result<SyncStatus, String> {
         let peer_id = paired.peer_id.clone();
         let old: Vec<String> = db(&self.sh, move |c| {
             let mut old = Vec::new();
@@ -859,7 +905,10 @@ impl SyncService {
 
     /// Sends one remote command to the computer and waits for its answer.
     pub async fn remote_send(&self, cmd: RemoteCmd) -> Result<(), String> {
-        if matches!(cmd, RemoteCmd::QueuePage { .. }) {
+        if matches!(
+            cmd,
+            RemoteCmd::QueuePage { .. } | RemoteCmd::UpNextPage { .. }
+        ) {
             return self.remote_queue_page_cmd(cmd).await.map(|_| ());
         }
         self.remote_request(cmd).await.map(|_| ())
@@ -870,7 +919,9 @@ impl SyncService {
         offset: usize,
         limit: usize,
     ) -> Result<QueuePage, String> {
-        self.remote_queue_page_cmd(RemoteCmd::QueuePage { offset, limit })
+        // "Next up" on the phone: play order, `offset` counted from the song
+        // after the current one.
+        self.remote_queue_page_cmd(RemoteCmd::UpNextPage { offset, limit })
             .await
     }
 

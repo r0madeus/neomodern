@@ -105,6 +105,24 @@ pub fn queue_move(player: State<'_, Arc<Player>>, from: usize, to: usize) -> Res
     s(player.move_entry(from, to))
 }
 
+/// Queue indexes of the songs that play after the current one, in play
+/// order (the shuffle order when shuffle is on), for "Next up".
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpNextPage {
+    total: usize,
+    indexes: Vec<usize>,
+}
+
+#[tauri::command]
+pub fn queue_up_next(player: State<'_, Arc<Player>>, offset: usize, limit: usize) -> UpNextPage {
+    let (total, entries) = player.up_next_page(offset, limit.min(1000));
+    UpNextPage {
+        total,
+        indexes: entries.into_iter().map(|(i, _)| i).collect(),
+    }
+}
+
 #[tauri::command]
 pub fn queue_page(
     player: State<'_, Arc<Player>>,

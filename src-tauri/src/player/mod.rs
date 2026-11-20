@@ -713,6 +713,20 @@ impl Player {
         changed
     }
 
+    /// The entries that play after the current one, in play order (the
+    /// shuffle order when shuffle is on), as (queue index, track), plus how
+    /// many there are in all. Read under one lock, so index and track agree.
+    pub fn up_next_page(&self, offset: usize, limit: usize) -> (usize, Vec<(usize, TrackInfo)>) {
+        let inner = self.lock();
+        let q = &inner.queue;
+        let entries = q
+            .up_next(offset, limit)
+            .into_iter()
+            .filter_map(|i| q.get(i).map(|e| (i, track_info(e))))
+            .collect();
+        (q.up_next_len(), entries)
+    }
+
     pub fn queue_page(&self, offset: usize, limit: usize) -> Vec<TrackInfo> {
         self.lock()
             .queue

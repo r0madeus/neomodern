@@ -58,6 +58,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_audio::init());
+    // The pairing QR code (K23): the phone scans the computer's screen.
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     builder
         .setup(|app| {
             // Logs go to stdout and to a file in the app log folder (shown in
@@ -354,6 +357,7 @@ pub fn run() {
             commands::queue_remove,
             commands::queue_move,
             commands::queue_page,
+            commands::queue_up_next,
             commands::player_play_index,
             commands::player_play,
             commands::player_pause,
@@ -490,6 +494,7 @@ pub fn run() {
             sync::commands::sync_pair_close,
             sync::commands::sync_remove_peer,
             sync::commands::sync_connect_pair,
+            sync::commands::sync_connect_pair_link,
             sync::commands::sync_now,
             sync::commands::sync_forget,
             sync::commands::sync_guard_decide,

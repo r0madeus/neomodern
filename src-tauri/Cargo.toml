@@ -1,6 +1,6 @@
 [package]
 name = "neomodern"
-version = "0.9.4"
+version = "0.9.6"
 description = "A fast, modern music player"
 authors = ["r0madeus"]
 license = ""
@@ -42,6 +42,8 @@ spake2 = "=0.4.0"
 hkdf = "=0.12.4"
 hmac = "=0.12.1"
 getrandom = "=0.3.4"
+# The pairing QR code (K23); raw modules only, the UI draws them.
+qrcode = { version = "=0.15.0", default-features = false, features = ["std"] }
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 # Desktop only: libmpv audio, OS media controls (SMTC / MPRIS), single instance, system TLS.
@@ -64,6 +66,8 @@ webview2-com = "=0.39.1"
 # Mozilla root store (no OpenSSL to cross-compile, no JNI verifier setup).
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-android-audio = { path = "plugins/android-audio" }
+# Scanning the computer's pairing QR code (K23).
+tauri-plugin-barcode-scanner = "=2.5.3"
 reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "=1.0.10"

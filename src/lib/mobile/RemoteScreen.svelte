@@ -59,9 +59,8 @@
     })
   })
   onMount(() => void sync.refreshRemote())
-  const upNext = $derived(
-    sync.queue.filter((e) => remote?.currentIndex === null || remote === null || e.index > remote.currentIndex),
-  )
+  // The computer sends "Next up" in play order (shuffle applied).
+  const upNext = $derived(sync.queue.filter((e) => e.index !== remote?.currentIndex))
 
   let pendingIndex = $state<number | null>(null)
   async function playEntry(index: number) {

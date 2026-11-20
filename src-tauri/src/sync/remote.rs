@@ -36,12 +36,32 @@ pub enum RemoteCmd {
     Pause {},
     Next {},
     Previous {},
-    Seek { seconds: f64 },
-    SetVolume { percent: f64 },
-    SetShuffle { on: bool },
-    SetRepeat { mode: RepeatMode },
-    PlayIndex { index: usize, queue_version: u64 },
-    QueuePage { offset: usize, limit: usize },
+    Seek {
+        seconds: f64,
+    },
+    SetVolume {
+        percent: f64,
+    },
+    SetShuffle {
+        on: bool,
+    },
+    SetRepeat {
+        mode: RepeatMode,
+    },
+    PlayIndex {
+        index: usize,
+        queue_version: u64,
+    },
+    QueuePage {
+        offset: usize,
+        limit: usize,
+    },
+    /// The songs after the current one in play order (shuffle applied):
+    /// `offset` counts from the next song; entries keep their queue index.
+    UpNextPage {
+        offset: usize,
+        limit: usize,
+    },
 }
 
 impl RemoteCmd {
@@ -58,7 +78,7 @@ impl RemoteCmd {
                 Err("volume out of range")
             }
             Self::PlayIndex { index, .. } if index > MAX_INDEX => Err("index out of range"),
-            Self::QueuePage { offset, limit }
+            Self::QueuePage { offset, limit } | Self::UpNextPage { offset, limit }
                 if offset > MAX_INDEX || limit == 0 || limit > MAX_QUEUE_PAGE =>
             {
                 Err("queue page out of range")
@@ -279,6 +299,28 @@ pub fn execute(
                 ));
             }
             player.play_index(index).map_err(failed)?
+        }
+        RemoteCmd::UpNextPage { offset, limit } => {
+            let (queue_version, _, _) = player.progress_state();
+            let (total, rows) = player.up_next_page(offset, limit.min(MAX_QUEUE_PAGE));
+            let entries = rows
+                .into_iter()
+                .map(|(index, t)| {
+                    let (title, artist, _, key) = describe(lib, &t.path, &t.title, &t.artist);
+                    QueueEntry {
+                        index,
+                        title,
+                        artist,
+                        key,
+                    }
+                })
+                .collect();
+            return Ok(Some(QueuePage {
+                offset,
+                total,
+                queue_version,
+                entries,
+            }));
         }
         RemoteCmd::QueuePage { offset, limit } => {
             // Version first: if the queue changes before the page is read,

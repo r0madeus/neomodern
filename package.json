@@ -1,7 +1,7 @@
 {
   "name": "neomodern",
   "private": true,
-  "version": "0.9.4",
+  "version": "0.9.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-barcode-scanner": "2.5.3",
     "@tauri-apps/plugin-dialog": "2.8.4"
   }
 }

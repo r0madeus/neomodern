@@ -52,8 +52,10 @@
 
   const current = $derived(player.snapshot.currentIndex)
   const nowTrack = $derived(current !== null ? (player.queue[current] ?? null) : null)
-  const offset = $derived(current === null ? 0 : current + 1)
-  const upNext = $derived(player.queue.slice(offset))
+  // Play order (shuffle applied); reordering is only offered in queue order.
+  const upNextIdx = $derived(player.upNextIndexes)
+  const upNext = $derived(upNextIdx.map((i) => player.queue[i]))
+  const shuffled = $derived(player.upNextOrder !== null)
   const hasAdded = $derived(upNext.some((tr) => tr.queued))
 
   // "Playing <list>": the album, playlist or Favorites the queue came from.
@@ -87,7 +89,7 @@
     getCount: () => upNext.length,
     getListEl: () => listEl,
     getScrollEl: () => listEl?.closest<HTMLElement>('.overflow-y-auto') ?? null,
-    onMove: (from, to) => player.moveIndex(offset + from, offset + to),
+    onMove: (from, to) => player.moveIndex(upNextIdx[from], upNextIdx[to]),
   })
   $effect(() => () => drag.destroy())
 
@@ -195,7 +197,7 @@
       {#if upNext.length > 0}
         <ol bind:this={listEl} class="relative">
           {#each upNext as track, i (track.id)}
-            {@const index = offset + i}
+            {@const index = upNextIdx[i]}
             <li class={['h-16', drag.from === i && 'opacity-40']}>
               <SwipeRow
                 disabled={drag.active}
@@ -233,14 +235,16 @@
                       </span>
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    class="shrink-0 touch-none p-4 text-zinc-400"
-                    aria-label={t('Drag to reorder')}
-                    onpointerdown={(e) => drag.onPointerDown(e, i, track.title)}
-                  >
-                    <Icon name="drag" class="size-6" />
-                  </button>
+                  {#if !shuffled}
+                    <button
+                      type="button"
+                      class="shrink-0 touch-none p-4 text-zinc-400"
+                      aria-label={t('Drag to reorder')}
+                      onpointerdown={(e) => drag.onPointerDown(e, i, track.title)}
+                    >
+                      <Icon name="drag" class="size-6" />
+                    </button>
+                  {/if}
                 </div>
               </SwipeRow>
             </li>

@@ -88,6 +88,10 @@ test('guard summary becomes readable lines', () => {
 
 test('pairing and remote errors are sorted by kind', () => {
   assert.equal(pairErrorKind('wrong pairing code'), 'wrongCode')
+  assert.equal(pairErrorKind('this is not a NeoModern pairing code'), 'notPairingQr')
+  assert.equal(pairErrorKind('the code has no local network address of the computer'), 'qrNoAddress')
+  assert.equal(pairErrorKind('camera permission was not given'), 'camera')
+  assert.equal(pairErrorKind('this pairing code is from a newer version: update the app'), 'version')
   assert.equal(pairErrorKind('wrong pairing code; too many attempts, a new code is needed'), 'tooManyAttempts')
   assert.equal(pairErrorKind('the pairing code has expired'), 'expired')
   assert.equal(pairErrorKind('pairing is not open on the computer'), 'notOpen')

@@ -505,11 +505,34 @@ fn remote_commands_reach_the_computers_player() {
                 .is_err()
         );
 
-        let page = p.phone.svc.remote_queue_page(1, 10).await.unwrap();
-        assert_eq!((page.offset, page.total, page.entries.len()), (1, 3, 2));
+        // "Next up": the songs after the current one, `offset` counted from
+        // the next song; entries keep their queue index.
+        let page = p.phone.svc.remote_queue_page(0, 10).await.unwrap();
+        assert_eq!((page.offset, page.total, page.entries.len()), (0, 2, 2));
         assert_eq!(page.entries[0].index, 1);
         assert_eq!(page.entries[0].title, title(1));
+        let second = p.phone.svc.remote_queue_page(1, 10).await.unwrap();
+        assert_eq!((second.offset, second.entries.len()), (1, 1));
+        assert_eq!(second.entries[0].index, 2);
         assert!(p.phone.svc.remote_queue_page(0, 101).await.is_err());
+
+        // With shuffle on, the list is the order the computer will play.
+        p.phone
+            .svc
+            .remote_send(RemoteCmd::SetShuffle { on: true })
+            .await
+            .unwrap();
+        let shuffled = p.phone.svc.remote_queue_page(0, 10).await.unwrap();
+        let (_, expected) = p.pc.player.up_next_page(0, 10);
+        assert_eq!(
+            shuffled.entries.iter().map(|e| e.index).collect::<Vec<_>>(),
+            expected.iter().map(|(i, _)| *i).collect::<Vec<_>>()
+        );
+        p.phone
+            .svc
+            .remote_send(RemoteCmd::SetShuffle { on: false })
+            .await
+            .unwrap();
 
         // A stale queue version is refused; the current one works.
         let stale = RemoteCmd::PlayIndex {
@@ -694,4 +717,45 @@ fn messages_are_a_closed_list() {
     assert_eq!(json, r#"{"type":"syncAck","uptoSeq":5}"#);
     let err = String::from_utf8(Msg::error(ErrorCode::MassDelete, "x").to_bytes()).unwrap();
     assert!(err.contains(r#""code":"mass_delete""#), "{err}");
+}
+
+#[test]
+fn the_phone_pairs_from_the_qr_code() {
+    rt(async {
+        let pc = device("Desk PC", true).await;
+        let phone = device("Pixel", false).await;
+        let port = pc
+            .svc
+            .set_allow_phone_connections(true)
+            .await
+            .unwrap()
+            .listening
+            .unwrap()
+            .port;
+        let open = pc.svc.pair_open().await.unwrap();
+        let qr = open.qr.as_ref().expect("a QR code with the pairing code");
+        assert!(qr.link.contains(&format!("c={}", open.code)));
+        assert_eq!(qr.modules.len(), qr.size * qr.size);
+
+        // The first address in the code does not answer (another adapter);
+        // the phone moves on to the next one.
+        // Port 1 has no listener here: the connection is refused at once.
+        let closed: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let good: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        let link = crate::sync::pair_link::build_link(&open.code, &[closed, good]);
+        phone.svc.connect_pair_link(&link).await.unwrap();
+        let pc_id = pc.id().await;
+        wait_for!("the first sync", phone.rounds(&pc_id).await >= 1);
+
+        // Something else in front of the camera is refused at once.
+        assert!(
+            phone
+                .svc
+                .connect_pair_link("https://example.com")
+                .await
+                .is_err()
+        );
+        phone.svc.shutdown().await;
+        pc.svc.shutdown().await;
+    });
 }

@@ -807,6 +807,17 @@ const TR: Record<string, string> = {
   'Phone name': 'Telefon adı',
   'The computer shows this name.': 'Bilgisayar bu adı gösterir.',
   'Connect to a computer': 'Bir bilgisayara bağlan',
+  'On your phone, scan this code': 'Telefonunla bu kodu tara',
+  'Pairing QR code': 'Eşleştirme QR kodu',
+  'or enter this code': 'ya da bu kodu gir',
+  'Scan the QR code': 'QR kodu tara',
+  'or enter the address and code': 'ya da adresi ve kodu gir',
+  'This is not a NeoModern pairing code. Scan the code shown in Settings › Phone on the computer.':
+    'Bu bir NeoModern eşleştirme kodu değil. Bilgisayarda Ayarlar › Telefon’da görünen kodu tara.',
+  'The code has no address. Connect the computer to Wi-Fi or a network cable and show a new code.':
+    'Kodda adres yok. Bilgisayarı Wi-Fi’ye ya da kabloyla ağa bağla ve yeni bir kod göster.',
+  'NeoModern needs the camera to scan the code. Allow it in the phone’s settings, or enter the code by hand.':
+    'Kodu taramak için NeoModern’in kameraya ihtiyacı var. Telefonun ayarlarından izin ver ya da kodu elle gir.',
   'On the computer, open Settings › Phone, turn on “Allow phone connections” and choose “Pair a phone”. Both devices must be on the same Wi-Fi.':
     'Bilgisayarda Ayarlar › Telefon’u aç, “Telefon bağlantılarına izin ver”i aç ve “Telefon eşle”yi seç. İki cihaz da aynı Wi-Fi ağında olmalı.',
   'Computer address': 'Bilgisayarın adresi',

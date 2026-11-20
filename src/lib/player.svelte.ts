@@ -91,6 +91,20 @@ const PAGE_SIZE = 500
 class PlayerStore {
   snapshot = $state<PlayerSnapshot>(EMPTY)
   queue = $state<TrackInfo[]>([])
+  /** With shuffle on: queue indexes of the songs after the current one, in
+   *  the order Rust will play them (`queue_up_next`). `null` otherwise. */
+  upNextOrder = $state<number[] | null>(null)
+  #upNextKey = ''
+
+  /** Queue indexes of the songs that play after the current one, in play
+   *  order. Without shuffle that is simply the rest of the queue. */
+  upNextIndexes = $derived.by((): number[] => {
+    const cur = this.snapshot.currentIndex
+    const n = this.queue.length
+    if (this.upNextOrder) return this.upNextOrder.filter((i) => i < n && i !== cur)
+    const start = cur === null ? 0 : cur + 1
+    return Array.from({ length: Math.max(0, n - start) }, (_, k) => start + k)
+  })
   error = $state<string | null>(null)
 
   // Position arrives a few times per second; in between we interpolate
@@ -249,6 +263,7 @@ class PlayerStore {
     this.snapshot = next
     this.#setAnchor(next.positionSeconds)
     if (next.queueVersion !== this.#loadedQueueVersion) void this.#loadQueue(next.queueVersion)
+    this.#refreshUpNext()
     if (next.status === 'playing' && !wasPlaying) this.#startClock()
     if (next.status !== 'playing') {
       cancelAnimationFrame(this.#frame)
@@ -276,6 +291,38 @@ class PlayerStore {
       if (this.snapshot.status === 'playing') this.#frame = requestAnimationFrame(tick)
     }
     this.#frame = requestAnimationFrame(tick)
+  }
+
+  #refreshUpNext(): void {
+    const s = this.snapshot
+    if (!s.shuffle) {
+      this.#upNextKey = ''
+      this.upNextOrder = null
+      return
+    }
+    const key = `${s.queueVersion}:${s.currentIndex}`
+    if (key === this.#upNextKey) return
+    this.#upNextKey = key
+    void this.#loadUpNext(key)
+  }
+
+  async #loadUpNext(key: string): Promise<void> {
+    const order: number[] = []
+    try {
+      for (;;) {
+        const page = await invoke<{ total: number; indexes: number[] }>('queue_up_next', {
+          offset: order.length,
+          limit: PAGE_SIZE,
+        })
+        if (this.#upNextKey !== key) return // a newer load started
+        order.push(...page.indexes)
+        if (page.indexes.length === 0 || order.length >= page.total) break
+      }
+      this.upNextOrder = order
+    } catch {
+      // Keep the previous order; the next snapshot tries again.
+      if (this.#upNextKey === key) this.#upNextKey = ''
+    }
   }
 
   async #loadQueue(version: number): Promise<void> {

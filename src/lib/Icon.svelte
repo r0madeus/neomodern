@@ -56,6 +56,7 @@
     | 'sort'
     | 'phone'
     | 'computer'
+    | 'qr'
 </script>
 
 <script lang="ts">
@@ -123,6 +124,7 @@
     list: 'M4 6h2v2H4V6Zm4 0h12v2H8V6Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Z',
     sort: 'M7.5 9.5 12 5l4.5 4.5h-9Zm0 5L12 19l4.5-4.5h-9Z',
     phone: 'M16 1H8a2.5 2.5 0 0 0-2.5 2.5v17A2.5 2.5 0 0 0 8 23h8a2.5 2.5 0 0 0 2.5-2.5v-17A2.5 2.5 0 0 0 16 1Zm-4 20.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5ZM16.5 18h-9V4h9v14Z',
+    qr: 'M3 11h8V3H3v8Zm2-6h4v4H5V5ZM3 21h8v-8H3v8Zm2-6h4v4H5v-4ZM13 3v8h8V3h-8Zm6 6h-4V5h4v4ZM13 13h2v2h-2ZM15 15h2v2h-2ZM13 17h2v2h-2ZM17 17h2v2h-2ZM19 19h2v2h-2ZM15 19h2v2h-2ZM17 13h2v2h-2ZM19 15h2v2h-2Z',
     computer: 'M20 18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2H0v2h24v-2h-4ZM4 6h16v10H4V6Z',
   }
 </script>

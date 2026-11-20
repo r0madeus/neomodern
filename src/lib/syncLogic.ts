@@ -145,12 +145,19 @@ export type PairErrorKind =
   | 'unreachable'
   | 'version'
   | 'address'
+  | 'notPairingQr'
+  | 'qrNoAddress'
+  | 'camera'
   | 'other'
 
 /** Sorts a pairing error from the backend (its English message) into a kind
  *  the UI explains in the user's language. */
 export function pairErrorKind(message: string): PairErrorKind {
   const m = message.toLowerCase()
+  // The pairing QR code (K23).
+  if (m.includes('not a neomodern pairing code')) return 'notPairingQr'
+  if (m.includes('no local network address of the computer')) return 'qrNoAddress'
+  if (m.includes('camera')) return 'camera'
   if (m.includes('too many attempts')) return 'tooManyAttempts'
   if (m.includes('wrong pairing code') || m.includes('could not prove it knows the code'))
     return 'wrongCode'

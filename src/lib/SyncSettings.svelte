@@ -2,6 +2,7 @@
   import Icon from './Icon.svelte'
   import ToggleSwitch from './ToggleSwitch.svelte'
   import SyncGuardNotice from './SyncGuardNotice.svelte'
+  import PairQr from './PairQr.svelte'
   import { addedAgo } from './dates'
   import { i18n, t } from './i18n.svelte'
   import { sync, type PeerStatus, type SyncAction } from './sync.svelte'
@@ -58,6 +59,12 @@
         return t('The apps do not match. Update NeoModern on both devices.')
       case 'address':
         return t('Enter the computer’s local address, e.g. 192.168.1.20.')
+      case 'notPairingQr':
+        return t('This is not a NeoModern pairing code. Scan the code shown in Settings › Phone on the computer.')
+      case 'qrNoAddress':
+        return t('The code has no address. Connect the computer to Wi-Fi or a network cable and show a new code.')
+      case 'camera':
+        return t('NeoModern needs the camera to scan the code. Allow it in the phone’s settings, or enter the code by hand.')
       default:
         return message
     }
@@ -244,7 +251,13 @@
           <div class="rounded-xl border border-zinc-200/80 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50" aria-live="polite">
             {#if pairState === 'open' && pairCode}
               <div class="flex flex-col items-center gap-3 text-center">
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('On your phone, enter this code')}</p>
+                {#if sync.pairing?.qr}
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('On your phone, scan this code')}</p>
+                  <PairQr qr={sync.pairing.qr} label={t('Pairing QR code')} />
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('or enter this code')}</p>
+                {:else}
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">{t('On your phone, enter this code')}</p>
+                {/if}
                 <p class="text-4xl font-bold tracking-[0.12em] text-zinc-900 tabular-nums dark:text-zinc-50" aria-label={pairCode.split('').join(' ')}>
                   {formatPairCode(pairCode)}
                 </p>
@@ -370,6 +383,16 @@
             {t('On the computer, open Settings › Phone, turn on “Allow phone connections” and choose “Pair a phone”. Both devices must be on the same Wi-Fi.')}
           </p>
         </div>
+        <button
+          type="button"
+          class={[primaryBtn, 'flex items-center justify-center gap-2 py-2.5 text-sm']}
+          disabled={sync.busy === 'connect'}
+          onclick={() => void sync.scanPair()}
+        >
+          <Icon name="qr" class="size-5" />
+          {t('Scan the QR code')}
+        </button>
+        <p class="text-center text-xs text-zinc-500 dark:text-zinc-400">{t('or enter the address and code')}</p>
         <div class="grid gap-3 sm:grid-cols-[1fr_10rem]">
           <label class="flex flex-col gap-1">
             <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">{t('Computer address')}</span>

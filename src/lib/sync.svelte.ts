@@ -47,11 +47,20 @@ export interface SyncStatus {
   lastResult: SyncResult | null
 }
 
+/** A QR code to draw: `size`×`size` modules, row by row, '1' = dark. */
+export interface PairQr {
+  link: string
+  size: number
+  modules: string
+}
+
 export interface PairingOpen {
   code: string
   addresses: string[]
   port: number
   remainingSecs: number
+  /** The same code as a QR code with the addresses (K23). */
+  qr: PairQr | null
 }
 
 export type RemoteStatus = 'playing' | 'paused' | 'stopped'
@@ -196,6 +205,26 @@ class SyncStore {
   /** Phone: pairs with the computer; true when it worked. */
   connectPair = (address: string, code: string) =>
     this.#status('connect', 'sync_connect_pair', { address, code })
+  /** Phone: scans the computer's pairing QR code and pairs (K23); true
+   *  when it worked. The camera is only used while the scanner is open. */
+  scanPair = async (): Promise<boolean> => {
+    let link: string
+    try {
+      const scanner = await import('@tauri-apps/plugin-barcode-scanner')
+      let permission = await scanner.checkPermissions()
+      if (permission !== 'granted') permission = await scanner.requestPermissions()
+      if (permission !== 'granted') {
+        this.error = { action: 'connect', message: 'camera permission was not given' }
+        return false
+      }
+      link = (await scanner.scan({ windowed: false, formats: [scanner.Format.QRCode] })).content
+    } catch (e) {
+      // Closing the scanner is not an error.
+      if (!/cancel/i.test(String(e))) this.error = { action: 'connect', message: String(e) }
+      return false
+    }
+    return this.#status('connect', 'sync_connect_pair_link', { link })
+  }
   syncNow = () => this.#status('syncNow', 'sync_now')
   forget = () =>
     this.#status('forget', 'sync_forget').then((ok) => {
@@ -261,12 +290,12 @@ class SyncStore {
     return this.queueVersion >= 0 && this.queueStart + this.queue.length < this.queueTotal
   }
 
-  /** Loads the next page of the remote queue, or (`reset`) the first one
-   *  from the song playing now. */
+  /** Loads the next page of the computer's "Next up" list (the songs after
+   *  the current one, in play order with shuffle applied), or (`reset`) the
+   *  first page. Offsets count from the next song. */
   async loadQueue(reset = false): Promise<void> {
     if (this.queueLoading && !reset) return
-    const start = Math.max(0, this.remote?.currentIndex ?? 0)
-    const offset = reset ? start : this.queueStart + this.queue.length
+    const offset = reset ? 0 : this.queueStart + this.queue.length
     if (!reset && !this.queueHasMore) return
     this.queueLoading = true
     try {
@@ -335,7 +364,8 @@ class SyncStore {
   }
 
   #applyRemote(next: RemoteState | null): void {
-    const prevKey = this.remote?.current?.key
+    const prev = this.remote
+    const prevKey = prev?.current?.key
     this.remote = next
     if (!next) {
       this.queue = []
@@ -346,11 +376,12 @@ class SyncStore {
     }
     if (next.current?.key !== prevKey) this.#durationOverride = null
     this.#setAnchor(next.position)
-    // A changed queue, or "previous" went back before the loaded rows.
+    // "Next up" depends on the queue, the current song and shuffle.
     if (
       this.queueVersion >= 0 &&
       (next.queueVersion !== this.queueVersion ||
-        (next.currentIndex !== null && next.currentIndex < this.queueStart))
+        next.currentIndex !== prev?.currentIndex ||
+        next.shuffle !== prev?.shuffle)
     ) {
       void this.loadQueue(true)
     }

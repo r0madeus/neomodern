@@ -436,7 +436,6 @@
             <h1 class="truncate text-base font-bold tracking-tight">NeoModern</h1>
           </div>
         {/if}
-        <ProfileMenu />
         <button
           type="button"
           class="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200/80 hover:text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
@@ -716,6 +715,7 @@
             if (sidebarCollapsed) toggleSidebar()
           }}
         />
+        <ProfileMenu variant="row" collapsed={sidebarCollapsed} />
         <button
           class={[
             'flex items-center rounded-lg px-2 py-1.5 text-sm transition-colors',

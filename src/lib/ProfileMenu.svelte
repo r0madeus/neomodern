@@ -9,7 +9,15 @@
   import { profiles, type Profile } from './profiles.svelte'
 
   // The profile button (K24): who is listening, switch, add, manage.
-  let { size = 'size-7 text-xs', align = 'left' }: { size?: string; align?: 'left' | 'right' } = $props()
+  // `row` is the desktop sidebar's user row (avatar, name, chevron; only the
+  // avatar when the sidebar is collapsed) whose menu opens upwards.
+  let {
+    size = 'size-7 text-xs',
+    align = 'left',
+    variant = 'avatar',
+    collapsed = false,
+  }: { size?: string; align?: 'left' | 'right'; variant?: 'avatar' | 'row'; collapsed?: boolean } = $props()
+  const row = $derived(variant === 'row')
 
   let open = $state(false)
   // A profile with a PIN asks for it first.
@@ -42,21 +50,31 @@
   <div class="relative" bind:this={root}>
     <button
       type="button"
-      class="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+      class={[
+        'outline-none focus-visible:ring-2 focus-visible:ring-accent-500',
+        row && 'flex w-full items-center rounded-lg px-2 py-1.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-800/70',
+        row && (collapsed ? 'justify-center' : 'gap-2.5 text-left'),
+        !row && 'rounded-full',
+      ]}
       aria-haspopup="menu"
       aria-expanded={open}
       aria-label={t('Profile: {name}', { name: profiles.current.name })}
       title={profiles.current.name}
       onclick={() => (open = !open)}
     >
-      <ProfileAvatar profile={profiles.current} class={size} />
+      <ProfileAvatar profile={profiles.current} class={row ? 'size-[22px] text-[11px]' : size} />
+      {#if row && !collapsed}
+        <span class="min-w-0 flex-1 truncate font-medium">{profiles.current.name}</span>
+        <Icon name="chevronRight" class="size-4 shrink-0 opacity-60 transition-transform {open ? 'rotate-90' : '-rotate-90'}" />
+      {/if}
     </button>
     {#if open}
       <div
         transition:fade={{ duration: motionDuration(100) }}
         class={[
-          'absolute top-full z-50 mt-2 w-60 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900',
-          align === 'left' ? 'left-0' : 'right-0',
+          'absolute z-50 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900',
+          row ? 'bottom-full left-0 mb-2 w-60' : 'top-full mt-2 w-60',
+          !row && (align === 'left' ? 'left-0' : 'right-0'),
         ]}
         role="menu"
       >

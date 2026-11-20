@@ -111,7 +111,7 @@
   {#if sync.computer}
     <button
       type="button"
-      class="relative shrink-0 rounded-full p-2 text-zinc-300 active:bg-white/10"
+      class="relative -mr-1.5 shrink-0 rounded-full p-2 text-zinc-300 active:bg-white/10"
       aria-label={t('Remote control')}
       onclick={onOpenRemote}
     >
@@ -140,7 +140,9 @@
     {@const feed = home.feed}
     <div class="min-h-0 flex-1 overflow-y-auto pb-[var(--mobile-bar-clear,5rem)]">
       <!-- Sticky Spotify-style top bar with badge, filter chips & stats -->
-      <header class="sticky top-0 z-10 flex items-center gap-2 bg-zinc-950/85 px-4 pt-3.5 pb-3 backdrop-blur-md">
+      <!-- Solid like Spotify's: a see-through bar let the section titles
+           scrolling under it show through the chips. -->
+      <header class="sticky top-0 z-10 flex items-center gap-2 bg-zinc-950 px-4 pt-3.5 pb-3">
         {#if profiles.current}
           <ProfileMenu size="size-8 text-sm" />
         {:else}
@@ -152,7 +154,12 @@
           </span>
         {/if}
 
-        <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
+        <!-- The chips scroll; the fade at the right edge (and the padding
+             that lets the last chip clear it) replaces a chip cut in half. -->
+        <div
+          class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pr-6 no-scrollbar"
+          style="-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);"
+        >
           {#each [
             { id: 'all', label: 'All' },
             { id: 'mixes', label: 'Mixes' },
@@ -188,21 +195,26 @@
             <Icon name="shuffle" class="size-3.5 text-accent-400" />
             {t('Shuffle')}
           </button>
+
+          <!-- Stats lives with the chips (it was an icon squeezed in next to
+               the remote button), so the bar is just the avatar, the chips
+               and, when a computer is paired, its remote button. -->
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-1 rounded-full bg-zinc-800/90 px-3 py-1.5 text-[13px] font-medium text-zinc-100 active:bg-zinc-700"
+            aria-label={t('Listening stats')}
+            onclick={onOpenStats}
+          >
+            <Icon name="chart" class="size-3.5 text-accent-400" />
+            {t('Stats')}
+          </button>
         </div>
 
         {@render remoteButton()}
-        <button
-          type="button"
-          class="-mr-1.5 shrink-0 rounded-full p-2 text-zinc-300 active:bg-white/10"
-          aria-label={t('Listening stats')}
-          onclick={onOpenStats}
-        >
-          <Icon name="chart" class="size-5" />
-        </button>
       </header>
 
       <!-- 2x4 compact Spotify-style quick access grid -->
-      <section class="grid grid-cols-2 gap-2 px-4 pt-0.5 pb-6" aria-label={t('Quick access')}>
+      <section class="grid grid-cols-2 gap-2 px-4 pt-1.5 pb-6" aria-label={t('Quick access')}>
         <button
           type="button"
           class="flex h-14 items-center gap-2.5 overflow-hidden rounded-md bg-zinc-900 text-left active:bg-zinc-800"

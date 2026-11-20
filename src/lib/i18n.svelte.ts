@@ -82,6 +82,7 @@ const TR: Record<string, string> = {
   Mute: 'Sesi kapat',
   Unmute: 'Sesi aç',
   Shuffle: 'Karıştır',
+  Stats: 'İstatistikler',
   'Shuffle play': 'Karışık çal',
   'Shuffle on': 'Karıştırma açık',
   'Shuffle off': 'Karıştırma kapalı',

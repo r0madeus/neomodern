@@ -13,6 +13,7 @@ use super::error::{LinkError, LinkResult};
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -90,6 +91,7 @@ pub struct Listener {
     listeners: Vec<TcpListener>,
     port: u16,
     per_address: Option<usize>,
+    capacity: Option<usize>,
 }
 
 /// Listens on `port` (0 = any free port) on all IPv4 interfaces and,
@@ -108,6 +110,7 @@ pub async fn bind(port: u16) -> LinkResult<Listener> {
         listeners,
         port,
         per_address: None,
+        capacity: None,
     })
 }
 
@@ -121,6 +124,13 @@ impl Listener {
     /// connections hold one until the handshake times out).
     pub fn with_per_address_limit(mut self, n: usize) -> Self {
         self.per_address = Some(n.max(1));
+        self
+    }
+
+    /// Room for up to `n` connections, so the session limit can later grow
+    /// to it (`ServerHandle::set_session_limit`; a Jam's guests).
+    pub fn with_session_capacity(mut self, n: usize) -> Self {
+        self.capacity = Some(n);
         self
     }
 
@@ -144,7 +154,12 @@ impl Listener {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let (stop_tx, stop_rx) = watch::channel(false);
-        let sessions = Arc::new(Semaphore::new(max_sessions));
+        let capacity = self.capacity.unwrap_or(0).max(max_sessions);
+        let slots = Slots {
+            sessions: Arc::new(Semaphore::new(capacity)),
+            capacity,
+            limit: Arc::new(AtomicUsize::new(max_sessions)),
+        };
         let handler = Arc::new(handler);
         let per_address = PerAddress::new(self.per_address);
         let tasks = self
@@ -152,26 +167,41 @@ impl Listener {
             .into_iter()
             .map(|listener| {
                 let stop = StopSignal(stop_rx.clone());
-                let sessions = Arc::clone(&sessions);
+                let slots = slots.clone();
                 let handler = Arc::clone(&handler);
                 let per_address = per_address.clone();
-                tokio::spawn(accept_loop(listener, stop, sessions, per_address, handler))
+                tokio::spawn(accept_loop(listener, stop, slots, per_address, handler))
             })
             .collect();
         ServerHandle {
             stop: stop_tx,
             tasks,
-            sessions,
-            max_sessions,
+            slots,
             port: self.port,
         }
+    }
+}
+
+/// The connection slots: `capacity` permits, of which at most `limit` may
+/// be in use (the limit can change while serving).
+#[derive(Debug, Clone)]
+struct Slots {
+    sessions: Arc<Semaphore>,
+    capacity: usize,
+    limit: Arc<AtomicUsize>,
+}
+
+impl Slots {
+    fn in_use(&self) -> usize {
+        self.capacity
+            .saturating_sub(self.sessions.available_permits())
     }
 }
 
 async fn accept_loop<H, Fut>(
     listener: TcpListener,
     mut stop: StopSignal,
-    sessions: Arc<Semaphore>,
+    slots: Slots,
     per_address: PerAddress,
     handler: Arc<H>,
 ) where
@@ -201,10 +231,16 @@ async fn accept_loop<H, Fut>(
             log::debug!("sync: too many connections from {}, dropped", peer.ip());
             continue;
         };
-        let Ok(permit) = Arc::clone(&sessions).try_acquire_owned() else {
+        let Ok(permit) = Arc::clone(&slots.sessions).try_acquire_owned() else {
             log::debug!("sync: session limit reached, dropped {peer}");
             continue;
         };
+        // Counted with our own permit: over the limit, give it back. Two
+        // racing accepts may both give up; neither ever goes over.
+        if slots.in_use() > slots.limit.load(Ordering::SeqCst) {
+            log::debug!("sync: session limit reached, dropped {peer}");
+            continue;
+        }
         let _ = stream.set_nodelay(true);
         let work = handler(stream, peer, stop.clone());
         let mut task_stop = stop.clone();
@@ -292,8 +328,7 @@ impl StopSignal {
 pub struct ServerHandle {
     stop: watch::Sender<bool>,
     tasks: Vec<JoinHandle<()>>,
-    sessions: Arc<Semaphore>,
-    max_sessions: usize,
+    slots: Slots,
     port: u16,
 }
 
@@ -304,8 +339,20 @@ impl ServerHandle {
 
     /// Connections being served right now (handshaking or in session).
     pub fn active_connections(&self) -> usize {
-        self.max_sessions
-            .saturating_sub(self.sessions.available_permits())
+        self.slots.in_use()
+    }
+
+    /// Most simultaneous connections from now on (at most the capacity
+    /// given to `Listener::with_session_capacity`). Lowering it closes
+    /// nothing; it only refuses new connections until enough have ended.
+    pub fn set_session_limit(&self, n: usize) {
+        self.slots
+            .limit
+            .store(n.clamp(1, self.slots.capacity), Ordering::SeqCst);
+    }
+
+    pub fn session_limit(&self) -> usize {
+        self.slots.limit.load(Ordering::SeqCst)
     }
 
     pub fn stop_signal(&self) -> StopSignal {
@@ -324,8 +371,8 @@ impl ServerHandle {
         for task in std::mem::take(&mut self.tasks) {
             let _ = task.await;
         }
-        let all = u32::try_from(self.max_sessions).unwrap_or(u32::MAX);
-        let _ = self.sessions.acquire_many(all).await;
+        let all = u32::try_from(self.slots.capacity).unwrap_or(u32::MAX);
+        let _ = self.slots.sessions.acquire_many(all).await;
     }
 }
 

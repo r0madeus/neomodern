@@ -30,6 +30,8 @@
   import NowPlaying from './NowPlaying.svelte'
   import QueueSheet from './QueueSheet.svelte'
   import RemoteScreen from './RemoteScreen.svelte'
+  import JamScreen from './JamScreen.svelte'
+  import { jam } from '../jam.svelte'
   import { sync } from '../sync.svelte'
   import UpdateBanner from '../UpdateBanner.svelte'
   import { updates } from '../updates.svelte'
@@ -79,6 +81,7 @@
   let queueOpen = $state(false)
   let lyricsOpen = $state(false)
   let remoteOpen = $state(false)
+  let jamOpen = $state(false)
 
   function selectTab(next: Tab) {
     clearLayers()
@@ -130,14 +133,17 @@
   const openQueue = () => open(queueOpen, () => (queueOpen = true), () => (queueOpen = false))
   const openLyrics = () => open(lyricsOpen, () => (lyricsOpen = true), () => (lyricsOpen = false))
   const openRemote = () => open(remoteOpen, () => (remoteOpen = true), () => (remoteOpen = false))
+  const openJam = () => open(jamOpen, () => (jamOpen = true), () => (jamOpen = false))
 
   function navigateFromOverlays(sheet: Sheet) {
-    const overlayCount = Number(playerOpen) + Number(queueOpen) + Number(lyricsOpen) + Number(remoteOpen)
+    const overlayCount =
+      Number(playerOpen) + Number(queueOpen) + Number(lyricsOpen) + Number(remoteOpen) + Number(jamOpen)
     if (overlayCount === 0) {
       pushSheet(sheet)
       return
     }
     if (tooSoon()) return
+    jamOpen = false
     remoteOpen = false
     lyricsOpen = false
     queueOpen = false
@@ -153,6 +159,7 @@
     library.registerAlbumNavigator((id) => navigateFromOverlays({ type: 'album', id }))
     trackMenu.registerQueueOpener(openQueue)
     sync.registerRemoteOpener(openRemote)
+    jam.registerScreenOpener(openJam)
   })
 
   // A deleted playlist closes its page when it is on top.
@@ -322,5 +329,8 @@
   {/if}
   {#if remoteOpen}
     <RemoteScreen onClose={popLayer} />
+  {/if}
+  {#if jamOpen}
+    <JamScreen onClose={popLayer} />
   {/if}
 </div>

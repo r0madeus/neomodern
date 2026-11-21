@@ -967,3 +967,236 @@ fn discovery_targets_start_with_the_limited_broadcast() {
     );
     assert!(t.iter().all(|a| a.port() == 47_321));
 }
+
+// ---------------------------------------------------------------------------
+// Jam joins (docs/JAM.md)
+// ---------------------------------------------------------------------------
+
+const GUEST_ID: &str = "jam-00112233445566778899aabbccddeeff";
+
+fn guest(n: u8) -> LocalDevice {
+    LocalDevice {
+        id: format!("jam-{n:032x}"),
+        name: format!("Guest {n}"),
+    }
+}
+
+/// A Jam host for the link tests: a window and a guest list.
+struct TestJam {
+    window: PairingWindow,
+    room: usize,
+    guests: std::sync::Mutex<Vec<Paired>>,
+}
+
+impl TestJam {
+    fn new(room: usize) -> Arc<Self> {
+        Arc::new(Self {
+            window: PairingWindow::jam(),
+            room,
+            guests: std::sync::Mutex::new(Vec::new()),
+        })
+    }
+
+    fn joined(&self) -> usize {
+        self.guests.lock().unwrap().len()
+    }
+}
+
+impl JamGate for TestJam {
+    fn window(&self) -> &PairingWindow {
+        &self.window
+    }
+    fn has_room(&self) -> bool {
+        self.joined() < self.room
+    }
+    fn admit(&self, guest: &Paired) -> bool {
+        self.guests.lock().unwrap().push(guest.clone());
+        true
+    }
+}
+
+fn jam_responder(pairing: Arc<PairingWindow>, jam: &Arc<TestJam>) -> Responder<Lookup> {
+    responder(pairing).with_jam(Arc::clone(jam) as Arc<dyn JamGate>)
+}
+
+async fn run_join(
+    r: &Responder<Lookup>,
+    local: &LocalDevice,
+    code: &str,
+) -> (LinkResult<Paired>, LinkResult<Accepted>) {
+    let (mut c, s) = pipe();
+    tokio::join!(jam_pair(&mut c, local, code), accept(s, r))
+}
+
+#[tokio::test]
+async fn guests_join_with_the_jam_code_and_the_code_stays() {
+    let jam = TestJam::new(8);
+    let code = jam.window.open().unwrap();
+    let r = jam_responder(Arc::new(PairingWindow::new()), &jam);
+    for n in 0..3 {
+        let (client, server) = run_join(&r, &guest(n), &code).await;
+        let client = client.expect("guest joins");
+        let Ok(Accepted::JamJoined(host_side)) = server else {
+            panic!("host did not admit: {server:?}");
+        };
+        assert_eq!(client.peer_name, "Desk PC");
+        assert_eq!(host_side.peer_id, guest(n).id);
+        assert_eq!(client.secret, host_side.secret);
+    }
+    assert_eq!(jam.joined(), 3);
+    // The code is not used up by a join.
+    assert!(matches!(jam.window.status(), PairingStatus::Open { code: c, .. } if c == code));
+    // A guest id must look like one; a device id cannot join a Jam.
+    let (mut c, _s) = pipe();
+    let refused = jam_pair(&mut c, &phone(), &code).await;
+    assert!(
+        matches!(refused, Err(LinkError::InvalidIdentity)),
+        "{refused:?}"
+    );
+}
+
+#[tokio::test]
+async fn jam_codes_and_pairing_codes_never_cross() {
+    let pairing = Arc::new(PairingWindow::new());
+    let jam = TestJam::new(8);
+    // Both windows hold the same code: only the kind decides.
+    pairing.open_with("424242");
+    jam.window.open_with("424242");
+    let r = jam_responder(Arc::clone(&pairing), &jam);
+
+    // A pairing opening with the Jam's labels, and the other way round:
+    // the keys differ, so the host sees a wrong code.
+    for (kind, jam_labels, local) in [(KIND_PAIR, true, phone()), (KIND_JAM, false, guest(1))] {
+        let (mut c, s) = pipe();
+        let (client, server) = tokio::join!(
+            super::pair::test_support::crossed(&mut c, &local, "424242", kind, jam_labels),
+            accept(s, &r)
+        );
+        assert!(matches!(client, Err(LinkError::WrongCode)), "{client:?}");
+        assert!(matches!(server, Err(LinkError::WrongCode)), "{server:?}");
+    }
+    assert_eq!(jam.joined(), 0);
+
+    // A pairing request with a guest id is refused outright.
+    let (mut c, s) = pipe();
+    let local = guest(2);
+    let (client, _) = tokio::join!(pair(&mut c, &local, "424242"), accept(s, &r));
+    assert!(matches!(client, Err(LinkError::Protocol(_))), "{client:?}");
+
+    // Each kind works with its own exchange.
+    let (client, _) = run_join(&r, &guest(3), "424242").await;
+    assert!(client.is_ok());
+    let (mut c, s) = pipe();
+    let local = phone();
+    let (client, server) = tokio::join!(pair(&mut c, &local, "424242"), accept(s, &r));
+    assert!(client.is_ok());
+    assert!(matches!(server, Ok(Accepted::Paired(_))));
+}
+
+#[tokio::test]
+async fn joins_are_refused_without_a_jam_or_when_it_is_full() {
+    // A server that hosts no Jam.
+    let r = responder(Arc::new(PairingWindow::new()));
+    let (client, _) = run_join(&r, &guest(1), "123456").await;
+    assert!(
+        matches!(client, Err(LinkError::PairingNotOpen)),
+        "{client:?}"
+    );
+
+    // A Jam whose code is closed.
+    let jam = TestJam::new(1);
+    let r = jam_responder(Arc::new(PairingWindow::new()), &jam);
+    let (client, _) = run_join(&r, &guest(1), "123456").await;
+    assert!(
+        matches!(client, Err(LinkError::PairingNotOpen)),
+        "{client:?}"
+    );
+
+    // Full: refused before any guess is made.
+    let code = jam.window.open().unwrap();
+    assert!(run_join(&r, &guest(1), &code).await.0.is_ok());
+    let (client, server) = run_join(&r, &guest(2), &code).await;
+    assert!(matches!(client, Err(LinkError::JamFull)), "{client:?}");
+    assert!(matches!(server, Err(LinkError::JamFull)));
+    assert_eq!(jam.joined(), 1);
+}
+
+#[tokio::test]
+async fn ten_wrong_jam_codes_replace_the_code() {
+    let jam = TestJam::new(8);
+    let code = jam.window.open().unwrap();
+    let wrong = other_code(&code);
+    let r = jam_responder(Arc::new(PairingWindow::new()), &jam);
+    for _ in 1..JAM_MAX_WRONG {
+        let (client, _) = run_join(&r, &guest(1), &wrong).await;
+        assert!(matches!(client, Err(LinkError::WrongCode)), "{client:?}");
+        assert!(matches!(jam.window.status(), PairingStatus::Open { code: c, .. } if c == code));
+    }
+    let (client, _) = run_join(&r, &guest(1), &wrong).await;
+    assert!(
+        matches!(client, Err(LinkError::TooManyAttempts)),
+        "{client:?}"
+    );
+    // Still open, with a new code; the old one no longer works.
+    let PairingStatus::Open { code: new, .. } = jam.window.status() else {
+        panic!("the Jam's code was closed");
+    };
+    assert_ne!(new, code);
+    let (client, _) = run_join(&r, &guest(2), &code).await;
+    assert!(client.is_err());
+    let (client, _) = run_join(&r, &guest(2), &new).await;
+    assert!(client.is_ok(), "{client:?}");
+    assert_eq!(GUEST_ID.len(), 36);
+    assert!(is_jam_guest_id(GUEST_ID) && !is_jam_guest_id(PHONE_ID) && !is_jam_guest_id("jam-"));
+}
+
+#[tokio::test]
+async fn the_session_limit_grows_and_shrinks() {
+    let listener = bind(0)
+        .await
+        .unwrap()
+        .with_session_capacity(MAX_SESSIONS + 1);
+    let port = listener.port();
+    let r = Arc::new(responder(Arc::new(PairingWindow::new())));
+    let server = listener.serve(1, move |stream, _peer, _stop| {
+        let r = Arc::clone(&r);
+        async move {
+            if let Ok(Accepted::Session(mut s)) = accept(stream, &r).await {
+                while let Ok(m) = s.recv().await {
+                    if s.send(&m).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    let closed_at_once = || async {
+        let mut extra = dial(addr, Duration::from_secs(1)).await.unwrap();
+        let mut buf = [0u8; 1];
+        tokio::time::timeout(Duration::from_secs(2), extra.read(&mut buf))
+            .await
+            .expect("closed promptly")
+            .unwrap_or(0)
+            == 0
+    };
+    assert_eq!(server.session_limit(), 1);
+    let mut first = connect(addr, &phone().id, &PC_SECRET).await.unwrap();
+    first.send(b"1").await.unwrap();
+    assert_eq!(first.recv().await.unwrap(), b"1");
+    assert!(closed_at_once().await);
+
+    server.set_session_limit(2);
+    let mut second = connect(addr, &phone().id, &PC_SECRET).await.unwrap();
+    second.send(b"2").await.unwrap();
+    assert_eq!(second.recv().await.unwrap(), b"2");
+    assert_eq!(server.active_connections(), 2);
+
+    // Never above the capacity; lowering closes nobody.
+    server.set_session_limit(100);
+    assert_eq!(server.session_limit(), MAX_SESSIONS + 1);
+    server.set_session_limit(1);
+    first.send(b"still").await.unwrap();
+    assert_eq!(first.recv().await.unwrap(), b"still");
+    server.shutdown().await;
+}

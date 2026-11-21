@@ -5,6 +5,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { FoundComputer, GuardSummary, RepeatMode } from './syncLogic'
+import { scanQrCode } from './qrScan'
 import { cleanFound, computerFor, interpolatePosition, remoteErrorKind, throttleLatest } from './syncLogic'
 
 export interface SyncResult {
@@ -224,21 +225,12 @@ class SyncStore {
   /** Phone: scans the computer's pairing QR code and pairs (K23); true
    *  when it worked. The camera is only used while the scanner is open. */
   scanPair = async (): Promise<boolean> => {
-    let link: string
-    try {
-      const scanner = await import('@tauri-apps/plugin-barcode-scanner')
-      let permission = await scanner.checkPermissions()
-      if (permission !== 'granted') permission = await scanner.requestPermissions()
-      if (permission !== 'granted') {
-        this.error = { action: 'connect', message: 'camera permission was not given' }
-        return false
-      }
-      link = (await scanner.scan({ windowed: false, formats: [scanner.Format.QRCode] })).content
-    } catch (e) {
-      // Closing the scanner is not an error.
-      if (!/cancel/i.test(String(e))) this.error = { action: 'connect', message: String(e) }
+    const scanned = await scanQrCode()
+    if (!scanned.ok) {
+      if (scanned.error) this.error = { action: 'connect', message: scanned.error }
       return false
     }
+    const link = scanned.content
     return this.#status('connect', 'sync_connect_pair_link', { link })
   }
   /** Phone: looks for computers on the Wi-Fi (about 1.5 s). */

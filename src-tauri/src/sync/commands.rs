@@ -1,6 +1,9 @@
 //! Tauri commands of PC <-> phone sync and the remote (docs/SYNC.md).
 //! Thin wrappers around [`SyncService`]; small payloads only.
 
+use super::jam::JamSearchPage;
+use super::jam::guest::JamGuestStatus;
+use super::jam::host::JamStatus;
 use super::remote::{QueuePage, RemoteCmd, RemoteState};
 use super::service::{FoundComputerInfo, PairingOpen, SyncService, SyncStatus};
 use crate::player::Player;
@@ -122,4 +125,109 @@ pub async fn remote_state(sync: State<'_, SyncService>) -> Res<Option<RemoteStat
 #[tauri::command]
 pub async fn sync_cover_for_key(sync: State<'_, SyncService>, key: String) -> Res<Option<String>> {
     sync.cover_for_key(&key).await
+}
+
+// --- Local Jam (K27, docs/JAM.md) -------------------------------------------
+
+/// Desktop: the Jam panel's status.
+#[tauri::command]
+pub async fn jam_status(sync: State<'_, SyncService>) -> Res<JamStatus> {
+    sync.jam_status().await
+}
+
+/// Desktop: Settings › Experimental › Jam (persisted; off by default). Off
+/// ends a running Jam.
+#[tauri::command]
+pub async fn jam_set_enabled(
+    sync: State<'_, SyncService>,
+    store: State<'_, Arc<SessionStore>>,
+    player: State<'_, Arc<Player>>,
+    enabled: bool,
+) -> Res<JamStatus> {
+    let status = sync.jam_set_enabled(enabled).await?;
+    store.set_jam_enabled(enabled);
+    store.save_now(&player.export_session());
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn jam_start(sync: State<'_, SyncService>) -> Res<JamStatus> {
+    sync.jam_start().await
+}
+
+#[tauri::command]
+pub async fn jam_end(sync: State<'_, SyncService>) -> Res<JamStatus> {
+    sync.jam_end().await
+}
+
+#[tauri::command]
+pub async fn jam_new_code(sync: State<'_, SyncService>) -> Res<JamStatus> {
+    sync.jam_new_code().await
+}
+
+#[tauri::command]
+pub async fn jam_remove_guest(sync: State<'_, SyncService>, id: String) -> Res<JamStatus> {
+    sync.jam_remove_guest(&id).await
+}
+
+/// Phone: the guest screen's status.
+#[tauri::command]
+pub async fn jam_guest_status(sync: State<'_, SyncService>) -> Res<JamGuestStatus> {
+    Ok(sync.jam_guest_status())
+}
+
+/// Phone: Settings › Experimental › Jam (persisted; off by default). Off
+/// leaves a joined Jam.
+#[tauri::command]
+pub async fn jam_guest_set_enabled(
+    sync: State<'_, SyncService>,
+    store: State<'_, Arc<SessionStore>>,
+    player: State<'_, Arc<Player>>,
+    enabled: bool,
+) -> Res<JamGuestStatus> {
+    let status = sync.jam_guest_set_enabled(enabled);
+    store.set_jam_guest_enabled(enabled);
+    store.save_now(&player.export_session());
+    Ok(status)
+}
+
+/// Phone: joins with the typed code; without an address, at the computers
+/// the discovery finds.
+#[tauri::command]
+pub async fn jam_join(
+    sync: State<'_, SyncService>,
+    address: Option<String>,
+    code: String,
+) -> Res<JamGuestStatus> {
+    sync.jam_join(address.as_deref(), &code).await
+}
+
+/// Phone: joins from a scanned Jam QR code.
+#[tauri::command]
+pub async fn jam_join_link(sync: State<'_, SyncService>, link: String) -> Res<JamGuestStatus> {
+    sync.jam_join_link(&link).await
+}
+
+#[tauri::command]
+pub async fn jam_leave(sync: State<'_, SyncService>) -> Res<()> {
+    sync.jam_leave();
+    Ok(())
+}
+
+/// Phone: searches the host's library (at most 30 per page).
+#[tauri::command]
+pub async fn jam_search(
+    sync: State<'_, SyncService>,
+    query: String,
+    offset: usize,
+    limit: usize,
+) -> Res<JamSearchPage> {
+    sync.jam_search(&query, offset, limit).await
+}
+
+/// Phone: adds a song to the end of the host's queue; the error is the text
+/// to show.
+#[tauri::command]
+pub async fn jam_add(sync: State<'_, SyncService>, track_id: i64) -> Res<()> {
+    sync.jam_add(track_id).await
 }

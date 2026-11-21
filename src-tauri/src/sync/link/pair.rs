@@ -38,10 +38,18 @@
 //! proof has learnt nothing it could test a guess with, so that is not
 //! counted (it only frees the slot). The final "done" makes the PC store
 //! the secret only after the phone has accepted the PC's proof.
+//!
+//! **Jam joins** (docs/JAM.md) run the same exchange under their own
+//! connection kind and their own labels (SPAKE2 identities, transcript and
+//! HKDF info strings all say "jam"), so a Jam code can never complete a
+//! pairing and a pairing code can never complete a Jam join. The Jam's
+//! code stays valid while the Jam runs and is replaced after 10 wrong
+//! codes in total; the guest id must start with `jam-`, a paired device's
+//! id must not.
 
 use super::error::{LinkError, LinkResult};
 use super::frame::{read_frame, write_frame};
-use super::{KIND_PAIR, LocalDevice, PROTOCOL_VERSION, opening_frame};
+use super::{KIND_JAM, KIND_PAIR, LocalDevice, PROTOCOL_VERSION, is_jam_guest_id, opening_frame};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -56,13 +64,36 @@ use tokio::io::{AsyncRead, AsyncWrite};
 pub const CODE_TTL: Duration = Duration::from_secs(120);
 /// Wrong codes allowed before the code is thrown away.
 pub const MAX_WRONG_ATTEMPTS: u8 = 3;
+/// Wrong codes in total before a Jam's code is replaced by a new one.
+pub const JAM_MAX_WRONG: u8 = 10;
 
-const ID_CLIENT: &[u8] = b"neomodern sync client";
-const ID_SERVER: &[u8] = b"neomodern sync server";
-const TRANSCRIPT_LABEL: &[u8] = b"neomodern pair v1 transcript";
-const INFO_CONFIRM_CLIENT: &[u8] = b"neomodern pair v1 confirm client";
-const INFO_CONFIRM_SERVER: &[u8] = b"neomodern pair v1 confirm server";
-const INFO_SECRET: &[u8] = b"neomodern pair v1 device secret";
+/// The domain-separation strings of one kind of exchange.
+struct Labels {
+    id_client: &'static [u8],
+    id_server: &'static [u8],
+    transcript: &'static [u8],
+    confirm_client: &'static [u8],
+    confirm_server: &'static [u8],
+    secret: &'static [u8],
+}
+
+const PAIR_LABELS: Labels = Labels {
+    id_client: b"neomodern sync client",
+    id_server: b"neomodern sync server",
+    transcript: b"neomodern pair v1 transcript",
+    confirm_client: b"neomodern pair v1 confirm client",
+    confirm_server: b"neomodern pair v1 confirm server",
+    secret: b"neomodern pair v1 device secret",
+};
+
+const JAM_LABELS: Labels = Labels {
+    id_client: b"neomodern jam guest",
+    id_server: b"neomodern jam host",
+    transcript: b"neomodern jam v1 transcript",
+    confirm_client: b"neomodern jam v1 confirm guest",
+    confirm_server: b"neomodern jam v1 confirm host",
+    secret: b"neomodern jam v1 guest key",
+};
 /// Pairing messages are small JSON objects.
 const MAX_PAIR_FRAME: usize = 4096;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -127,6 +158,10 @@ impl std::fmt::Debug for PairingStatus {
 /// success.
 pub struct PairingWindow {
     ttl: Duration,
+    max_wrong: u8,
+    /// A Jam's code: not used up by a success, and replaced by a fresh one
+    /// (instead of closing) after `max_wrong` wrong codes.
+    reusable: bool,
     state: Mutex<WindowState>,
 }
 
@@ -171,6 +206,20 @@ impl PairingWindow {
     pub fn with_ttl(ttl: Duration) -> Self {
         Self {
             ttl,
+            max_wrong: MAX_WRONG_ATTEMPTS,
+            reusable: false,
+            state: Mutex::new(WindowState::default()),
+        }
+    }
+
+    /// A Jam's code: valid until closed, any number of guests can join
+    /// with it, and after `JAM_MAX_WRONG` wrong codes in total it is
+    /// replaced by a new one.
+    pub fn jam() -> Self {
+        Self {
+            ttl: Duration::MAX,
+            max_wrong: JAM_MAX_WRONG,
+            reusable: true,
             state: Mutex::new(WindowState::default()),
         }
     }
@@ -202,6 +251,20 @@ impl PairingWindow {
         s.busy = None;
         s.active = None;
         s.ended = None;
+    }
+
+    /// Opens with a given code (tests that need two windows with one code).
+    #[cfg(test)]
+    pub(super) fn open_with(&self, code: &str) {
+        let mut s = self.lock();
+        s.generation += 1;
+        s.busy = None;
+        s.ended = None;
+        s.active = Some(ActiveCode {
+            code: code.to_owned(),
+            opened: Instant::now(),
+            wrong: 0,
+        });
     }
 
     pub fn status(&self) -> PairingStatus {
@@ -262,7 +325,7 @@ struct Ticket<'a> {
 
 impl Ticket<'_> {
     /// Counts a wrong code. Returns true when this was the last allowed
-    /// attempt (the code is now invalid).
+    /// attempt (the code is now invalid; a Jam gets a new one).
     fn wrong_code(self) -> bool {
         let mut s = self.window.lock();
         if s.generation != self.generation {
@@ -272,24 +335,40 @@ impl Ticket<'_> {
             return false;
         };
         active.wrong += 1;
-        if active.wrong >= MAX_WRONG_ATTEMPTS {
-            s.active = None;
-            s.ended = Some(PairingStatus::TooManyAttempts);
-            return true;
+        if active.wrong < self.window.max_wrong {
+            return false;
         }
-        false
+        match random_code() {
+            Ok(code) if self.window.reusable => {
+                s.generation += 1;
+                s.active = Some(ActiveCode {
+                    code,
+                    opened: Instant::now(),
+                    wrong: 0,
+                });
+            }
+            _ => {
+                s.active = None;
+                s.ended = Some(PairingStatus::TooManyAttempts);
+            }
+        }
+        true
     }
 
-    /// The code worked: it is used up. Fails when the window was closed or
-    /// re-opened meanwhile (the user cancelled; do not pair).
-    fn succeeded(self) -> LinkResult<()> {
+    /// The code worked: a pairing code is used up, a Jam's code stays.
+    /// Fails when the window was closed or re-opened meanwhile (the user
+    /// cancelled; do not pair). The slot stays claimed until the ticket is
+    /// dropped.
+    fn succeeded(&self) -> LinkResult<()> {
         let mut s = self.window.lock();
         if s.generation != self.generation || s.active.is_none() {
             return Err(LinkError::PairingNotOpen);
         }
-        s.generation += 1;
-        s.active = None;
-        s.ended = None;
+        if !self.window.reusable {
+            s.generation += 1;
+            s.active = None;
+            s.ended = None;
+        }
         Ok(())
     }
 }
@@ -347,6 +426,8 @@ enum ErrorCode {
     BadRequest,
     WrongCode,
     TooManyAttempts,
+    /// Jam only: it has the most guests already.
+    Full,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -374,6 +455,7 @@ impl From<ErrorCode> for LinkError {
             ErrorCode::BadRequest => LinkError::Protocol("the computer refused the request"),
             ErrorCode::WrongCode => LinkError::WrongCode,
             ErrorCode::TooManyAttempts => LinkError::TooManyAttempts,
+            ErrorCode::Full => LinkError::JamFull,
         }
     }
 }
@@ -419,10 +501,16 @@ struct Keys {
 
 /// Everything both sides sent, in a fixed order, each field length-prefixed
 /// so no two different transcripts hash the same input.
-fn transcript(client: &Hello, client_msg: &[u8], server: &Hello, server_msg: &[u8]) -> [u8; 32] {
+fn transcript(
+    labels: &Labels,
+    client: &Hello,
+    client_msg: &[u8],
+    server: &Hello,
+    server_msg: &[u8],
+) -> [u8; 32] {
     let mut h = Sha256::new();
     for field in [
-        TRANSCRIPT_LABEL,
+        labels.transcript,
         &PROTOCOL_VERSION.to_be_bytes(),
         client.device_id.as_bytes(),
         client.device_name.as_bytes(),
@@ -437,7 +525,13 @@ fn transcript(client: &Hello, client_msg: &[u8], server: &Hello, server_msg: &[u
     h.finalize().into()
 }
 
-fn derive_keys(k: &[u8], th: [u8; 32], client_id: &str, server_id: &str) -> LinkResult<Keys> {
+fn derive_keys(
+    labels: &Labels,
+    k: &[u8],
+    th: [u8; 32],
+    client_id: &str,
+    server_id: &str,
+) -> LinkResult<Keys> {
     let hk = Hkdf::<Sha256>::new(Some(&th), k);
     let expand = |info: &[&[u8]]| -> LinkResult<[u8; 32]> {
         let mut out = [0u8; 32];
@@ -447,12 +541,12 @@ fn derive_keys(k: &[u8], th: [u8; 32], client_id: &str, server_id: &str) -> Link
     };
     Ok(Keys {
         th,
-        client_mac_key: expand(&[INFO_CONFIRM_CLIENT])?,
-        server_mac_key: expand(&[INFO_CONFIRM_SERVER])?,
+        client_mac_key: expand(&[labels.confirm_client])?,
+        server_mac_key: expand(&[labels.confirm_server])?,
         // Device ids cannot contain 0x00 (see `valid_device_id`), so the
         // separators make the info string unambiguous.
         secret: expand(&[
-            INFO_SECRET,
+            labels.secret,
             &[0],
             client_id.as_bytes(),
             &[0],
@@ -480,9 +574,12 @@ fn verify_mac(key: &[u8; 32], th: &[u8; 32], received_hex: &str) -> bool {
     m.verify_slice(&received).is_ok()
 }
 
-fn spake_start(code: &str, client: bool) -> (Spake2<Ed25519Group>, Vec<u8>) {
+fn spake_start(labels: &Labels, code: &str, client: bool) -> (Spake2<Ed25519Group>, Vec<u8>) {
     let pw = Password::new(code.as_bytes());
-    let (a, b) = (Identity::new(ID_CLIENT), Identity::new(ID_SERVER));
+    let (a, b) = (
+        Identity::new(labels.id_client),
+        Identity::new(labels.id_server),
+    );
     if client {
         Spake2::<Ed25519Group>::start_a(&pw, &a, &b)
     } else {
@@ -498,13 +595,33 @@ fn check_hello(h: &Hello) -> bool {
 // Server side
 // ---------------------------------------------------------------------------
 
+/// The host's side of a Jam join (the sync service implements it).
+pub trait JamGate: Send + Sync {
+    /// The Jam's code; closed while no Jam runs.
+    fn window(&self) -> &PairingWindow;
+    /// The Jam can take another guest.
+    fn has_room(&self) -> bool;
+    /// Keeps the new guest. Called while the code's single exchange slot is
+    /// still held, so two joins cannot both pass the guest limit. False
+    /// refuses it (e.g. the Jam ended meanwhile).
+    fn admit(&self, guest: &Paired) -> bool;
+}
+
+/// Which exchange the server runs.
+#[derive(Clone, Copy)]
+pub(super) enum Mode<'a> {
+    Pair(&'a PairingWindow),
+    /// `None`: this server hosts no Jam.
+    Jam(Option<&'a dyn JamGate>),
+}
+
 /// Runs the server half after the opening frame (`body` = its JSON).
 pub(super) async fn respond<S>(
     stream: &mut S,
     version: u16,
     body: &[u8],
     local: &LocalDevice,
-    window: &PairingWindow,
+    mode: Mode<'_>,
 ) -> LinkResult<Paired>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -513,15 +630,27 @@ where
         send_json(stream, &ServerMsg::Error(ErrorCode::Version)).await?;
         return Err(LinkError::VersionMismatch);
     }
+    let jam = matches!(mode, Mode::Jam(_));
+    let labels = if jam { &JAM_LABELS } else { &PAIR_LABELS };
+    // Guest ids and device ids never overlap, so a session's id alone says
+    // whether it is a Jam guest.
     let parsed: Option<(Hello, Vec<u8>)> = serde_json::from_slice::<Hello>(body)
         .ok()
-        .filter(check_hello)
+        .filter(|h| check_hello(h) && is_jam_guest_id(&h.device_id) == jam)
         .and_then(|h| from_hex(&h.spake2).map(|m| (h, m)));
     let Some((client, client_msg)) = parsed else {
         send_json(stream, &ServerMsg::Error(ErrorCode::BadRequest)).await?;
         return Err(LinkError::Protocol("malformed pairing request"));
     };
 
+    let (window, gate) = match mode {
+        Mode::Pair(w) => (w, None),
+        Mode::Jam(Some(g)) => (g.window(), Some(g)),
+        Mode::Jam(None) => {
+            send_json(stream, &ServerMsg::Error(ErrorCode::NotOpen)).await?;
+            return Err(LinkError::PairingNotOpen);
+        }
+    };
     let ticket = match window.begin() {
         Ok(t) => t,
         Err(e) => {
@@ -531,8 +660,12 @@ where
             return Err(e);
         }
     };
+    if gate.is_some_and(|g| !g.has_room()) {
+        send_json(stream, &ServerMsg::Error(ErrorCode::Full)).await?;
+        return Err(LinkError::JamFull);
+    }
 
-    let (spake, server_msg) = spake_start(&ticket.code, false);
+    let (spake, server_msg) = spake_start(labels, &ticket.code, false);
     // A malformed SPAKE2 element is a broken client, not a guess: refuse
     // without counting (the ticket is released on drop).
     let Ok(k) = spake.finish(&client_msg) else {
@@ -544,8 +677,8 @@ where
         device_name: local.name.clone(),
         spake2: to_hex(&server_msg),
     };
-    let th = transcript(&client, &client_msg, &server, &server_msg);
-    let keys = derive_keys(&k, th, &client.device_id, &server.device_id)?;
+    let th = transcript(labels, &client, &client_msg, &server, &server_msg);
+    let keys = derive_keys(labels, &k, th, &client.device_id, &server.device_id)?;
     send_json(stream, &ServerMsg::Reply(server)).await?;
 
     let ClientMsg::Confirm(proof) = recv_json::<_, ClientMsg>(stream).await? else {
@@ -571,11 +704,15 @@ where
         ClientMsg::Confirm(_) => return Err(LinkError::Protocol("expected done")),
     }
     ticket.succeeded()?;
-    Ok(Paired {
+    let paired = Paired {
         peer_id: client.device_id,
         peer_name: client.device_name,
         secret: keys.secret,
-    })
+    };
+    if gate.is_some_and(|g| !g.admit(&paired)) {
+        return Err(LinkError::PairingNotOpen);
+    }
+    Ok(paired)
 }
 
 // ---------------------------------------------------------------------------
@@ -594,11 +731,43 @@ pub async fn pair<S>(stream: &mut S, local: &LocalDevice, code: &str) -> LinkRes
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    exchange(stream, local, code, KIND_PAIR, &PAIR_LABELS).await
+}
+
+/// Joins the Jam hosted at `addr` with its code. `local.id` is the guest's
+/// fresh random id (`jam-…`); the result's secret is the session key.
+pub async fn jam_join(addr: SocketAddr, local: &LocalDevice, code: &str) -> LinkResult<Paired> {
+    check_code(code)?;
+    let mut stream = super::server::dial(addr, IO_TIMEOUT).await?;
+    jam_pair(&mut stream, local, code).await
+}
+
+/// Guest half of a Jam join over an already connected stream.
+pub async fn jam_pair<S>(stream: &mut S, local: &LocalDevice, code: &str) -> LinkResult<Paired>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    if !is_jam_guest_id(&local.id) {
+        return Err(LinkError::InvalidIdentity);
+    }
+    exchange(stream, local, code, KIND_JAM, &JAM_LABELS).await
+}
+
+async fn exchange<S>(
+    stream: &mut S,
+    local: &LocalDevice,
+    code: &str,
+    kind: u8,
+    labels: &Labels,
+) -> LinkResult<Paired>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     check_code(code)?;
     if !super::valid_device_id(&local.id) || !super::valid_device_name(&local.name) {
         return Err(LinkError::InvalidIdentity);
     }
-    let (spake, client_msg) = spake_start(code, true);
+    let (spake, client_msg) = spake_start(labels, code, true);
     let client = Hello {
         device_id: local.id.clone(),
         device_name: local.name.clone(),
@@ -607,7 +776,7 @@ where
     let body = serde_json::to_vec(&client).map_err(|_| LinkError::Protocol("encoding failed"))?;
     write_frame(
         stream,
-        &opening_frame(KIND_PAIR, &body),
+        &opening_frame(kind, &body),
         MAX_PAIR_FRAME,
         IO_TIMEOUT,
     )
@@ -625,8 +794,8 @@ where
     let k = spake
         .finish(&server_msg)
         .map_err(|_| LinkError::PairingFailed)?;
-    let th = transcript(&client, &client_msg, &server, &server_msg);
-    let keys = derive_keys(&k, th, &client.device_id, &server.device_id)?;
+    let th = transcript(labels, &client, &client_msg, &server, &server_msg);
+    let keys = derive_keys(labels, &k, th, &client.device_id, &server.device_id)?;
 
     let proof = Proof {
         mac: to_hex(&mac(&keys.client_mac_key, &keys.th)?),
@@ -690,7 +859,7 @@ pub(super) mod test_support {
 
     /// The opening frame a client sends, for tests that stall mid-pairing.
     pub fn client_opening(local: &LocalDevice, code: &str) -> Vec<u8> {
-        let (_, msg) = spake_start(code, true);
+        let (_, msg) = spake_start(&PAIR_LABELS, code, true);
         let hello = Hello {
             device_id: local.id.clone(),
             device_name: local.name.clone(),
@@ -698,5 +867,25 @@ pub(super) mod test_support {
         };
         let body = serde_json::to_vec(&hello).expect("serialisable");
         opening_frame(KIND_PAIR, &body)
+    }
+
+    /// A client that sends one kind's opening but uses the other kind's
+    /// labels (`jam_labels`), to show the two exchanges never mix.
+    pub async fn crossed<S>(
+        stream: &mut S,
+        local: &LocalDevice,
+        code: &str,
+        kind: u8,
+        jam_labels: bool,
+    ) -> LinkResult<Paired>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        let labels = if jam_labels {
+            &JAM_LABELS
+        } else {
+            &PAIR_LABELS
+        };
+        exchange(stream, local, code, kind, labels).await
     }
 }

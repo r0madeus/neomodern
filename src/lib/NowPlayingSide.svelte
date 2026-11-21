@@ -5,6 +5,7 @@
   import Cover from './Cover.svelte'
   import FavoriteButton from './FavoriteButton.svelte'
   import Icon from './Icon.svelte'
+  import JamButton from './JamButton.svelte'
   import { artists, splitArtistNames, type ArtistProfile } from './artists.svelte'
   import { trackMenu } from './contextMenu.svelte'
   import { library, type TrackRow } from './library.svelte'
@@ -80,6 +81,7 @@
     {nowCover.track?.album || t('Now playing')}
   </h2>
   <div class="flex shrink-0 items-center gap-0.5">
+    <JamButton iconOnly />
     {#if cur}
       <button
         type="button"

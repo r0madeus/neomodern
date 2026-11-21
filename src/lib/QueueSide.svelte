@@ -3,6 +3,7 @@
   import ArtistLinks from './ArtistLinks.svelte'
   import Cover from './Cover.svelte'
   import Icon from './Icon.svelte'
+  import JamButton from './JamButton.svelte'
   import QueueList from './QueueList.svelte'
   import { trackMenu } from './contextMenu.svelte'
   import { history, type RecentListen } from './history.svelte'
@@ -121,15 +122,18 @@
         {t('Recently played')}
       </button>
     </div>
-    <button
-      type="button"
-      class="mb-2 rounded-full p-1.5 text-zinc-500 outline-none transition hover:bg-zinc-200/80 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-      onclick={onClose}
-      aria-label={t('Close right panel')}
-      title={t('Close right panel')}
-    >
-      <Icon name="close" class="size-4" />
-    </button>
+    <div class="mb-2 flex items-center gap-1">
+      <JamButton />
+      <button
+        type="button"
+        class="rounded-full p-1.5 text-zinc-500 outline-none transition hover:bg-zinc-200/80 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+        onclick={onClose}
+        aria-label={t('Close right panel')}
+        title={t('Close right panel')}
+      >
+        <Icon name="close" class="size-4" />
+      </button>
+    </div>
   </div>
 </header>
 

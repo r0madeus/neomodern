@@ -19,7 +19,7 @@ use tempfile::TempDir;
 const SONGS: usize = 14;
 
 #[derive(Default)]
-struct Events(Mutex<Vec<(String, serde_json::Value)>>);
+pub(super) struct Events(Mutex<Vec<(String, serde_json::Value)>>);
 
 impl EventSink for Events {
     fn emit(&self, event: &str, payload: serde_json::Value) {
@@ -28,7 +28,7 @@ impl EventSink for Events {
 }
 
 impl Events {
-    fn named(&self, name: &str) -> Vec<serde_json::Value> {
+    pub(super) fn named(&self, name: &str) -> Vec<serde_json::Value> {
         self.0
             .lock()
             .unwrap()
@@ -39,25 +39,25 @@ impl Events {
     }
 }
 
-struct Dev {
+pub(super) struct Dev {
     _dir: TempDir,
-    lib: Arc<Library>,
-    svc: SyncService,
-    events: Arc<Events>,
-    player: Arc<Player>,
+    pub(super) lib: Arc<Library>,
+    pub(super) svc: SyncService,
+    pub(super) events: Arc<Events>,
+    pub(super) player: Arc<Player>,
 }
 
-fn title(i: usize) -> String {
+pub(super) fn title(i: usize) -> String {
     format!("Song {i}")
 }
 
-fn path(i: usize) -> String {
+pub(super) fn path(i: usize) -> String {
     format!("/m/{i}.flac")
 }
 
 /// A device whose library holds songs 0..SONGS (same tags on every device,
 /// so they resolve to the same keys).
-async fn device(name: &str, server: bool) -> Dev {
+pub(super) async fn device(name: &str, server: bool) -> Dev {
     let dir = TempDir::new().unwrap();
     let lib = Arc::new(
         Library::open(
@@ -117,7 +117,7 @@ async fn device(name: &str, server: bool) -> Dev {
     }
 }
 
-fn rt<F: std::future::Future>(f: F) -> F::Output {
+pub(super) fn rt<F: std::future::Future>(f: F) -> F::Output {
     tauri::async_runtime::block_on(f)
 }
 
@@ -139,7 +139,7 @@ macro_rules! wait_for {
 }
 
 impl Dev {
-    fn id_of(&self, i: usize) -> i64 {
+    pub(super) fn id_of(&self, i: usize) -> i64 {
         db::track_id_by_path(&self.lib.conn(), &path(i))
             .unwrap()
             .unwrap()

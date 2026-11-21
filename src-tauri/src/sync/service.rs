@@ -8,6 +8,8 @@
 //! tests without a Tauri app.
 
 use super::conn::{self, Ctl, Role};
+use super::jam::guest::GuestRt;
+use super::jam::host::JamHost;
 use super::link::{self, Accepted, LocalDevice, PairingStatus, PairingWindow, Responder};
 use super::protocol::GuardSummary;
 use super::remote::{QueuePage, RemoteCmd, RemoteFeed, RemoteState};
@@ -233,12 +235,16 @@ pub(super) struct Shared {
     pub backup_dir: PathBuf,
     sink: Arc<dyn EventSink>,
     port: u16,
-    server_capable: bool,
+    pub server_capable: bool,
     default_name: String,
     window: Arc<PairingWindow>,
     /// Device id -> pairing secret of paired phones, for the responder
     /// (it must not touch SQLite on the async runtime).
     secrets: Arc<RwLock<HashMap<String, [u8; 32]>>>,
+    /// The Jam this computer hosts (docs/JAM.md; memory only).
+    pub jam: Arc<JamHost>,
+    /// The Jam this phone joined.
+    pub guest: GuestRt,
     st: Mutex<State>,
     status_dirty: Notify,
     library_dirty: Notify,
@@ -345,6 +351,15 @@ impl Drop for SessionGuard {
 impl Shared {
     fn state(&self) -> MutexGuard<'_, State> {
         self.st.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub(super) fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+
+    /// The port the listener runs on, if it runs.
+    pub(super) fn listening_port(&self) -> Option<u16> {
+        self.state().server.as_ref().map(|s| s.port)
     }
 
     /// Something in the status changed; the status task emits it.
@@ -485,7 +500,7 @@ impl Shared {
 /// The sync service. Cheap to clone; managed by Tauri.
 #[derive(Clone)]
 pub struct SyncService {
-    sh: Arc<Shared>,
+    pub(super) sh: Arc<Shared>,
 }
 
 impl SyncService {
@@ -508,6 +523,8 @@ impl SyncService {
                 default_name: config.default_name,
                 window: Arc::new(PairingWindow::new()),
                 secrets: Arc::new(RwLock::new(HashMap::new())),
+                jam: Arc::new(JamHost::default()),
+                guest: GuestRt::default(),
                 st: Mutex::new(State::default()),
                 status_dirty: Notify::new(),
                 library_dirty: Notify::new(),
@@ -529,6 +546,7 @@ impl SyncService {
         }
         tauri::async_runtime::spawn(status_task(Arc::clone(&self.sh)));
         tauri::async_runtime::spawn(capture_task(Arc::clone(&self.sh)));
+        tauri::async_runtime::spawn(super::jam::host::status_task(Arc::clone(&self.sh)));
         if let Err(e) = self.sh.local_device().await {
             log::warn!("sync: no device identity: {e}");
         }
@@ -573,10 +591,13 @@ impl SyncService {
     pub async fn shutdown(&self) {
         self.sh.closed.store(true, Ordering::SeqCst);
         self.stop_client();
+        self.jam_leave();
+        self.jam_end_inner().await;
         let _ = self.set_allow_phone_connections(false).await;
         self.sh.state().sessions.clear();
         self.sh.status_dirty.notify_one();
         self.sh.library_dirty.notify_one();
+        self.sh.jam.dirty();
     }
 
     /// The library changed (its `on_changed` hook): local changes are
@@ -618,39 +639,61 @@ impl SyncService {
     // --- server role (desktop) -------------------------------------------
 
     /// "Allow phone connections": on listens on the sync port, off closes
-    /// the listener, the pairing window and every phone's session.
+    /// the listener (unless a Jam still needs it), the pairing window and
+    /// every phone's session.
     pub async fn set_allow_phone_connections(&self, on: bool) -> Result<SyncStatus, String> {
         if on && !self.sh.server_capable {
             return Err("this device cannot accept connections".into());
         }
         if on {
-            let running = self.sh.state().server.is_some();
-            if !running {
+            if !self.server_running() {
                 self.start_server().await?;
             }
             self.sh.state().enabled = true;
         } else {
-            let server = {
+            {
                 let mut st = self.sh.state();
                 st.enabled = false;
                 // Phones' sessions: drop their control channels.
                 let client = st.client.as_ref().map(|c| c.peer_id.clone());
                 st.sessions.retain(|id, _| Some(id) == client.as_ref());
-                st.server.take()
-            };
-            self.sh.window.close();
-            if let Some(server) = server {
-                if let Some(discovery) = server.discovery {
-                    discovery.shutdown().await;
-                }
-                server.handle.shutdown().await;
             }
+            self.sh.window.close();
+            self.stop_server_if_unused().await;
         }
         self.sh.dirty();
         self.status().await
     }
 
-    async fn start_server(&self) -> Result<(), String> {
+    pub(super) fn server_running(&self) -> bool {
+        self.sh.state().server.is_some()
+    }
+
+    pub(super) fn with_server(&self, f: impl FnOnce(&link::ServerHandle)) {
+        if let Some(server) = self.sh.state().server.as_ref() {
+            f(&server.handle);
+        }
+    }
+
+    /// Closes the listener when neither phone connections nor a Jam need it.
+    pub(super) async fn stop_server_if_unused(&self) {
+        let server = {
+            let mut st = self.sh.state();
+            if st.enabled || self.sh.jam.running() {
+                return;
+            }
+            st.server.take()
+        };
+        if let Some(server) = server {
+            if let Some(discovery) = server.discovery {
+                discovery.shutdown().await;
+            }
+            server.handle.shutdown().await;
+        }
+        self.sh.dirty();
+    }
+
+    pub(super) async fn start_server(&self) -> Result<(), String> {
         let local = self.sh.local_device().await?;
         let (discovery_id, discovery_name) = (local.id.clone(), local.name.clone());
         let secrets: HashMap<String, [u8; 32]> = db(&self.sh, |c| {
@@ -665,26 +708,42 @@ impl SyncService {
             .await
             .map_err(|e| format!("could not listen on port {}: {e}", self.sh.port))?;
         let port = listener.port();
-        let lookup = Arc::clone(&self.sh.secrets);
-        let responder = Arc::new(Responder::new(
-            local,
-            Arc::clone(&self.sh.window),
-            move |id: &str| {
-                lookup
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .get(id)
-                    .copied()
-            },
-        ));
+        // A Jam guest's id only ever finds a guest key, a phone's id only a
+        // pairing secret, and that only while phone connections are on (the
+        // listener may run for a Jam alone).
+        let lookup_sh = Arc::clone(&self.sh);
+        let lookup = move |id: &str| {
+            if link::is_jam_guest_id(id) {
+                return lookup_sh.jam.key(id);
+            }
+            if !lookup_sh.state().enabled {
+                return None;
+            }
+            lookup_sh
+                .secrets
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(id)
+                .copied()
+        };
+        let responder = Arc::new(
+            Responder::new(local, Arc::clone(&self.sh.window), lookup)
+                .with_jam(Arc::clone(&self.sh.jam) as Arc<dyn link::JamGate>),
+        );
         let sh = Arc::clone(&self.sh);
-        let listener = listener.with_per_address_limit(link::MAX_PER_ADDRESS);
+        let listener = listener
+            .with_per_address_limit(link::MAX_PER_ADDRESS)
+            .with_session_capacity(link::MAX_SESSIONS + link::MAX_JAM_GUESTS);
         let handle = listener.serve(link::MAX_SESSIONS, move |stream, _addr, _stop| {
             let sh = Arc::clone(&sh);
             let responder = Arc::clone(&responder);
             async move {
                 match link::accept(stream, &responder).await {
                     Ok(Accepted::Paired(p)) => on_paired(&sh, p).await,
+                    Ok(Accepted::JamJoined(_)) => sh.jam.dirty(),
+                    Ok(Accepted::Session(session)) if link::is_jam_guest_id(session.peer_id()) => {
+                        super::jam::host::serve(sh, session).await;
+                    }
                     Ok(Accepted::Session(session)) => {
                         let peer = session.peer_id().to_owned();
                         let ended = conn::run(Arc::clone(&sh), session, Role::Server, None).await;
@@ -695,8 +754,9 @@ impl SyncService {
                     }
                     Err(e) => {
                         log::debug!("sync: connection refused: {e}");
-                        // A wrong pairing code changes the pairing state.
+                        // A wrong pairing or Jam code changes their state.
                         sh.dirty();
+                        sh.jam.dirty();
                     }
                 }
             }
@@ -720,13 +780,14 @@ impl SyncService {
 
     /// Opens the pairing window (needs phone connections on).
     pub async fn pair_open(&self) -> Result<PairingOpen, String> {
-        let port = self
-            .sh
-            .state()
-            .server
-            .as_ref()
-            .map(|s| s.port)
-            .ok_or("turn on \"Allow phone connections\" first")?;
+        let port = {
+            let st = self.sh.state();
+            st.server
+                .as_ref()
+                .filter(|_| st.enabled)
+                .map(|s| s.port)
+                .ok_or("turn on \"Allow phone connections\" first")?
+        };
         let profile = self.sh.lib.active_profile();
         let profile_name = db(&self.sh, move |c| {
             Ok(store::profile_names(c)?
@@ -1152,7 +1213,7 @@ fn computer_of(c: &Connection, profile: ProfileId) -> store::Result<Option<Strin
     Ok(None)
 }
 
-fn lan_addresses() -> Vec<String> {
+pub(super) fn lan_addresses() -> Vec<String> {
     link::lan_ipv4_addresses()
         .into_iter()
         .map(|ip| ip.to_string())
@@ -1320,7 +1381,11 @@ async fn capture_task(sh: Arc<Shared>) {
 
 async fn build_status(sh: &Arc<Shared>) -> Result<SyncStatus, String> {
     let local = sh.local_device().await?;
-    let listening_port = sh.state().server.as_ref().map(|s| s.port);
+    // A listener that runs for a Jam alone is not shown here.
+    let listening_port = {
+        let st = sh.state();
+        st.server.as_ref().filter(|_| st.enabled).map(|s| s.port)
+    };
     let pairing_profile = sh.state().pairing_profile;
     let (peers, addresses, pairing_profile_name) = db(sh, move |c| {
         let names = store::profile_names(c)?;

@@ -41,6 +41,8 @@ pub enum LinkError {
     TooManyAttempts,
     #[error("pairing failed: the other device could not prove it knows the code")]
     PairingFailed,
+    #[error("the Jam is full")]
+    JamFull,
     #[error("unknown device")]
     UnknownDevice,
     #[error("secure handshake failed (the devices may need to be paired again)")]

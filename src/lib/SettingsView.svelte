@@ -19,10 +19,20 @@
   import { updates } from './updates.svelte'
   import { theme, type ThemeChoice } from './theme.svelte'
   import SyncSettings from './SyncSettings.svelte'
+  import BackupSettings from './BackupSettings.svelte'
   import { sync } from './sync.svelte'
   import { jam } from './jam.svelte'
 
-  type Category = 'all' | 'general' | 'playback' | 'library' | 'devices' | 'internet' | 'experimental' | 'about'
+  type Category =
+    | 'all'
+    | 'general'
+    | 'playback'
+    | 'library'
+    | 'devices'
+    | 'backup'
+    | 'internet'
+    | 'experimental'
+    | 'about'
 
   // "Phone" on the computer, "Computer" on the phone (sync, docs/SYNC.md).
   const devicesLabel = $derived(
@@ -36,6 +46,7 @@
     { id: 'playback', label: 'Playback', icon: 'music' },
     { id: 'library', label: 'Library', icon: 'library' },
     { id: 'devices', label: devicesLabel, icon: devicesLabel === 'Phone' ? 'phone' : 'computer' },
+    { id: 'backup', label: 'Backup', icon: 'backup' },
     { id: 'internet', label: 'Internet', icon: 'globe' },
     { id: 'experimental', label: 'Experimental', icon: 'flask' },
     { id: 'about', label: 'About', icon: 'info' },
@@ -550,6 +561,15 @@
           {t(devicesLabel)}
         </h3>
         <SyncSettings {cardClass} {actionBtn} />
+      </section>
+    {/if}
+
+    {#if show('backup')}
+      <section aria-labelledby="set-backup" class="flex flex-col gap-2.5">
+        <h3 id="set-backup" class="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          {t('Backup')}
+        </h3>
+        <BackupSettings {cardClass} {pillGroup} {pillBtn} {actionBtn} />
       </section>
     {/if}
 

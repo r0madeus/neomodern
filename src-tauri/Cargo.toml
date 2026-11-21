@@ -45,6 +45,11 @@ getrandom = "=0.3.4"
 # The pairing QR code (K23); raw modules only, the UI draws them.
 qrcode = { version = "=0.15.0", default-features = false, features = ["std"] }
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+# Backup files (docs/BACKUP.md): zip with deflate only. flate2 is already
+# built for lofty; its pure-Rust backend is named here so zip never
+# depends on another crate's feature choice.
+zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "=1.1.11", default-features = false, features = ["rust_backend"] }
 
 # Desktop only: libmpv audio, OS media controls (SMTC / MPRIS), single instance, system TLS.
 [target.'cfg(not(target_os = "android"))'.dependencies]

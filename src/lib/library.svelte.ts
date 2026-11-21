@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { appSettings } from './appSettings.svelte'
+import type { MoveCheck } from './backupLogic'
 import { t } from './i18n.svelte'
 import { player, type PlayerSnapshot } from './player.svelte'
 
@@ -41,7 +42,12 @@ function loadSortDir(sort: Sort): SortDir {
 export interface FolderInfo {
   id: number
   path: string
+  /** False when the folder's root cannot be reached (another drive, another computer). */
+  reachable?: boolean
 }
+
+/** How many of a folder's songs exist under a new path (see backupLogic). */
+export type FolderMoveCheck = MoveCheck
 
 export interface TrackRow {
   id: number
@@ -297,6 +303,19 @@ class LibraryStore {
     } catch (e) {
       player.error = String(e)
     }
+  }
+
+  /** Counts the folder's songs found under `newPath`; nothing is changed. */
+  checkMove(folderId: number, newPath: string): Promise<FolderMoveCheck> {
+    return invoke<FolderMoveCheck>('library_folder_check_move', { folderId, newPath })
+  }
+
+  /**
+   * Points a folder and its songs at a new path (docs/BACKUP.md §2). Files
+   * on disk are not moved or changed; the folder is rescanned afterwards.
+   */
+  async moveFolder(folderId: number, newPath: string): Promise<void> {
+    this.folders = await invoke<FolderInfo[]>('library_folder_move', { folderId, newPath })
   }
 
   async rescan(): Promise<void> {

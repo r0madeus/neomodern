@@ -992,4 +992,96 @@ const TR: Record<string, string> = {
     'Çok fazla yanlış kod girildi, bu yüzden Jam’in kodu değişti. Yeni kodu ev sahibinden iste.',
   'The Jam code has 6 digits.': 'Jam kodu 6 hanelidir.',
   'No computer found. Type its address.': 'Bilgisayar bulunamadı. Adresini yaz.',
+
+  // Backup, restore and moving music folders (docs/BACKUP.md)
+  Backup: 'Yedekleme',
+  'Backup saved: {path}': 'Yedek kaydedildi: {path}',
+  'Backing up…': 'Yedekleniyor…',
+  'Last backup failed: {error}': 'Son yedekleme başarısız oldu: {error}',
+  'Last backup: {time} ({size})': 'Son yedek: {time} ({size})',
+  'Last backup: {time}': 'Son yedek: {time}',
+  'No backup yet.': 'Henüz yedek yok.',
+  'Export a backup': 'Yedek dışa aktar',
+  'Saves profiles and PINs, favorites, playlists, history and stats, queues, settings, artist info, lyrics and album covers in one file. Your music files are not included.':
+    'Profilleri ve PIN’leri, favorileri, çalma listelerini, geçmişi ve istatistikleri, sıraları, ayarları, sanatçı bilgilerini, şarkı sözlerini ve albüm kapaklarını tek bir dosyaya kaydeder. Müzik dosyaların dahil değildir.',
+  'Exporting…': 'Dışa aktarılıyor…',
+  'Import a backup': 'Yedek içe aktar',
+  'Replaces the data on this device with a backup, for example from your old computer. You see what it holds before anything changes.':
+    'Bu cihazdaki verileri bir yedekle değiştirir, örneğin eski bilgisayarından aldığın bir yedekle. Hiçbir şey değişmeden önce yedekte ne olduğunu görürsün.',
+  'Import…': 'İçe aktar…',
+  'Automatic backup': 'Otomatik yedekleme',
+  'Saves a backup to a folder on a schedule. Choose a OneDrive, Google Drive or Dropbox folder to keep it in the cloud too.':
+    'Düzenli aralıklarla bir klasöre yedek kaydeder. Yedeğin bulutta da durması için bir OneDrive, Google Drive ya da Dropbox klasörü seç.',
+  'Backup folder': 'Yedek klasörü',
+  'No folder chosen yet.': 'Henüz klasör seçilmedi.',
+  'How often': 'Ne sıklıkla',
+  'Keep the newest': 'En yenilerini sakla',
+  'Older backups in the folder are deleted. Only files NeoModern made are touched.':
+    'Klasördeki daha eski yedekler silinir. Yalnızca NeoModern’in oluşturduğu dosyalara dokunulur.',
+  'Back up now': 'Şimdi yedekle',
+  'Every day': 'Her gün',
+  'Every week': 'Her hafta',
+  'Choose backup folder': 'Yedek klasörünü seç',
+  'Export backup': 'Yedeği dışa aktar',
+  'NeoModern backup': 'NeoModern yedeği',
+  'Made on': 'Oluşturulma',
+  'From version': 'Sürüm',
+  'Backup ready': 'Yedek hazır',
+  'Import backup': 'Yedeği içe aktar',
+  'NeoModern needs to restart to finish. The backup replaces this device’s data when the app starts again.':
+    'Bitirmek için NeoModern’in yeniden başlaması gerekiyor. Yedek, uygulama yeniden açıldığında bu cihazdaki verilerin yerini alır.',
+  'Afterwards the library checks your music folders. If a folder is not found, use “Move…” in Settings › Library.':
+    'Ardından kütüphane müzik klasörlerini denetler. Bir klasör bulunamazsa Ayarlar › Kütüphane’deki “Taşı…” seçeneğini kullan.',
+  'Replace all data on this device?': 'Bu cihazdaki tüm veriler değiştirilsin mi?',
+  'Profiles, favorites, playlists, history, queues and settings on this device are replaced by the backup.':
+    'Bu cihazdaki profiller, favoriler, çalma listeleri, geçmiş, sıralar ve ayarlar yedektekilerle değiştirilir.',
+  'Your current data is kept as a copy in the app’s data folder. Music files are not touched.':
+    'Şu anki verilerin uygulamanın veri klasöründe bir kopya olarak saklanır. Müzik dosyalarına dokunulmaz.',
+  Later: 'Sonra',
+  'Restarting…': 'Yeniden başlatılıyor…',
+  'Restart now': 'Şimdi yeniden başlat',
+  'Preparing…': 'Hazırlanıyor…',
+  'Replace data': 'Verileri değiştir',
+  'The {n} song needs its music folder on this device too.':
+    '{n} şarkının müzik klasörünün bu cihazda da olması gerekir.',
+  'The {n} songs need their music folders on this device too.':
+    '{n} şarkının müzik klasörlerinin bu cihazda da olması gerekir.',
+  'Where is this folder now?': 'Bu klasör şimdi nerede?',
+  'Folder moved. Its songs are being rescanned.': 'Klasör taşındı. Şarkıları yeniden taranıyor.',
+  'Move folder': 'Klasörü taşı',
+  'Only the place NeoModern looks for this folder changes. No files are moved, copied or changed.':
+    'Yalnızca NeoModern’in bu klasörü aradığı yer değişir. Hiçbir dosya taşınmaz, kopyalanmaz ya da değiştirilmez.',
+  'Old location': 'Eski konum',
+  'New location': 'Yeni konum',
+  'Looking for the folder’s songs there…': 'Klasörün şarkıları orada aranıyor…',
+  'This folder has no songs yet.': 'Bu klasörde henüz şarkı yok.',
+  '{found} of {total} songs found': '{total} şarkıdan {found} tanesi bulundu',
+  'About {found} of {total} songs found': '{total} şarkıdan yaklaşık {found} tanesi bulundu',
+  'That folder was not found.': 'O klasör bulunamadı.',
+  'Choose the folder where the music is now.': 'Müziğin şu an bulunduğu klasörü seç.',
+  'Favorites, playlists, history and stats stay with the songs.':
+    'Favoriler, çalma listeleri, geçmiş ve istatistikler şarkılarla birlikte kalır.',
+  'Favorites, playlists, history and stats stay with the songs. The songs that are not there are removed from the library when the folder is scanned.':
+    'Favoriler, çalma listeleri, geçmiş ve istatistikler şarkılarla birlikte kalır. Orada olmayan şarkılar, klasör tarandığında kütüphaneden kaldırılır.',
+  'None of this folder’s songs are there. Check that you picked the right folder.':
+    'Bu klasörün şarkılarından hiçbiri orada yok. Doğru klasörü seçtiğinden emin ol.',
+  'Choose another folder…': 'Başka klasör seç…',
+  'Moving…': 'Taşınıyor…',
+  'Music folders not found': 'Müzik klasörleri bulunamadı',
+  'If a folder is now on another drive or computer, use “Move…” to show where it is. Its songs stay in the library until then.':
+    'Bir klasör artık başka bir sürücüde ya da bilgisayardaysa, nerede olduğunu göstermek için “Taşı…” seçeneğini kullan. O zamana kadar şarkıları kütüphanede kalır.',
+  'Move folder…': 'Klasörü taşı…',
+  'Move folder {path}': '{path} klasörünü taşı',
+  'Move…': 'Taşı…',
+  'This backup was made by a newer version of NeoModern. Update the app first.':
+    'Bu yedek NeoModern’in daha yeni bir sürümüyle oluşturulmuş. Önce uygulamayı güncelle.',
+  'This file is not a valid NeoModern backup, or it is damaged.':
+    'Bu dosya geçerli bir NeoModern yedeği değil ya da bozuk.',
+  'This backup is too large to import.': 'Bu yedek içe aktarmak için çok büyük.',
+  'A library scan is running. Try again when it has finished.':
+    'Kütüphane taraması sürüyor. Bittiğinde yeniden dene.',
+  'There is not enough free space.': 'Yeterli boş alan yok.',
+  'NeoModern may not write there. Choose another folder.':
+    'NeoModern oraya yazamıyor. Başka bir klasör seç.',
+  'The folder or file was not found.': 'Klasör ya da dosya bulunamadı.',
 }

@@ -19,6 +19,7 @@ pub mod cover_color;
 pub mod db;
 pub mod m3u;
 pub mod profiles;
+pub mod relocate;
 pub mod scan;
 pub mod tags;
 
@@ -442,6 +443,9 @@ pub struct Library {
     pin_tries: Mutex<HashMap<i64, (u32, std::time::Instant)>>,
     /// Recent answers of `listening_stats` (see there).
     stats_cache: Mutex<Vec<StatsCacheEntry>>,
+    /// Folders whose next scan must not remove tracks it does not find
+    /// (the first scan after a backup import, docs/BACKUP.md).
+    keep_missing: Mutex<std::collections::HashSet<i64>>,
 }
 
 /// Name of the pre-profiles database copy, next to the database.
@@ -494,6 +498,7 @@ impl Library {
             active: AtomicI64::new(ProfileId::FIRST.0),
             pin_tries: Mutex::new(HashMap::new()),
             stats_cache: Mutex::new(Vec::new()),
+            keep_missing: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -661,6 +666,22 @@ impl Library {
             .into_iter()
             .filter(|f| folder_ids.contains(&f.id))
             .collect())
+    }
+
+    /// The next scan of each of `folder_ids` keeps tracks whose files are
+    /// not found instead of removing them.
+    pub fn keep_missing_on_next_scan(&self, folder_ids: impl IntoIterator<Item = i64>) {
+        self.keep_missing
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .extend(folder_ids);
+    }
+
+    pub(crate) fn take_keep_missing(&self, folder_id: i64) -> bool {
+        self.keep_missing
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&folder_id)
     }
 
     pub fn version(&self) -> u64 {

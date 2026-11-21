@@ -243,8 +243,9 @@ pub fn player_snapshot(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
 // Library
 // ---------------------------------------------------------------------
 
+use crate::library::relocate::FolderStatus;
 use crate::library::{
-    AlbumDetail, AlbumRow, FolderInfo, Library, LibraryStats, Page, SortSpec, TrackRow,
+    AlbumDetail, AlbumRow, Library, LibraryStats, Page, SortSpec, TrackRow,
 };
 
 fn le<T>(r: Result<T, crate::library::LibraryError>) -> Res<T> {
@@ -252,11 +253,11 @@ fn le<T>(r: Result<T, crate::library::LibraryError>) -> Res<T> {
 }
 
 #[tauri::command(async)]
-pub fn library_add_folder(lib: State<'_, Arc<Library>>, path: String) -> Res<Vec<FolderInfo>> {
+pub fn library_add_folder(lib: State<'_, Arc<Library>>, path: String) -> Res<Vec<FolderStatus>> {
     let id = le(lib.add_folder(&path))?;
     let folders = le(lib.folders())?;
-    lib.start_scan(folders.iter().filter(|f| f.id == id).cloned().collect());
-    Ok(folders)
+    lib.start_scan(folders.into_iter().filter(|f| f.id == id).collect());
+    le(lib.folder_status())
 }
 
 /// Cached cover of the album containing `path` (the playing track in the UI).
@@ -747,14 +748,16 @@ pub async fn android_save_text(app: tauri::AppHandle, name: String, text: String
 }
 
 #[tauri::command(async)]
-pub fn library_remove_folder(lib: State<'_, Arc<Library>>, id: i64) -> Res<Vec<FolderInfo>> {
+pub fn library_remove_folder(lib: State<'_, Arc<Library>>, id: i64) -> Res<Vec<FolderStatus>> {
     le(lib.remove_folder(id))?;
-    le(lib.folders())
+    le(lib.folder_status())
 }
 
 #[tauri::command(async)]
-pub fn library_folders(lib: State<'_, Arc<Library>>) -> Res<Vec<FolderInfo>> {
-    le(lib.folders())
+/// Library folders; `reachable` is false when a root cannot be found
+/// (another drive, another computer: docs/BACKUP.md, section 2).
+pub fn library_folders(lib: State<'_, Arc<Library>>) -> Res<Vec<FolderStatus>> {
+    le(lib.folder_status())
 }
 
 #[tauri::command(async)]

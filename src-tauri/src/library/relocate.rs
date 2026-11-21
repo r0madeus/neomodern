@@ -33,7 +33,9 @@ pub const MOVE_CHECK_SAMPLE: usize = 2000;
 
 fn windows_style(p: &str) -> bool {
     let b = p.as_bytes();
-    cfg!(windows) || p.contains('\\') || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
+    cfg!(windows)
+        || p.contains('\\')
+        || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
 }
 
 fn components(p: &str, windows: bool) -> Vec<&str> {
@@ -120,7 +122,9 @@ pub fn rebase_data_paths(
             st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect::<rusqlite::Result<_>>()?
         };
-        let mut up = conn.prepare(&format!("UPDATE {table} SET {column} = ?1 WHERE {key} = ?2"))?;
+        let mut up = conn.prepare(&format!(
+            "UPDATE {table} SET {column} = ?1 WHERE {key} = ?2"
+        ))?;
         for (k, old) in rows {
             if let Some(new) = rebase(&old, old_root, new_root)
                 && new != old
@@ -168,7 +172,8 @@ impl Library {
         let folder = self.folder(folder_id)?;
         let paths: Vec<String> = {
             let conn = self.conn();
-            let mut st = conn.prepare("SELECT path FROM tracks WHERE folder_id = ?1 ORDER BY id")?;
+            let mut st =
+                conn.prepare("SELECT path FROM tracks WHERE folder_id = ?1 ORDER BY id")?;
             st.query_map([folder_id], |r| r.get(0))?
                 .collect::<std::result::Result<_, _>>()?
         };
@@ -209,7 +214,8 @@ impl Library {
             return Ok(folder);
         }
         if let Some(other) = self.folders()?.into_iter().find(|f| {
-            f.id != folder_id && relative_components(&f.path, &new_root).is_some_and(|r| r.is_empty())
+            f.id != folder_id
+                && relative_components(&f.path, &new_root).is_some_and(|r| r.is_empty())
         }) {
             return Err(LibraryError::Other(format!(
                 "{} is already a library folder",
@@ -301,9 +307,15 @@ mod tests {
         );
         assert_eq!(rebase(r"D:\Music2\b.flac", r"D:\Music", r"E:\Songs"), None);
         assert_eq!(rebase("/music2/b.flac", "/music", "/new"), None);
-        assert_eq!(rebase("/music/b.flac", "/music/", "/new/"), Some("/new/b.flac".into()));
+        assert_eq!(
+            rebase("/music/b.flac", "/music/", "/new/"),
+            Some("/new/b.flac".into())
+        );
         assert_eq!(rebase("/music", "/music", "/new"), Some("/new".into()));
-        assert_eq!(rebase("/a/b.flac", "/", "/new"), Some("/new/a/b.flac".into()));
+        assert_eq!(
+            rebase("/a/b.flac", "/", "/new"),
+            Some("/new/a/b.flac".into())
+        );
     }
 
     #[test]
@@ -318,7 +330,11 @@ mod tests {
         );
         // Windows to a Unix-style root (backup from a PC on a Mac).
         assert_eq!(
-            rebase(r"C:\Users\me\Music\x.mp3", r"C:\Users\me\Music", "/Users/me/Music"),
+            rebase(
+                r"C:\Users\me\Music\x.mp3",
+                r"C:\Users\me\Music",
+                "/Users/me/Music"
+            ),
             Some("/Users/me/Music/x.mp3".into())
         );
         // Unix paths keep case, and a backslash is part of a name.

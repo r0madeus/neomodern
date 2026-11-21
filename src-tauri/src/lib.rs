@@ -1,5 +1,6 @@
 pub mod audio;
 mod autoplay;
+pub mod backup;
 mod commands;
 mod diagnostics;
 pub mod library;
@@ -82,6 +83,9 @@ pub fn run() {
 
             let data_dir = app.path().app_data_dir()?;
             let cache_dir = app.path().app_cache_dir()?;
+            // Backup import (K28): a staged import is swapped into place
+            // before anything reads the data folder.
+            let import_outcome = backup::swap::apply_pending_import(&data_dir);
             let session_store = Arc::new(SessionStore::new(data_dir.join("session.json")));
 
             let (tx, rx) = mpsc::channel();
@@ -252,6 +256,30 @@ pub fn run() {
                 // Playlist covers the user picked are data, not cache.
                 .with_user_images_dir(data_dir.join("images")),
             );
+            // After an import every folder is rescanned; songs not found are
+            // kept (Settings offers "Move folder" for missing roots).
+            if import_outcome.as_ref().is_some_and(|o| o.applied) {
+                match library.folder_status() {
+                    Ok(folders) => {
+                        library.keep_missing_on_next_scan(folders.iter().map(|f| f.id));
+                        library.start_scan(
+                            folders
+                                .into_iter()
+                                .filter(|f| f.reachable)
+                                .map(|f| library::FolderInfo {
+                                    id: f.id,
+                                    path: f.path,
+                                })
+                                .collect(),
+                        );
+                    }
+                    Err(e) => log::warn!("could not list folders after the import: {e}"),
+                }
+            }
+            app.manage(Arc::new(backup::BackupState::new(
+                data_dir.clone(),
+                import_outcome,
+            )));
             // Covers lost with the cache (or a moved data folder) come back.
             match library.repair_missing_covers() {
                 Ok(folders) if !folders.is_empty() => library.start_scan(folders),
@@ -370,6 +398,9 @@ pub fn run() {
 
             app.manage(tray::TrayStatus::default());
             tray::install(app.handle());
+            // Automatic backup to a folder (K28), desktop only.
+            #[cfg(not(target_os = "android"))]
+            backup::commands::spawn_auto_backup(app.handle().clone());
             Ok(())
         })
         .on_window_event(tray::on_window_event)
@@ -425,6 +456,16 @@ pub fn run() {
             commands::library_cover_color,
             commands::library_remove_folder,
             commands::library_folders,
+            backup::commands::library_folders_status,
+            backup::commands::library_folder_check_move,
+            backup::commands::library_folder_move,
+            backup::commands::backup_status,
+            backup::commands::backup_export,
+            backup::commands::backup_inspect,
+            backup::commands::backup_import,
+            backup::commands::backup_set_auto,
+            backup::commands::backup_run_now,
+            backup::commands::app_restart,
             commands::library_rescan,
             commands::library_stats,
             commands::library_tracks_page,

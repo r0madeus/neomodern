@@ -898,6 +898,15 @@ mod tests {
             jam_guest_enabled: true,
             active_profile: 2,
             profiles: [(1, ProfileSession::default())].into_iter().collect(),
+            auto_backup: AutoBackup {
+                enabled: true,
+                folder: Some(PathBuf::from("/backups")),
+                interval: BackupInterval::Week,
+                keep: 10,
+                last_at: Some(1_700_000_000_000),
+                last_size: Some(1234),
+                last_error: None,
+            },
         };
         save(&file, &state).unwrap();
         assert_eq!(load(&file), state);

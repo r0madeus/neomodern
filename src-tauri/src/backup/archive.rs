@@ -210,12 +210,7 @@ pub fn export(data_dir: &Path, target: &Path, now_ms: i64) -> Result<ExportInfo>
     })
 }
 
-fn write_zip(
-    data_dir: &Path,
-    files: &[(String, PathBuf)],
-    out: &Path,
-    now_ms: i64,
-) -> Result<()> {
+fn write_zip(data_dir: &Path, files: &[(String, PathBuf)], out: &Path, now_ms: i64) -> Result<()> {
     use zip::write::SimpleFileOptions;
     let file = std::fs::File::create(out)?;
     let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(file));
@@ -268,6 +263,22 @@ fn write_zip(
     Ok(())
 }
 
+/// Size and count limits of an import (smaller ones in tests).
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    pub total_bytes: u64,
+    pub image_bytes: u64,
+    pub entries: usize,
+}
+
+impl Limits {
+    pub const DEFAULT: Limits = Limits {
+        total_bytes: MAX_TOTAL_BYTES,
+        image_bytes: MAX_IMAGE_BYTES,
+        entries: MAX_ENTRIES,
+    };
+}
+
 /// A validated backup.
 pub struct Verified {
     pub manifest: Manifest,
@@ -298,11 +309,16 @@ fn read_limited(r: impl Read, limit: u64, what: &str) -> Result<Vec<u8>> {
 /// `PRAGMA integrity_check`. Writes the entries to `out` while hashing
 /// them, so what is extracted is exactly what was checked.
 pub fn verify(archive: &Path, out: Output<'_>) -> Result<Verified> {
+    verify_with(archive, out, Limits::DEFAULT)
+}
+
+/// [`verify`] with explicit limits.
+pub fn verify_with(archive: &Path, out: Output<'_>, limits: Limits) -> Result<Verified> {
     let file = std::fs::File::open(archive)?;
     let size = file.metadata()?.len();
     let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
         .map_err(|_| BackupError::Invalid("not a NeoModern backup (not a zip file)".into()))?;
-    if zip.len() > MAX_ENTRIES + 1 {
+    if zip.len() > limits.entries + 1 {
         return invalid(format!("too many files in backup ({})", zip.len()));
     }
 
@@ -333,14 +349,14 @@ pub fn verify(archive: &Path, out: Output<'_>) -> Result<Verified> {
             return invalid(format!("path leaves the backup: {name}"));
         }
         let len = f.size();
-        if kind == EntryKind::Image && len > MAX_IMAGE_BYTES {
+        if kind == EntryKind::Image && len > limits.image_bytes {
             return invalid(format!("image too large in backup: {name}"));
         }
         if kind == EntryKind::Session && len > MAX_SESSION_BYTES {
             return invalid("session.json is too large");
         }
         total = total.saturating_add(len);
-        if total > MAX_TOTAL_BYTES {
+        if total > limits.total_bytes {
             return invalid("backup contents are larger than 4 GiB");
         }
         if index.insert(name.clone(), (i, kind, len)).is_some() {
@@ -398,7 +414,15 @@ pub fn verify(archive: &Path, out: Output<'_>) -> Result<Verified> {
         };
         let f = zip.by_index(*i)?;
         let mut limited = f.take(len + 1);
+        let mut session = Vec::new();
         let (got, sha) = match &target {
+            _ if *kind == EntryKind::Session => {
+                let r = copy_hashed(&mut limited, &mut session)?;
+                if let Some(path) = &target {
+                    std::fs::write(path, &session)?;
+                }
+                r
+            }
             Some(path) => {
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent)?;
@@ -414,12 +438,9 @@ pub fn verify(archive: &Path, out: Output<'_>) -> Result<Verified> {
             return invalid(format!("checksum mismatch: {name}"));
         }
         if *kind == EntryKind::Session
-            && let Some(path) = &target
+            && !serde_json::from_slice::<serde_json::Value>(&session).is_ok_and(|v| v.is_object())
         {
-            let bytes = std::fs::read(path)?;
-            if !serde_json::from_slice::<serde_json::Value>(&bytes).is_ok_and(|v| v.is_object()) {
-                return invalid("session.json is not valid");
-            }
+            return invalid("session.json is not valid");
         }
     }
 
@@ -439,8 +460,10 @@ pub fn verify(archive: &Path, out: Output<'_>) -> Result<Verified> {
 fn check_database(path: &Path) -> Result<BackupSummary> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| BackupError::Invalid(format!("library database cannot be opened: {e}")))?;
-    let bad = |e: rusqlite::Error| BackupError::Invalid(format!("library database is damaged: {e}"));
-    conn.pragma_update(None, "trusted_schema", false).map_err(bad)?;
+    let bad =
+        |e: rusqlite::Error| BackupError::Invalid(format!("library database is damaged: {e}"));
+    conn.pragma_update(None, "trusted_schema", false)
+        .map_err(bad)?;
     register_collation(&conn)?;
     let ok: String = conn
         .query_row("PRAGMA integrity_check(1)", [], |r| r.get(0))

@@ -49,6 +49,8 @@ pub enum BackupError {
     Io(#[from] std::io::Error),
     #[error("database error: {0}")]
     Db(#[from] rusqlite::Error),
+    #[error("{0}")]
+    Library(#[from] crate::library::LibraryError),
     #[error("zip error: {0}")]
     Zip(#[from] zip::result::ZipError),
     #[error("{0}")]
@@ -79,9 +81,9 @@ fn safe_file_name(name: &str) -> bool {
         && name != "."
         && name != ".."
         && !name.ends_with(['.', ' '])
-        && !name
-            .chars()
-            .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        && !name.chars().any(|c| {
+            c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+        })
 }
 
 /// The kind of a backup entry name (`/`-separated, relative), or why it
@@ -146,7 +148,10 @@ pub fn utc_parts(ms: i64) -> (i64, i64, i64, i64, i64, i64) {
 /// `NeoModern-backup-<yyyy-mm-dd-hhmm>.nmbackup` (UTC) for a unix-ms time.
 pub fn backup_file_name(ms: i64) -> String {
     let (y, m, d, h, mi, _) = utc_parts(ms);
-    format!("{}{y:04}-{m:02}-{d:02}-{h:02}{mi:02}.{EXTENSION}", auto::NAME_PREFIX)
+    format!(
+        "{}{y:04}-{m:02}-{d:02}-{h:02}{mi:02}.{EXTENSION}",
+        auto::NAME_PREFIX
+    )
 }
 
 /// The result of the import swap done at this start-up, for the UI.

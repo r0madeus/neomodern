@@ -229,14 +229,23 @@ pub fn apply_pending_import_with(
     let staging = data_dir.join(STAGING_DIR);
     let rollback = data_dir.join(ROLLBACK_DIR);
     if rollback.join(SWAPPING).is_file() {
+        // Part of the staged data was already moved: do not retry it.
         log::warn!("an import swap was interrupted; restoring the previous data");
-        if let Err(e) = restore_rollback(data_dir, &rollback) {
-            log::error!("could not restore the data from {}: {e}", rollback.display());
-            return Some(ImportOutcome {
-                applied: false,
-                error: Some(format!("restoring after an interrupted import failed: {e}")),
-            });
-        }
+        let _ = remove_path(&staging);
+        let error = match restore_rollback(data_dir, &rollback) {
+            Ok(()) => "the import was interrupted; the previous data was restored".to_string(),
+            Err(e) => {
+                log::error!(
+                    "could not restore the data from {}: {e}",
+                    rollback.display()
+                );
+                format!("restoring after an interrupted import failed: {e}")
+            }
+        };
+        return Some(ImportOutcome {
+            applied: false,
+            error: Some(error),
+        });
     } else if rollback.exists() {
         let _ = remove_path(&rollback);
     }
@@ -317,12 +326,18 @@ fn swap(
                     log::error!("rollback: could not remove imported {slot}: {e}");
                 }
             }
+            let mut restored = true;
             for slot in moved {
-                if let Err(e) = std::fs::rename(entry_path(rollback, slot), entry_path(data_dir, slot)) {
+                if let Err(e) =
+                    std::fs::rename(entry_path(rollback, slot), entry_path(data_dir, slot))
+                {
                     log::error!("rollback: could not restore {slot}: {e}");
+                    restored = false;
                 }
             }
-            if let Err(e) = remove_path(rollback) {
+            // Kept (with its marker) when something could not be moved
+            // back: the next start-up tries again.
+            if restored && let Err(e) = remove_path(rollback) {
                 log::warn!("could not remove {}: {e}", rollback.display());
             }
             Err(e)

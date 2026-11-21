@@ -193,6 +193,14 @@ pub struct SessionState {
     /// [`SessionStore`].
     #[serde(default)]
     pub allow_phone_connections: bool,
+    /// Local Jam (K27, docs/JAM.md), experimental: this computer may host
+    /// a Jam. Off by default. Owned by [`SessionStore`].
+    #[serde(default)]
+    pub jam_enabled: bool,
+    /// Local Jam: this phone may join a Jam. Off by default. Owned by
+    /// [`SessionStore`].
+    #[serde(default)]
+    pub jam_guest_enabled: bool,
     /// Profiles (K24): the profile the top-level player fields belong to.
     #[serde(default = "default_active_profile")]
     pub active_profile: i64,
@@ -230,6 +238,8 @@ impl Default for SessionState {
             crossfade_seconds: 0.0,
             net_updates: true,
             allow_phone_connections: false,
+            jam_enabled: false,
+            jam_guest_enabled: false,
             active_profile: default_active_profile(),
             profiles: std::collections::BTreeMap::new(),
         }
@@ -368,6 +378,8 @@ pub struct SessionStore {
     autoplay: AtomicBool,
     welcome_done: AtomicBool,
     allow_phone_connections: AtomicBool,
+    jam_enabled: AtomicBool,
+    jam_guest_enabled: AtomicBool,
     active_profile: std::sync::atomic::AtomicI64,
     parked: Mutex<std::collections::BTreeMap<i64, ProfileSession>>,
     net: Arc<NetPolicy>,
@@ -387,6 +399,8 @@ impl SessionStore {
             autoplay: AtomicBool::new(default_autoplay()),
             welcome_done: AtomicBool::new(false),
             allow_phone_connections: AtomicBool::new(false),
+            jam_enabled: AtomicBool::new(false),
+            jam_guest_enabled: AtomicBool::new(false),
             active_profile: std::sync::atomic::AtomicI64::new(default_active_profile()),
             parked: Mutex::new(std::collections::BTreeMap::new()),
             net: Arc::new(NetPolicy::default()),
@@ -422,6 +436,9 @@ impl SessionStore {
             .store(state.welcome_done, Ordering::SeqCst);
         self.allow_phone_connections
             .store(state.allow_phone_connections, Ordering::SeqCst);
+        self.jam_enabled.store(state.jam_enabled, Ordering::SeqCst);
+        self.jam_guest_enabled
+            .store(state.jam_guest_enabled, Ordering::SeqCst);
         self.active_profile
             .store(state.active_profile, Ordering::SeqCst);
         {
@@ -463,6 +480,22 @@ impl SessionStore {
     pub fn set_allow_phone_connections(&self, enabled: bool) {
         self.allow_phone_connections
             .store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn jam_enabled(&self) -> bool {
+        self.jam_enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn set_jam_enabled(&self, enabled: bool) {
+        self.jam_enabled.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn jam_guest_enabled(&self) -> bool {
+        self.jam_guest_enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn set_jam_guest_enabled(&self, enabled: bool) {
+        self.jam_guest_enabled.store(enabled, Ordering::SeqCst);
     }
 
     pub fn lyrics_netease(&self) -> bool {
@@ -601,6 +634,8 @@ impl SessionStore {
         state.autoplay = self.autoplay();
         state.welcome_done = self.welcome_done();
         state.allow_phone_connections = self.allow_phone_connections();
+        state.jam_enabled = self.jam_enabled();
+        state.jam_guest_enabled = self.jam_guest_enabled();
         state.active_profile = self.active_profile();
         state.profiles = self
             .parked
@@ -775,6 +810,8 @@ mod tests {
             },
             crossfade_seconds: 6.0,
             allow_phone_connections: true,
+            jam_enabled: true,
+            jam_guest_enabled: true,
             active_profile: 2,
             profiles: [(1, ProfileSession::default())].into_iter().collect(),
         };
@@ -951,6 +988,24 @@ mod tests {
         let again = SessionStore::new(file);
         again.load();
         assert!(again.allow_phone_connections());
+    }
+
+    #[test]
+    fn jam_switches_are_off_by_default_and_persist() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("session.json");
+        std::fs::write(&file, r#"{"volume":55.0}"#).unwrap();
+        let old = load(&file);
+        assert!(!old.jam_enabled && !old.jam_guest_enabled);
+        let store = SessionStore::new(file.clone());
+        store.load();
+        assert!(!store.jam_enabled() && !store.jam_guest_enabled());
+        store.set_jam_enabled(true);
+        store.set_jam_guest_enabled(true);
+        store.save_now(&SessionState::default());
+        let again = SessionStore::new(file);
+        again.load();
+        assert!(again.jam_enabled() && again.jam_guest_enabled());
     }
 
     #[test]

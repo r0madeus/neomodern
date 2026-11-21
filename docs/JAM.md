@@ -106,3 +106,20 @@ The switches are stored with the other app settings (default `false`).
   limit, LAN-only.
 - Guests never appear in the database (no peer row after join/leave).
 - The socket guard test in `net.rs` still passes (no new sockets).
+
+## Implementation notes
+
+- Joins use connection kind 3 and SPAKE2/HKDF labels of their own, so a Jam
+  code never completes a pairing and a pairing code never admits a guest.
+  Guest ids are `jam-` + 32 hex; pairing refuses such ids, so the id alone
+  routes a session to guest mode (`sync/jam/host.rs`), never to `conn::run`.
+- Adds use `Player::append` (the end of the queue, like `queue_append`).
+- `JamStatus` also carries `qr` (same shape as pairing) and
+  `guests[].connected`; a guest that left stays listed as not connected
+  until removed or the Jam ends.
+- The host says goodbye (`jamEnded { removed }`) before closing, so the
+  phone can tell "the Jam ended" from "you were removed".
+- Guests send `jamState` every 20 s as keep-alive; a guest silent for 60 s
+  is dropped. Besides the add/search limits, 20 messages/s per guest.
+- While the listener runs only for a Jam, paired phones are refused and
+  pairing is closed.

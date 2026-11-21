@@ -294,7 +294,16 @@ pub fn run() {
             app.manage(library);
             app.manage(sync_service.clone());
             let allow_phones = app.state::<Arc<SessionStore>>().allow_phone_connections();
-            tauri::async_runtime::spawn(async move { sync_service.start(allow_phones).await });
+            let jam_host = app.state::<Arc<SessionStore>>().jam_enabled();
+            let jam_guest = app.state::<Arc<SessionStore>>().jam_guest_enabled();
+            tauri::async_runtime::spawn(async move {
+                sync_service.start(allow_phones).await;
+                // Local Jam (K27): only the switch; a Jam never starts by itself.
+                if jam_host && let Err(e) = sync_service.jam_set_enabled(true).await {
+                    log::info!("jam: {e}");
+                }
+                sync_service.jam_guest_set_enabled(jam_guest);
+            });
             app.manage(Arc::new(autoplay::Autoplay::default()));
 
             // Found lyrics are kept with the user's data, so a cache
@@ -531,6 +540,19 @@ pub fn run() {
             sync::commands::remote_queue_page,
             sync::commands::remote_state,
             sync::commands::sync_cover_for_key,
+            sync::commands::jam_status,
+            sync::commands::jam_set_enabled,
+            sync::commands::jam_start,
+            sync::commands::jam_end,
+            sync::commands::jam_new_code,
+            sync::commands::jam_remove_guest,
+            sync::commands::jam_guest_status,
+            sync::commands::jam_guest_set_enabled,
+            sync::commands::jam_join,
+            sync::commands::jam_join_link,
+            sync::commands::jam_leave,
+            sync::commands::jam_search,
+            sync::commands::jam_add,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -8,6 +8,7 @@
 //! magic "NMLINK" (6) | protocol version u16 BE | kind u8 | body
 //! kind 1 = session: body = the client's device id (UTF-8)
 //! kind 2 = pairing: body = JSON pairing request (see `pair`)
+//! kind 3 = Jam join: body = JSON pairing request (see `pair`, docs/JAM.md)
 //! ```
 //!
 //! For sessions the whole opening frame is the Noise prologue on both
@@ -29,7 +30,10 @@ mod tests;
 
 pub use error::{LinkError, LinkResult};
 pub use frame::{read_frame, read_frame_idle, write_frame};
-pub use pair::{CODE_TTL, Paired, PairingStatus, PairingWindow, pair, pair_connect};
+pub use pair::{
+    CODE_TTL, JAM_MAX_WRONG, JamGate, Paired, PairingStatus, PairingWindow, jam_join, jam_pair,
+    pair, pair_connect,
+};
 pub use rate::RateLimiter;
 pub use server::{
     DiscoveryResponder, FoundComputer, Listener, ServerHandle, StopSignal, bind, dial, discover,
@@ -48,6 +52,9 @@ pub const PROTOCOL_VERSION: u16 = 1;
 pub const DEFAULT_PORT: u16 = 47_321;
 /// Most simultaneous connections the desktop serves (docs/SYNC.md).
 pub const MAX_SESSIONS: usize = 4;
+/// Most guests in one Jam (docs/JAM.md); the session limit grows by this
+/// while a Jam runs.
+pub const MAX_JAM_GUESTS: usize = 8;
 /// Most simultaneous connections from one address: a phone needs at most two
 /// (a new session while the old one times out, or pairing next to a
 /// session), and one device cannot fill every slot.
@@ -65,6 +72,9 @@ pub const MAX_MESSAGE: usize = 1024 * 1024;
 const MAGIC: &[u8; 6] = b"NMLINK";
 const KIND_SESSION: u8 = 1;
 const KIND_PAIR: u8 = 2;
+const KIND_JAM: u8 = 3;
+/// Every Jam guest id starts with this; no paired device's id does.
+const JAM_ID_PREFIX: &str = "jam-";
 const OPENING_HEADER: usize = MAGIC.len() + 2 + 1;
 /// The opening frame is tiny; anything bigger is not one of ours.
 const MAX_OPENING_FRAME: usize = 4096;
@@ -90,6 +100,11 @@ pub fn valid_device_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// A Jam guest's id (`jam-` and a random part), never a paired device's.
+pub fn is_jam_guest_id(id: &str) -> bool {
+    id.len() > JAM_ID_PREFIX.len() && id.starts_with(JAM_ID_PREFIX) && valid_device_id(id)
+}
+
 /// A display name: at most 200 characters, no control characters.
 pub fn valid_device_name(name: &str) -> bool {
     name.chars().count() <= MAX_NAME_CHARS && !name.chars().any(char::is_control)
@@ -112,6 +127,8 @@ pub struct Responder<F> {
     /// Device id -> per-device secret; `None` for unknown (or removed)
     /// devices, whose connections are closed without a reply.
     pub lookup: F,
+    /// The Jam this server hosts (its joins); `None` refuses every join.
+    pub jam: Option<Arc<dyn JamGate>>,
     pub handshake_timeout: Duration,
     pub pairing_timeout: Duration,
 }
@@ -125,17 +142,27 @@ where
             local,
             window,
             lookup,
+            jam: None,
             handshake_timeout: HANDSHAKE_TIMEOUT,
             pairing_timeout: PAIRING_TIMEOUT,
         }
     }
+
+    /// Takes Jam joins for `jam`.
+    pub fn with_jam(mut self, jam: Arc<dyn JamGate>) -> Self {
+        self.jam = Some(jam);
+        self
+    }
 }
 
-/// An accepted connection: either a finished pairing (store the secret;
-/// the connection is done) or an authenticated, encrypted session.
+/// An accepted connection: a finished pairing (store the secret; the
+/// connection is done), a Jam guest that joined (already admitted through
+/// `JamGate::admit`; the connection is done) or an authenticated, encrypted
+/// session.
 #[derive(Debug)]
 pub enum Accepted {
     Paired(Paired),
+    JamJoined(Paired),
     Session(Session),
 }
 
@@ -179,12 +206,25 @@ where
                 version,
                 &opening[OPENING_HEADER..],
                 &responder.local,
-                &responder.window,
+                pair::Mode::Pair(&responder.window),
             ),
         )
         .await
         .map_err(|_| LinkError::Timeout)?
         .map(Accepted::Paired),
+        KIND_JAM => tokio::time::timeout(
+            responder.pairing_timeout,
+            pair::respond(
+                &mut stream,
+                version,
+                &opening[OPENING_HEADER..],
+                &responder.local,
+                pair::Mode::Jam(responder.jam.as_deref()),
+            ),
+        )
+        .await
+        .map_err(|_| LinkError::Timeout)?
+        .map(Accepted::JamJoined),
         _ => Err(LinkError::Protocol("unknown connection kind")),
     }
 }

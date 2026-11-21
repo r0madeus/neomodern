@@ -7,10 +7,13 @@
 //! - `conn` – one session's event loop (sync rounds, remote, keep-alive);
 //! - `remote` – remote-control commands and the player state the phone sees;
 //! - `service` – the service the app manages; `commands` – its Tauri
-//!   commands.
+//!   commands;
+//! - `jam` – the local Jam (K27, `docs/JAM.md`): guests add songs to the
+//!   computer's queue.
 
 pub mod commands;
 mod conn;
+pub mod jam;
 pub mod link;
 pub mod pair_link;
 pub mod protocol;
@@ -18,6 +21,8 @@ pub mod remote;
 pub mod service;
 pub mod store;
 
+#[cfg(test)]
+mod jam_tests;
 #[cfg(test)]
 mod service_tests;
 

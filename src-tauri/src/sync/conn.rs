@@ -71,7 +71,7 @@ pub(super) struct Ended {
 }
 
 /// A spawned task that is aborted when this is dropped.
-struct AbortOnDrop<T>(tauri::async_runtime::JoinHandle<T>);
+pub(super) struct AbortOnDrop<T>(pub tauri::async_runtime::JoinHandle<T>);
 
 impl<T> Drop for AbortOnDrop<T> {
     fn drop(&mut self) {

@@ -913,4 +913,83 @@ const TR: Record<string, string> = {
   'The computer did not answer.': 'Bilgisayar yanıt vermedi.',
   'Nothing else in the queue.': 'Sırada başka şarkı yok.',
   'Show more': 'Daha fazla göster',
+  // Local Jam (docs/JAM.md)
+  Jam: 'Jam',
+  'Join Jams': 'Jam’lere katıl',
+  'Friends on the same Wi-Fi add songs to your queue from their phones.':
+    'Aynı Wi-Fi ağındaki arkadaşların telefonlarından sırana şarkı ekler.',
+  'Friends on the same Wi-Fi add songs to your queue from their phones. Music plays only here. Off by default.':
+    'Aynı Wi-Fi ağındaki arkadaşların telefonlarından sırana şarkı ekler. Müzik yalnızca burada çalar. Varsayılan olarak kapalı.',
+  'Add songs to what a computer on the same Wi-Fi plays, from its library. Off by default.':
+    'Aynı Wi-Fi ağındaki bir bilgisayarın çaldıklarına, onun kütüphanesinden şarkı ekle. Varsayılan olarak kapalı.',
+  'Starting the Jam…': 'Jam başlatılıyor…',
+  'On the phone: Join a Jam, then scan this code': 'Telefonda: Jam’e katıl’ı seç, sonra bu kodu tara',
+  'On the phone: Join a Jam, then enter this code': 'Telefonda: Jam’e katıl’ı seç, sonra bu kodu gir',
+  'Jam QR code': 'Jam QR kodu',
+  'A new code keeps the guests who already joined.': 'Yeni kod, katılmış misafirleri çıkarmaz.',
+  Guests: 'Misafirler',
+  'Nobody has joined yet.': 'Henüz kimse katılmadı.',
+  'Remove {device} from the Jam': '{device} Jam’den çıkarılsın',
+  'Songs your guests add show up here and at the end of the queue.':
+    'Misafirlerinin eklediği şarkılar burada ve sıranın sonunda görünür.',
+  'added by {name}': 'ekleyen: {name}',
+  'End the Jam? Every guest is disconnected and the code stops working.':
+    'Jam bitirilsin mi? Tüm misafirlerin bağlantısı kesilir ve kod artık çalışmaz.',
+  'Music plays only here. Guests can add songs, nothing else.':
+    'Müzik yalnızca burada çalar. Misafirler yalnızca şarkı ekleyebilir.',
+  'End Jam': 'Jam’i bitir',
+  Hide: 'Gizle',
+  '{n} song added': '{n} şarkı ekledi',
+  '{n} songs added': '{n} şarkı ekledi',
+  'Jam: {n} guest': 'Jam: {n} misafir',
+  'Jam: {n} guests': 'Jam: {n} misafir',
+  'Start a Jam': 'Jam başlat',
+  'A Jam is running.': 'Bir Jam sürüyor.',
+  'Also in the queue panel.': 'Sıra panelinde de var.',
+  'Show the Jam': 'Jam’i göster',
+  'Join a Jam': 'Jam’e katıl',
+  'Open the Jam': 'Jam’i aç',
+  'You are in a Jam on {device}.': '{device} üzerindeki bir Jam’desin.',
+  'Scan the code shown on the computer, or type it.': 'Bilgisayarda gösterilen kodu tara ya da yaz.',
+  'Added to the queue': 'Sıraya eklendi',
+  'Jam on': 'Jam',
+  Leave: 'Ayrıl',
+  'Turn on “Join Jams” in Settings › Experimental.': 'Ayarlar › Deneysel’den “Jam’lere katıl”ı aç.',
+  'Add songs to the party': 'Partiye şarkı ekle',
+  'On the computer, choose “Start a Jam” in the queue panel. Both devices must be on the same Wi-Fi.':
+    'Bilgisayarda sıra panelinden “Jam başlat”ı seç. İki cihaz da aynı Wi-Fi ağında olmalı.',
+  'or enter the code': 'ya da kodu gir',
+  'Jam code': 'Jam kodu',
+  'No computer found. Scan the QR code or enter the address below.':
+    'Bilgisayar bulunamadı. QR kodu tara ya da adresi aşağıya gir.',
+  'Computer address (optional)': 'Bilgisayarın adresi (isteğe bağlı)',
+  'Joining…': 'Katılınıyor…',
+  Join: 'Katıl',
+  Paused: 'Duraklatıldı',
+  'Search {device}’s library': '{device} kütüphanesinde ara',
+  'Search songs to add': 'Eklemek için şarkı ara',
+  'Search results': 'Arama sonuçları',
+  'No songs found.': 'Şarkı bulunamadı.',
+  'Add {title} to the queue': '{title} sıraya eklensin',
+  Add: 'Ekle',
+  'Up next': 'Sıradakiler',
+  'Nothing else in the queue. Search above to add a song.':
+    'Sırada başka şarkı yok. Şarkı eklemek için yukarıdan ara.',
+  'This is a pairing code. To join a Jam, scan the code in the Jam window on the computer.':
+    'Bu bir eşleme kodu. Jam’e katılmak için bilgisayardaki Jam penceresindeki kodu tara.',
+  'This is not a NeoModern Jam code.': 'Bu bir NeoModern Jam kodu değil.',
+  'Not so fast: one song every 5 seconds, 20 every 10 minutes.':
+    'Biraz yavaş: 5 saniyede bir şarkı, 10 dakikada en çok 20 şarkı.',
+  'The queue is full. Try again later.': 'Sıra dolu. Daha sonra yeniden dene.',
+  'This song is no longer in the library.': 'Bu şarkı artık kütüphanede yok.',
+  'The Jam has ended.': 'Jam bitti.',
+  'The host removed you from the Jam.': 'Ev sahibi seni Jam’den çıkardı.',
+  'Wrong code. Check the Jam code on the computer and try again.':
+    'Kod yanlış. Bilgisayardaki Jam kodunu kontrol edip yeniden dene.',
+  'No Jam is running on that computer.': 'O bilgisayarda süren bir Jam yok.',
+  'This Jam is full.': 'Bu Jam dolu.',
+  'Too many wrong codes, so the Jam has a new code. Ask the host for it.':
+    'Çok fazla yanlış kod girildi, bu yüzden Jam’in kodu değişti. Yeni kodu ev sahibinden iste.',
+  'The Jam code has 6 digits.': 'Jam kodu 6 hanelidir.',
+  'No computer found. Type its address.': 'Bilgisayar bulunamadı. Adresini yaz.',
 }

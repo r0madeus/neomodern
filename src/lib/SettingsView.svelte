@@ -20,8 +20,9 @@
   import { theme, type ThemeChoice } from './theme.svelte'
   import SyncSettings from './SyncSettings.svelte'
   import { sync } from './sync.svelte'
+  import { jam } from './jam.svelte'
 
-  type Category = 'all' | 'general' | 'playback' | 'library' | 'devices' | 'internet' | 'about'
+  type Category = 'all' | 'general' | 'playback' | 'library' | 'devices' | 'internet' | 'experimental' | 'about'
 
   // "Phone" on the computer, "Computer" on the phone (sync, docs/SYNC.md).
   const devicesLabel = $derived(
@@ -36,8 +37,15 @@
     { id: 'library', label: 'Library', icon: 'library' },
     { id: 'devices', label: devicesLabel, icon: devicesLabel === 'Phone' ? 'phone' : 'computer' },
     { id: 'internet', label: 'Internet', icon: 'globe' },
+    { id: 'experimental', label: 'Experimental', icon: 'flask' },
     { id: 'about', label: 'About', icon: 'info' },
   ])
+
+  // Jam (docs/JAM.md): the computer hosts, the phone joins.
+  const jamRole = $derived(sync.status?.role ?? (appSettings.platform === 'android' ? 'phone' : 'desktop'))
+  const jamError = $derived(
+    jam.error && (jam.error.action === 'enable' || jam.error.action === 'load') ? jam.error.message : null,
+  )
 
   let category = $state<Category>('all')
   const show = (c: Exclude<Category, 'all'>) => category === 'all' || category === c
@@ -949,6 +957,67 @@
                   {t('Refresh')}
                 </button>
               </div>
+            </div>
+          {/if}
+        </div>
+      </section>
+    {/if}
+
+    {#if show('experimental')}
+      <section aria-labelledby="set-experimental" class="flex flex-col gap-2.5">
+        <h3 id="set-experimental" class="px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          {t('Experimental')}
+        </h3>
+        <div class={cardClass}>
+          <div class="flex items-start justify-between gap-6 p-4">
+            <div class="min-w-0">
+              <p id="jam-label" class="flex flex-wrap items-center gap-2 text-sm font-medium">
+                {jamRole === 'phone' ? t('Join Jams') : t('Jam')}
+                <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                  {t('Experimental')}
+                </span>
+              </p>
+              <p id="jam-help" class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                {jamRole === 'phone'
+                  ? t('Add songs to what a computer on the same Wi-Fi plays, from its library. Off by default.')
+                  : t('Friends on the same Wi-Fi add songs to your queue from their phones. Music plays only here. Off by default.')}
+              </p>
+              {#if jamError}
+                <p class="mt-1.5 text-xs text-red-600 dark:text-red-400" role="alert">{jamError}</p>
+              {/if}
+            </div>
+            <ToggleSwitch
+              ariaLabelledby="jam-label"
+              ariaDescribedby="jam-help"
+              checked={jamRole === 'phone' ? jam.guestEnabled : jam.hostEnabled}
+              disabled={jam.busy === 'enable' || (jamRole === 'phone' ? !jam.guest : !jam.status)}
+              onchange={(next) => void (jamRole === 'phone' ? jam.setGuestEnabled(next) : jam.setEnabled(next))}
+            />
+          </div>
+          {#if jamRole === 'phone' ? jam.guestEnabled : jam.hostEnabled}
+            <div class="flex items-center justify-between gap-4 p-4">
+              <p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">
+                {jamRole === 'phone'
+                  ? jam.joined
+                    ? t('You are in a Jam on {device}.', { device: jam.guest?.hostName ?? t('Computer') })
+                    : t('Scan the code shown on the computer, or type it.')
+                  : jam.status?.running
+                    ? t('A Jam is running.')
+                    : t('Also in the queue panel.')}
+              </p>
+              <button
+                type="button"
+                class="shrink-0 rounded-full bg-accent-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-accent-500 disabled:opacity-50 dark:bg-accent-500 dark:text-zinc-950 dark:hover:bg-accent-400"
+                onclick={() => (jamRole === 'phone' ? jam.openScreen() : void jam.start())}
+              >
+                {jamRole === 'phone'
+                  ? jam.joined
+                    ? t('Open the Jam')
+                    : t('Join a Jam')
+                  : jam.status?.running
+                    ? t('Show the Jam')
+                    : t('Start a Jam')}
+              </button>
             </div>
           {/if}
         </div>

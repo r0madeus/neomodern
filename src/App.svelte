@@ -24,6 +24,8 @@
   import { metadataMatch } from './lib/metadata.svelte'
   import { player } from './lib/player.svelte'
   import { sync } from './lib/sync.svelte'
+  import { jam } from './lib/jam.svelte'
+  import JamDialog from './lib/JamDialog.svelte'
   import { library } from './lib/library.svelte'
   import { lyrics } from './lib/lyrics.svelte'
   import { playlists } from './lib/playlists.svelte'
@@ -270,6 +272,13 @@
       void online.init()
       updates.autoCheck()
     })
+  })
+
+  // Local Jam (docs/JAM.md): the computer hosts, the phone joins. The role
+  // comes from sync (Rust knows the platform).
+  $effect(() => {
+    const role = sync.status?.role
+    if (role) untrack(() => void jam.init(role))
   })
 
   // The full-screen player, side Now Playing preview, or phone UI shows
@@ -850,6 +859,10 @@
   {/await}
 {/if}
 <TrackMenu />
+
+{#if !mobile && jam.dialogOpen && jam.hostEnabled}
+  <JamDialog />
+{/if}
 
 {#if profiles.state?.locked}
   <ProfileLock />

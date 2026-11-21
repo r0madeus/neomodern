@@ -16,6 +16,7 @@
   import { player } from '../player.svelte'
   import { playlists } from '../playlists.svelte'
   import { sync } from '../sync.svelte'
+  import { jam } from '../jam.svelte'
 
   let {
     onOpenAlbum,
@@ -107,8 +108,22 @@
 </script>
 
 <!-- Remote control of the paired computer: only when one is paired; the dot
-     says whether it is connected. -->
+     says whether it is connected. Next to it "Join a Jam" while the Jam
+     switch is on (docs/JAM.md); the dot says a Jam is joined. -->
 {#snippet remoteButton()}
+  {#if jam.guestEnabled}
+    <button
+      type="button"
+      class="relative -mr-1.5 shrink-0 rounded-full p-2 text-zinc-300 active:bg-white/10"
+      aria-label={jam.joined ? t('Open the Jam') : t('Join a Jam')}
+      onclick={jam.openScreen}
+    >
+      <Icon name="jam" class="size-5" />
+      {#if jam.joined}
+        <span class="absolute top-1.5 right-1.5 size-2 rounded-full bg-emerald-400 ring-2 ring-zinc-950"></span>
+      {/if}
+    </button>
+  {/if}
   {#if sync.computer}
     <button
       type="button"

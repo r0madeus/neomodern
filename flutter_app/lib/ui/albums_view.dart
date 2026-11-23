@@ -1,16 +1,30 @@
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
+import 'package:neomodern/ui/track_menu.dart';
 
 class AlbumsView extends StatefulWidget {
-  const AlbumsView({super.key, required this.controller});
+  const AlbumsView({
+    super.key,
+    required this.controller,
+    this.externalAlbumId,
+    this.externalSelectionNonce = 0,
+    required this.onOpenArtist,
+    required this.onOpenAlbum,
+    required this.onOpenSettings,
+  });
 
   final PlayerController controller;
+  final PlatformInt64? externalAlbumId;
+  final int externalSelectionNonce;
+  final ValueChanged<String> onOpenArtist;
+  final ValueChanged<PlatformInt64> onOpenAlbum;
+  final VoidCallback onOpenSettings;
 
   @override
   State<AlbumsView> createState() => _AlbumsViewState();
@@ -21,6 +35,24 @@ class _AlbumsViewState extends State<AlbumsView> {
   Timer? _debounce;
   UiAlbumDetail? _selectedAlbum;
   bool _loadingDetail = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.externalAlbumId != null) {
+      unawaited(_openAlbum(widget.externalAlbumId!));
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant AlbumsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.externalAlbumId != null &&
+        (widget.externalAlbumId != oldWidget.externalAlbumId ||
+            widget.externalSelectionNonce != oldWidget.externalSelectionNonce)) {
+      unawaited(_openAlbum(widget.externalAlbumId!));
+    }
+  }
 
   @override
   void dispose() {
@@ -63,6 +95,8 @@ class _AlbumsViewState extends State<AlbumsView> {
         detail: _selectedAlbum!,
         controller: widget.controller,
         onBack: () => setState(() => _selectedAlbum = null),
+        onOpenArtist: widget.onOpenArtist,
+        onOpenAlbum: widget.onOpenAlbum,
       );
     }
 
@@ -119,11 +153,28 @@ class _AlbumsViewState extends State<AlbumsView> {
         Expanded(
           child: ctrl.albumCount == 0
               ? Center(
-                  child: Text(
-                    ctrl.albumSearch.isNotEmpty
-                        ? 'No matching albums found.'
-                        : 'No albums yet. Add a music folder under Folders.',
-                    style: const TextStyle(color: AppColors.textSecondary),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        ctrl.albumSearch.isNotEmpty
+                            ? 'No matching albums found.'
+                            : 'No albums yet.',
+                        style: const TextStyle(color: AppColors.textSecondary),
+                      ),
+                      if (ctrl.albumSearch.isEmpty) ...[
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: widget.onOpenSettings,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.accent,
+                            side: const BorderSide(color: AppColors.border),
+                          ),
+                          icon: const Icon(Icons.folder_open_rounded, size: 17),
+                          label: const Text('Add Music Folder in Settings'),
+                        ),
+                      ],
+                    ],
                   ),
                 )
               : GridView.builder(
@@ -222,11 +273,15 @@ class _AlbumDetailView extends StatelessWidget {
     required this.detail,
     required this.controller,
     required this.onBack,
+    required this.onOpenArtist,
+    required this.onOpenAlbum,
   });
 
   final UiAlbumDetail detail;
   final PlayerController controller;
   final VoidCallback onBack;
+  final ValueChanged<String> onOpenArtist;
+  final ValueChanged<PlatformInt64> onOpenAlbum;
 
   @override
   Widget build(BuildContext context) {
@@ -277,16 +332,37 @@ class _AlbumDetailView extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(
-                          [
-                            if (album.albumArtist.isNotEmpty) album.albumArtist,
-                            if (album.year != null) '${album.year}',
-                            '${detail.tracks.length} tracks',
-                          ].join(' · '),
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            color: AppColors.textSecondary,
-                          ),
+                        Row(
+                          children: [
+                            if (album.albumArtist.isNotEmpty) ...[
+                              HoverLinkText(
+                                text: album.albumArtist,
+                                onTap: () => onOpenArtist(album.albumArtist),
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const Text(
+                                ' · ',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                            Text(
+                              [
+                                if (album.year != null) '${album.year}',
+                                '${detail.tracks.length} tracks',
+                              ].join(' · '),
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 16),
                         Row(
@@ -339,78 +415,102 @@ class _AlbumDetailView extends StatelessWidget {
             itemBuilder: (context, index) {
               final track = detail.tracks[index];
               final isActive = activePath == track.path;
+              final isFav = controller.isFavorite(track.id);
               final trackNo = track.trackNo ?? (index + 1);
+              void playHere() => controller.playAlbum(album.id, index);
 
-              return InkWell(
-                onTap: () => controller.playAlbum(album.id, index),
-                hoverColor: AppColors.surfaceHover,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  color: isActive ? AppColors.accentMuted : Colors.transparent,
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 40,
-                        child: isActive
-                            ? const Icon(
-                                Icons.graphic_eq_rounded,
-                                size: 16,
-                                color: AppColors.accent,
-                              )
-                            : Text(
-                                '$trackNo',
-                                style: const TextStyle(
-                                  fontSize: 12.5,
-                                  color: AppColors.textMuted,
-                                  fontFeatures: [FontFeature.tabularFigures()],
+              return GestureDetector(
+                onSecondaryTapDown: (d) => TrackMenu.show(
+                  context: context,
+                  globalPosition: d.globalPosition,
+                  track: track,
+                  controller: controller,
+                  onPlay: playHere,
+                  onOpenArtist: onOpenArtist,
+                  onOpenAlbum: onOpenAlbum,
+                ),
+                child: InkWell(
+                  onTap: playHere,
+                  hoverColor: AppColors.surfaceHover,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    color: isActive ? AppColors.accentMuted : Colors.transparent,
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 40,
+                          child: isActive
+                              ? const Icon(
+                                  Icons.graphic_eq_rounded,
+                                  size: 16,
+                                  color: AppColors.accent,
+                                )
+                              : Text(
+                                  '$trackNo',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: AppColors.textMuted,
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                  ),
                                 ),
-                              ),
-                      ),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              track.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: isActive
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
-                                color: isActive
-                                    ? AppColors.accent
-                                    : AppColors.textPrimary,
-                              ),
-                            ),
-                            if (track.artist.isNotEmpty)
+                        ),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                track.artist,
+                                track.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: isActive
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: isActive
+                                      ? AppColors.accent
+                                      : AppColors.textPrimary,
                                 ),
                               ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(
-                        width: 60,
-                        child: Text(
-                          formatDurationMs(track.durationMs),
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            color: AppColors.textMuted,
-                            fontFeatures: [FontFeature.tabularFigures()],
+                              if (track.artist.isNotEmpty)
+                                HoverLinkText(
+                                  text: track.artist,
+                                  onTap: () => onOpenArtist(track.artist),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
+                        StarFavoriteButton(
+                          isFavorite: isFav,
+                          onPressed: () => controller.toggleFavorite(track.id),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          width: 54,
+                          child: Text(
+                            formatDurationMs(track.durationMs),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.textMuted,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                        TrackMoreButton(
+                          track: track,
+                          controller: controller,
+                          onPlay: playHere,
+                          onOpenArtist: onOpenArtist,
+                          onOpenAlbum: onOpenAlbum,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

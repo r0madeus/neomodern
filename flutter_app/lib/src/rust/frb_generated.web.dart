@@ -54,6 +54,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumDetail dco_decode_box_autoadd_ui_album_detail(dynamic raw);
 
   @protected
+  UiArtistDetail dco_decode_box_autoadd_ui_artist_detail(dynamic raw);
+
+  @protected
+  UiHomeMixDetail dco_decode_box_autoadd_ui_home_mix_detail(dynamic raw);
+
+  @protected
   UiPlayerSnapshot dco_decode_box_autoadd_ui_player_snapshot(dynamic raw);
 
   @protected
@@ -72,13 +78,49 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<double> dco_decode_list_prim_f_64_loose(dynamic raw);
+
+  @protected
+  Float64List dco_decode_list_prim_f_64_strict(dynamic raw);
+
+  @protected
+  Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   List<UiAlbumRow> dco_decode_list_ui_album_row(dynamic raw);
 
   @protected
+  List<UiArtistRow> dco_decode_list_ui_artist_row(dynamic raw);
+
+  @protected
+  List<UiArtistTopTrack> dco_decode_list_ui_artist_top_track(dynamic raw);
+
+  @protected
+  List<UiDynamicMix> dco_decode_list_ui_dynamic_mix(dynamic raw);
+
+  @protected
   List<UiFolderInfo> dco_decode_list_ui_folder_info(dynamic raw);
+
+  @protected
+  List<UiPlaylistInfo> dco_decode_list_ui_playlist_info(dynamic raw);
+
+  @protected
+  List<UiRecentTrack> dco_decode_list_ui_recent_track(dynamic raw);
+
+  @protected
+  List<UiSyncedLine> dco_decode_list_ui_synced_line(dynamic raw);
+
+  @protected
+  List<UiTopAlbumStat> dco_decode_list_ui_top_album_stat(dynamic raw);
+
+  @protected
+  List<UiTopArtistStat> dco_decode_list_ui_top_artist_stat(dynamic raw);
+
+  @protected
+  List<UiTopTrackStat> dco_decode_list_ui_top_track_stat(dynamic raw);
 
   @protected
   List<UiTrackInfo> dco_decode_list_ui_track_info(dynamic raw);
@@ -108,6 +150,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumDetail? dco_decode_opt_box_autoadd_ui_album_detail(dynamic raw);
 
   @protected
+  UiArtistDetail? dco_decode_opt_box_autoadd_ui_artist_detail(dynamic raw);
+
+  @protected
+  UiHomeMixDetail? dco_decode_opt_box_autoadd_ui_home_mix_detail(dynamic raw);
+
+  @protected
   UiTrackInfo? dco_decode_opt_box_autoadd_ui_track_info(dynamic raw);
 
   @protected
@@ -126,13 +174,55 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumRow dco_decode_ui_album_row(dynamic raw);
 
   @protected
+  UiArtistDetail dco_decode_ui_artist_detail(dynamic raw);
+
+  @protected
+  UiArtistRow dco_decode_ui_artist_row(dynamic raw);
+
+  @protected
+  UiArtistTopTrack dco_decode_ui_artist_top_track(dynamic raw);
+
+  @protected
+  UiDynamicMix dco_decode_ui_dynamic_mix(dynamic raw);
+
+  @protected
   UiEvent dco_decode_ui_event(dynamic raw);
 
   @protected
   UiFolderInfo dco_decode_ui_folder_info(dynamic raw);
 
   @protected
+  UiHomeFeed dco_decode_ui_home_feed(dynamic raw);
+
+  @protected
+  UiHomeMixDetail dco_decode_ui_home_mix_detail(dynamic raw);
+
+  @protected
+  UiLyrics dco_decode_ui_lyrics(dynamic raw);
+
+  @protected
   UiPlayerSnapshot dco_decode_ui_player_snapshot(dynamic raw);
+
+  @protected
+  UiPlaylistInfo dco_decode_ui_playlist_info(dynamic raw);
+
+  @protected
+  UiRecentTrack dco_decode_ui_recent_track(dynamic raw);
+
+  @protected
+  UiStatsSummary dco_decode_ui_stats_summary(dynamic raw);
+
+  @protected
+  UiSyncedLine dco_decode_ui_synced_line(dynamic raw);
+
+  @protected
+  UiTopAlbumStat dco_decode_ui_top_album_stat(dynamic raw);
+
+  @protected
+  UiTopArtistStat dco_decode_ui_top_artist_stat(dynamic raw);
+
+  @protected
+  UiTopTrackStat dco_decode_ui_top_track_stat(dynamic raw);
 
   @protected
   UiTrackInfo dco_decode_ui_track_info(dynamic raw);
@@ -178,6 +268,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  UiArtistDetail sse_decode_box_autoadd_ui_artist_detail(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiHomeMixDetail sse_decode_box_autoadd_ui_home_mix_detail(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   UiPlayerSnapshot sse_decode_box_autoadd_ui_player_snapshot(
     SseDeserializer deserializer,
   );
@@ -200,13 +300,65 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<double> sse_decode_list_prim_f_64_loose(SseDeserializer deserializer);
+
+  @protected
+  Float64List sse_decode_list_prim_f_64_strict(SseDeserializer deserializer);
+
+  @protected
+  Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   List<UiAlbumRow> sse_decode_list_ui_album_row(SseDeserializer deserializer);
 
   @protected
+  List<UiArtistRow> sse_decode_list_ui_artist_row(SseDeserializer deserializer);
+
+  @protected
+  List<UiArtistTopTrack> sse_decode_list_ui_artist_top_track(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiDynamicMix> sse_decode_list_ui_dynamic_mix(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<UiFolderInfo> sse_decode_list_ui_folder_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiPlaylistInfo> sse_decode_list_ui_playlist_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiRecentTrack> sse_decode_list_ui_recent_track(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiSyncedLine> sse_decode_list_ui_synced_line(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiTopAlbumStat> sse_decode_list_ui_top_album_stat(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiTopArtistStat> sse_decode_list_ui_top_artist_stat(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiTopTrackStat> sse_decode_list_ui_top_track_stat(
     SseDeserializer deserializer,
   );
 
@@ -240,6 +392,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  UiArtistDetail? sse_decode_opt_box_autoadd_ui_artist_detail(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiHomeMixDetail? sse_decode_opt_box_autoadd_ui_home_mix_detail(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   UiTrackInfo? sse_decode_opt_box_autoadd_ui_track_info(
     SseDeserializer deserializer,
   );
@@ -260,13 +422,55 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumRow sse_decode_ui_album_row(SseDeserializer deserializer);
 
   @protected
+  UiArtistDetail sse_decode_ui_artist_detail(SseDeserializer deserializer);
+
+  @protected
+  UiArtistRow sse_decode_ui_artist_row(SseDeserializer deserializer);
+
+  @protected
+  UiArtistTopTrack sse_decode_ui_artist_top_track(SseDeserializer deserializer);
+
+  @protected
+  UiDynamicMix sse_decode_ui_dynamic_mix(SseDeserializer deserializer);
+
+  @protected
   UiEvent sse_decode_ui_event(SseDeserializer deserializer);
 
   @protected
   UiFolderInfo sse_decode_ui_folder_info(SseDeserializer deserializer);
 
   @protected
+  UiHomeFeed sse_decode_ui_home_feed(SseDeserializer deserializer);
+
+  @protected
+  UiHomeMixDetail sse_decode_ui_home_mix_detail(SseDeserializer deserializer);
+
+  @protected
+  UiLyrics sse_decode_ui_lyrics(SseDeserializer deserializer);
+
+  @protected
   UiPlayerSnapshot sse_decode_ui_player_snapshot(SseDeserializer deserializer);
+
+  @protected
+  UiPlaylistInfo sse_decode_ui_playlist_info(SseDeserializer deserializer);
+
+  @protected
+  UiRecentTrack sse_decode_ui_recent_track(SseDeserializer deserializer);
+
+  @protected
+  UiStatsSummary sse_decode_ui_stats_summary(SseDeserializer deserializer);
+
+  @protected
+  UiSyncedLine sse_decode_ui_synced_line(SseDeserializer deserializer);
+
+  @protected
+  UiTopAlbumStat sse_decode_ui_top_album_stat(SseDeserializer deserializer);
+
+  @protected
+  UiTopArtistStat sse_decode_ui_top_artist_stat(SseDeserializer deserializer);
+
+  @protected
+  UiTopTrackStat sse_decode_ui_top_track_stat(SseDeserializer deserializer);
 
   @protected
   UiTrackInfo sse_decode_ui_track_info(SseDeserializer deserializer);
@@ -320,6 +524,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_ui_artist_detail(
+    UiArtistDetail self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_ui_home_mix_detail(
+    UiHomeMixDetail self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_ui_player_snapshot(
     UiPlayerSnapshot self,
     SseSerializer serializer,
@@ -344,6 +560,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_prim_f_64_loose(
+    List<double> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_f_64_strict(
+    Float64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_i_64_strict(
+    Int64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -356,8 +590,62 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_ui_artist_row(
+    List<UiArtistRow> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_artist_top_track(
+    List<UiArtistTopTrack> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_dynamic_mix(
+    List<UiDynamicMix> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_ui_folder_info(
     List<UiFolderInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_playlist_info(
+    List<UiPlaylistInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_recent_track(
+    List<UiRecentTrack> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_synced_line(
+    List<UiSyncedLine> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_top_album_stat(
+    List<UiTopAlbumStat> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_top_artist_stat(
+    List<UiTopArtistStat> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_top_track_stat(
+    List<UiTopTrackStat> self,
     SseSerializer serializer,
   );
 
@@ -401,6 +689,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_ui_artist_detail(
+    UiArtistDetail? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_ui_home_mix_detail(
+    UiHomeMixDetail? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_ui_track_info(
     UiTrackInfo? self,
     SseSerializer serializer,
@@ -422,14 +722,80 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ui_album_row(UiAlbumRow self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_artist_detail(
+    UiArtistDetail self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_artist_row(UiArtistRow self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_artist_top_track(
+    UiArtistTopTrack self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_dynamic_mix(UiDynamicMix self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ui_event(UiEvent self, SseSerializer serializer);
 
   @protected
   void sse_encode_ui_folder_info(UiFolderInfo self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_home_feed(UiHomeFeed self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_home_mix_detail(
+    UiHomeMixDetail self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_lyrics(UiLyrics self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ui_player_snapshot(
     UiPlayerSnapshot self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_playlist_info(
+    UiPlaylistInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_recent_track(UiRecentTrack self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_stats_summary(
+    UiStatsSummary self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_synced_line(UiSyncedLine self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_top_album_stat(
+    UiTopAlbumStat self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_top_artist_stat(
+    UiTopArtistStat self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_top_track_stat(
+    UiTopTrackStat self,
     SseSerializer serializer,
   );
 

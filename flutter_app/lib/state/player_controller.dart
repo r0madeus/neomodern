@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 class PlayerController extends ChangeNotifier {
   static const int _pageSize = 100;
   static const int _albumPageSize = 60;
+  static const int _artistPageSize = 60;
 
   bool _initialized = false;
   String? _initError;
@@ -25,6 +26,15 @@ class PlayerController extends ChangeNotifier {
     volume: 100,
     shuffle: false,
     repeat: 'off',
+    replaygain: 'album',
+    gapless: true,
+    wasapiExclusive: false,
+    eqEnabled: false,
+    eqPreampDb: 0,
+    eqGainsDb: Float64List(10),
+    crossfadeSeconds: 0,
+    sleepEndsAt: null,
+    sleepEndOfTrack: false,
     previousTrack: null,
     nextTrack: null,
     context: null,
@@ -46,6 +56,7 @@ class PlayerController extends ChangeNotifier {
   bool _isScanning = false;
   int _scannedCount = 0;
   List<UiFolderInfo> _folders = const [];
+  bool _offlineMode = false;
 
   // Songs cache
   String _trackSearch = '';
@@ -61,10 +72,29 @@ class PlayerController extends ChangeNotifier {
   final Set<int> _albumPagesLoading = {};
   int _albumQueryEpoch = 0;
 
+  // Artists cache
+  String _artistSearch = '';
+  int _artistCount = 0;
+  final Map<int, UiArtistRow> _artistCache = {};
+  final Set<int> _artistPagesLoading = {};
+  int _artistQueryEpoch = 0;
+
   // Queue cache
   BigInt _cachedQueueVersion = BigInt.from(-1);
   final Map<int, UiTrackInfo> _queueCache = {};
   final Set<int> _queuePagesLoading = {};
+
+  // Home, Favorites, Playlists
+  UiHomeFeed? _homeFeed;
+  final Set<int> _favoriteIds = {};
+  final Set<String> _favoritePaths = {};
+  List<UiTrackRow> _favoriteTracks = const [];
+  List<UiPlaylistInfo> _playlists = const [];
+
+  // Lyrics for current track
+  UiLyrics? _currentLyrics;
+  String? _lyricsTrackPath;
+  bool _lyricsLoading = false;
 
   bool get initialized => _initialized;
   String? get initError => _initError;
@@ -75,10 +105,29 @@ class PlayerController extends ChangeNotifier {
   bool get isScanning => _isScanning;
   int get scannedCount => _scannedCount;
   List<UiFolderInfo> get folders => _folders;
+  bool get offlineMode => _offlineMode;
   String get trackSearch => _trackSearch;
   int get trackCount => _trackCount;
   String get albumSearch => _albumSearch;
   int get albumCount => _albumCount;
+  String get artistSearch => _artistSearch;
+  int get artistCount => _artistCount;
+
+  UiHomeFeed? get homeFeed => _homeFeed;
+  List<UiTrackRow> get favoriteTracks => _favoriteTracks;
+  int get favoriteCount => _favoriteIds.length;
+  List<UiPlaylistInfo> get playlists => _playlists;
+  UiLyrics? get currentLyrics => _currentLyrics;
+  bool get lyricsLoading => _lyricsLoading;
+
+  bool isFavorite(PlatformInt64 trackId) =>
+      _favoriteIds.contains(trackId.toInt());
+
+  bool get isCurrentFavorite {
+    final path = _snapshot.current?.path;
+    if (path == null) return false;
+    return _favoritePaths.contains(path);
+  }
 
   Future<void> init() async {
     try {
@@ -96,9 +145,15 @@ class PlayerController extends ChangeNotifier {
 
       _folders = await libraryFolders();
       _isScanning = await libraryIsScanning();
+      _offlineMode = await settingsGetOffline();
+
       await Future.wait([
         _refreshTracks(),
         _refreshAlbums(),
+        _refreshArtists(),
+        _refreshFavorites(),
+        _refreshPlaylists(),
+        _refreshHome(),
       ]);
 
       _initialized = true;
@@ -137,20 +192,9 @@ class PlayerController extends ChangeNotifier {
         _anchorPosition = seconds;
         _anchorTime = DateTime.now();
         if (duration != null && duration != _snapshot.durationSeconds) {
-          _snapshot = UiPlayerSnapshot(
-            status: _snapshot.status,
-            currentIndex: _snapshot.currentIndex,
-            current: _snapshot.current,
-            queueLength: _snapshot.queueLength,
-            queueVersion: _snapshot.queueVersion,
+          _snapshot = _copySnapshotWith(
             positionSeconds: seconds,
             durationSeconds: duration,
-            volume: _snapshot.volume,
-            shuffle: _snapshot.shuffle,
-            repeat: _snapshot.repeat,
-            previousTrack: _snapshot.previousTrack,
-            nextTrack: _snapshot.nextTrack,
-            context: _snapshot.context,
           );
           notifyListeners();
         }
@@ -169,6 +213,36 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  UiPlayerSnapshot _copySnapshotWith({
+    double? positionSeconds,
+    double? durationSeconds,
+  }) {
+    return UiPlayerSnapshot(
+      status: _snapshot.status,
+      currentIndex: _snapshot.currentIndex,
+      current: _snapshot.current,
+      queueLength: _snapshot.queueLength,
+      queueVersion: _snapshot.queueVersion,
+      positionSeconds: positionSeconds ?? _snapshot.positionSeconds,
+      durationSeconds: durationSeconds ?? _snapshot.durationSeconds,
+      volume: _snapshot.volume,
+      shuffle: _snapshot.shuffle,
+      repeat: _snapshot.repeat,
+      replaygain: _snapshot.replaygain,
+      gapless: _snapshot.gapless,
+      wasapiExclusive: _snapshot.wasapiExclusive,
+      eqEnabled: _snapshot.eqEnabled,
+      eqPreampDb: _snapshot.eqPreampDb,
+      eqGainsDb: _snapshot.eqGainsDb,
+      crossfadeSeconds: _snapshot.crossfadeSeconds,
+      sleepEndsAt: _snapshot.sleepEndsAt,
+      sleepEndOfTrack: _snapshot.sleepEndOfTrack,
+      previousTrack: _snapshot.previousTrack,
+      nextTrack: _snapshot.nextTrack,
+      context: _snapshot.context,
+    );
+  }
+
   Future<void> _onLibraryChanged() async {
     try {
       _folders = await libraryFolders();
@@ -176,6 +250,10 @@ class PlayerController extends ChangeNotifier {
       await Future.wait([
         _refreshTracks(),
         _refreshAlbums(),
+        _refreshArtists(),
+        _refreshFavorites(),
+        _refreshPlaylists(),
+        _refreshHome(),
       ]);
       _refreshCurrentCover(_snapshot.current?.path, force: true);
       notifyListeners();
@@ -212,6 +290,10 @@ class PlayerController extends ChangeNotifier {
 
     if (snap.current?.path != prevPath) {
       _refreshCurrentCover(snap.current?.path);
+      _currentLyrics = null;
+      _lyricsTrackPath = snap.current?.path;
+      unawaited(refreshLyrics());
+      unawaited(_refreshHome());
     }
   }
 
@@ -364,6 +446,74 @@ class PlayerController extends ChangeNotifier {
     );
   }
 
+  // Queue operations
+  Future<void> enqueueTracks(List<String> paths) async {
+    await _runPlayerCmd(() => queueEnqueue(paths: paths));
+  }
+
+  Future<void> insertNextTracks(List<String> paths) async {
+    await _runPlayerCmd(() => queueInsertNext(paths: paths));
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    await _runPlayerCmd(() => queueRemove(index: index));
+  }
+
+  Future<void> clearQueuedTracks() async {
+    await _runPlayerCmd(queueClearQueued);
+  }
+
+  // Playback settings & offline mode
+  Future<void> setReplaygain(String mode) async {
+    await _runPlayerCmd(() => playerSetReplaygain(mode: mode));
+  }
+
+  Future<void> setGapless(bool enabled) async {
+    await _runPlayerCmd(() => playerSetGapless(enabled: enabled));
+  }
+
+  Future<void> setWasapiExclusive(bool enabled) async {
+    await _runPlayerCmd(() => playerSetWasapiExclusive(enabled: enabled));
+  }
+
+  Future<void> setEqualizer({
+    required bool enabled,
+    required double preampDb,
+    required List<double> gainsDb,
+  }) async {
+    await _runPlayerCmd(
+      () => playerSetEqualizer(
+        enabled: enabled,
+        preampDb: preampDb,
+        gainsDb: gainsDb,
+      ),
+    );
+  }
+
+  Future<void> setCrossfade(double seconds) async {
+    await _runPlayerCmd(() => playerSetCrossfade(seconds: seconds));
+  }
+
+  Future<void> setSleepTimer({double? minutes, bool endOfTrack = false}) async {
+    await _runPlayerCmd(
+      () => playerSetSleepTimer(minutes: minutes, endOfTrack: endOfTrack),
+    );
+  }
+
+  Future<void> setOfflineMode(bool offline) async {
+    try {
+      await settingsSetOffline(offline: offline);
+      _offlineMode = offline;
+      notifyListeners();
+      if (!offline && _snapshot.current != null && _currentLyrics?.found != true) {
+        unawaited(refreshLyrics());
+      }
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
   Future<void> _runPlayerCmd(Future<UiPlayerSnapshot> Function() fn) async {
     try {
       final snap = await fn();
@@ -373,6 +523,293 @@ class PlayerController extends ChangeNotifier {
       _lastError = e.toString();
       notifyListeners();
     }
+  }
+
+  // Home & Mixes
+  Future<void> refreshHome() async {
+    try {
+      await _refreshHome();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> _refreshHome() async {
+    _homeFeed = await libraryHome();
+  }
+
+  Future<UiHomeMixDetail?> fetchHomeMixDetail(String mixId) {
+    return libraryHomeMixDetail(mixId: mixId);
+  }
+
+  Future<void> playHomeMix(String mixId, {String? startPath}) async {
+    if (startPath == null) {
+      await _runPlayerCmd(() => libraryPlayHomeMix(mixId: mixId));
+    } else {
+      await _runPlayerCmd(
+        () => libraryPlayHomeMixFrom(mixId: mixId, startPath: startPath),
+      );
+    }
+  }
+
+  Future<UiPlaylistInfo?> saveHomeMix(String mixId, String name) async {
+    try {
+      final info = await librarySaveHomeMix(mixId: mixId, name: name);
+      await _refreshPlaylists();
+      notifyListeners();
+      return info;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // Favorites
+  Future<void> _refreshFavorites() async {
+    final ids = await favoritesList();
+    final tracks = await favoritesTracks();
+    _favoriteIds
+      ..clear()
+      ..addAll(ids.map((id) => id.toInt()));
+    _favoriteTracks = tracks;
+    _favoritePaths
+      ..clear()
+      ..addAll(tracks.map((t) => t.path));
+  }
+
+  Future<void> toggleFavorite(PlatformInt64 trackId) async {
+    try {
+      await favoritesToggle(trackId: trackId);
+      await Future.wait([_refreshFavorites(), _refreshHome()]);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleCurrentFavorite() async {
+    final path = _snapshot.current?.path;
+    if (path == null) return;
+    try {
+      await favoritesToggleByPath(path: path);
+      await Future.wait([_refreshFavorites(), _refreshHome()]);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> playFavorites(int startIndex, {bool shuffle = false}) async {
+    if (shuffle) {
+      await _runPlayerCmd(() => playerSetShuffle(enabled: true));
+    }
+    await _runPlayerCmd(() => favoritesPlay(startIndex: startIndex));
+  }
+
+  // Playlists
+  Future<void> _refreshPlaylists() async {
+    _playlists = await playlistsList();
+  }
+
+  Future<UiPlaylistInfo?> createPlaylist(String name) async {
+    try {
+      final info = await playlistsCreate(name: name);
+      await _refreshPlaylists();
+      notifyListeners();
+      return info;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> renamePlaylist(PlatformInt64 id, String name) async {
+    try {
+      await playlistsRename(id: id, name: name);
+      await _refreshPlaylists();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> deletePlaylist(PlatformInt64 id) async {
+    try {
+      await playlistsDelete(id: id);
+      await _refreshPlaylists();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<List<UiTrackRow>> fetchPlaylistTracks(PlatformInt64 id) {
+    return playlistsTracks(id: id);
+  }
+
+  Future<void> addTracksToPlaylist(
+    PlatformInt64 playlistId,
+    List<PlatformInt64> trackIds,
+  ) async {
+    try {
+      await playlistsAddTracks(
+        id: playlistId,
+        trackIds: Int64List.fromList(trackIds.map((e) => e.toInt()).toList()),
+      );
+      await _refreshPlaylists();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeTrackFromPlaylist(
+    PlatformInt64 playlistId,
+    int position,
+  ) async {
+    try {
+      await playlistsRemoveTrack(id: playlistId, position: position);
+      await _refreshPlaylists();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> playPlaylist(
+    PlatformInt64 playlistId,
+    int startIndex, {
+    bool shuffle = false,
+  }) async {
+    if (shuffle) {
+      await _runPlayerCmd(() => playlistsPlayShuffled(id: playlistId));
+    } else {
+      await _runPlayerCmd(
+        () => playlistsPlay(id: playlistId, startIndex: startIndex),
+      );
+    }
+  }
+
+  // Artists
+  Future<void> setArtistSearch(String query) async {
+    if (_artistSearch == query) return;
+    _artistSearch = query;
+    await _refreshArtists();
+    notifyListeners();
+  }
+
+  Future<void> _refreshArtists() async {
+    _artistQueryEpoch++;
+    final epoch = _artistQueryEpoch;
+    _artistCache.clear();
+    _artistPagesLoading.clear();
+    final q = _artistSearch.trim();
+    final count = await libraryArtistCount(search: q.isEmpty ? null : q);
+    if (epoch != _artistQueryEpoch) return;
+    _artistCount = count;
+    await _loadArtistPage(0, epoch);
+  }
+
+  UiArtistRow? artistAt(int index) {
+    final cached = _artistCache[index];
+    if (cached != null) return cached;
+    final pageStart = (index ~/ _artistPageSize) * _artistPageSize;
+    if (!_artistPagesLoading.contains(pageStart)) {
+      unawaited(_loadArtistPage(pageStart, _artistQueryEpoch));
+    }
+    return null;
+  }
+
+  Future<void> _loadArtistPage(int offset, int epoch) async {
+    if (_artistPagesLoading.contains(offset)) return;
+    _artistPagesLoading.add(offset);
+    try {
+      final q = _artistSearch.trim();
+      final items = await libraryArtistsPage(
+        offset: offset,
+        limit: _artistPageSize,
+        search: q.isEmpty ? null : q,
+      );
+      if (epoch != _artistQueryEpoch) return;
+      for (var i = 0; i < items.length; i++) {
+        _artistCache[offset + i] = items[i];
+      }
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    } finally {
+      _artistPagesLoading.remove(offset);
+    }
+  }
+
+  Future<UiArtistDetail?> fetchArtistDetail(String name) {
+    return libraryArtistDetail(name: name);
+  }
+
+  Future<void> playArtist(
+    String name, {
+    int startIndex = 0,
+    bool shuffle = false,
+  }) async {
+    await _runPlayerCmd(
+      () => libraryPlayArtistFrom(
+        name: name,
+        startIndex: startIndex,
+        shuffle: shuffle,
+      ),
+    );
+  }
+
+  // Lyrics
+  Future<void> refreshLyrics() async {
+    final current = _snapshot.current;
+    if (current == null) {
+      _currentLyrics = null;
+      _lyricsTrackPath = null;
+      _lyricsLoading = false;
+      notifyListeners();
+      return;
+    }
+    final targetPath = current.path;
+    _lyricsTrackPath = targetPath;
+    _lyricsLoading = true;
+    notifyListeners();
+    try {
+      final res = await lyricsForTrack(
+        path: current.path,
+        title: current.title,
+        artist: current.artist,
+        album: '',
+        durationSecs: _snapshot.durationSeconds,
+      );
+      if (_lyricsTrackPath != targetPath) return;
+      _currentLyrics = res;
+    } catch (e) {
+      if (_lyricsTrackPath != targetPath) return;
+      _currentLyrics = null;
+      _lastError = e.toString();
+    } finally {
+      if (_lyricsTrackPath == targetPath) {
+        _lyricsLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  // Listening Stats (Recap)
+  Future<UiStatsSummary> fetchStats({int? days}) {
+    return listeningStats(days: days);
   }
 
   // Library search & virtualized paging

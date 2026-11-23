@@ -119,3 +119,17 @@ String formatDurationMs(BigInt? ms) {
   if (ms == null) return '--:--';
   return formatDuration(ms.toDouble() / 1000.0);
 }
+
+String formatListeningDuration(BigInt ms) {
+  final totalSeconds = ms.toInt() ~/ 1000;
+  if (totalSeconds <= 0) return '0m';
+  final hours = totalSeconds ~/ 3600;
+  final minutes = (totalSeconds % 3600) ~/ 60;
+  if (hours > 0) {
+    return '${hours}h ${minutes}m';
+  }
+  if (minutes > 0) {
+    return '${minutes}m';
+  }
+  return '${totalSeconds}s';
+}

@@ -9,9 +9,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'neomodern.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_tracks`, `core`
+// These functions are ignored because they are not marked as `pub`: `build_tracks`, `core`, `source_label`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<UiPlayerSnapshot> initCore({
   required String dataDir,
@@ -61,6 +61,44 @@ Future<UiPlayerSnapshot> playerSetShuffle({required bool enabled}) =>
 Future<UiPlayerSnapshot> playerSetRepeat({required String mode}) =>
     RustLib.instance.api.crateApiNeomodernPlayerSetRepeat(mode: mode);
 
+Future<UiPlayerSnapshot> playerSetReplaygain({required String mode}) =>
+    RustLib.instance.api.crateApiNeomodernPlayerSetReplaygain(mode: mode);
+
+Future<UiPlayerSnapshot> playerSetGapless({required bool enabled}) =>
+    RustLib.instance.api.crateApiNeomodernPlayerSetGapless(enabled: enabled);
+
+Future<UiPlayerSnapshot> playerSetWasapiExclusive({required bool enabled}) =>
+    RustLib.instance.api.crateApiNeomodernPlayerSetWasapiExclusive(
+      enabled: enabled,
+    );
+
+Future<UiPlayerSnapshot> playerSetEqualizer({
+  required bool enabled,
+  required double preampDb,
+  required List<double> gainsDb,
+}) => RustLib.instance.api.crateApiNeomodernPlayerSetEqualizer(
+  enabled: enabled,
+  preampDb: preampDb,
+  gainsDb: gainsDb,
+);
+
+Future<UiPlayerSnapshot> playerSetCrossfade({required double seconds}) =>
+    RustLib.instance.api.crateApiNeomodernPlayerSetCrossfade(seconds: seconds);
+
+Future<UiPlayerSnapshot> playerSetSleepTimer({
+  double? minutes,
+  required bool endOfTrack,
+}) => RustLib.instance.api.crateApiNeomodernPlayerSetSleepTimer(
+  minutes: minutes,
+  endOfTrack: endOfTrack,
+);
+
+Future<bool> settingsGetOffline() =>
+    RustLib.instance.api.crateApiNeomodernSettingsGetOffline();
+
+Future<void> settingsSetOffline({required bool offline}) =>
+    RustLib.instance.api.crateApiNeomodernSettingsSetOffline(offline: offline);
+
 Future<List<UiTrackInfo>> queuePage({
   required int offset,
   required int limit,
@@ -68,6 +106,18 @@ Future<List<UiTrackInfo>> queuePage({
   offset: offset,
   limit: limit,
 );
+
+Future<UiPlayerSnapshot> queueEnqueue({required List<String> paths}) =>
+    RustLib.instance.api.crateApiNeomodernQueueEnqueue(paths: paths);
+
+Future<UiPlayerSnapshot> queueInsertNext({required List<String> paths}) =>
+    RustLib.instance.api.crateApiNeomodernQueueInsertNext(paths: paths);
+
+Future<UiPlayerSnapshot> queueRemove({required int index}) =>
+    RustLib.instance.api.crateApiNeomodernQueueRemove(index: index);
+
+Future<UiPlayerSnapshot> queueClearQueued() =>
+    RustLib.instance.api.crateApiNeomodernQueueClearQueued();
 
 Future<List<UiFolderInfo>> libraryFolders() =>
     RustLib.instance.api.crateApiNeomodernLibraryFolders();
@@ -134,6 +184,141 @@ Future<UiPlayerSnapshot> libraryPlayAlbum({
   shuffle: shuffle,
 );
 
+Future<UiHomeFeed> libraryHome() =>
+    RustLib.instance.api.crateApiNeomodernLibraryHome();
+
+Future<UiHomeMixDetail?> libraryHomeMixDetail({required String mixId}) =>
+    RustLib.instance.api.crateApiNeomodernLibraryHomeMixDetail(mixId: mixId);
+
+Future<UiPlayerSnapshot> libraryPlayHomeMix({required String mixId}) =>
+    RustLib.instance.api.crateApiNeomodernLibraryPlayHomeMix(mixId: mixId);
+
+Future<UiPlayerSnapshot> libraryPlayHomeMixFrom({
+  required String mixId,
+  String? startPath,
+}) => RustLib.instance.api.crateApiNeomodernLibraryPlayHomeMixFrom(
+  mixId: mixId,
+  startPath: startPath,
+);
+
+Future<UiPlaylistInfo> librarySaveHomeMix({
+  required String mixId,
+  required String name,
+}) => RustLib.instance.api.crateApiNeomodernLibrarySaveHomeMix(
+  mixId: mixId,
+  name: name,
+);
+
+Future<Int64List> favoritesList() =>
+    RustLib.instance.api.crateApiNeomodernFavoritesList();
+
+Future<List<UiTrackRow>> favoritesTracks() =>
+    RustLib.instance.api.crateApiNeomodernFavoritesTracks();
+
+Future<bool> favoritesToggle({required PlatformInt64 trackId}) =>
+    RustLib.instance.api.crateApiNeomodernFavoritesToggle(trackId: trackId);
+
+Future<bool> favoritesToggleByPath({required String path}) =>
+    RustLib.instance.api.crateApiNeomodernFavoritesToggleByPath(path: path);
+
+Future<UiPlayerSnapshot> favoritesPlay({required int startIndex}) =>
+    RustLib.instance.api.crateApiNeomodernFavoritesPlay(startIndex: startIndex);
+
+Future<List<UiPlaylistInfo>> playlistsList() =>
+    RustLib.instance.api.crateApiNeomodernPlaylistsList();
+
+Future<UiPlaylistInfo> playlistsCreate({required String name}) =>
+    RustLib.instance.api.crateApiNeomodernPlaylistsCreate(name: name);
+
+Future<void> playlistsRename({
+  required PlatformInt64 id,
+  required String name,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsRename(id: id, name: name);
+
+Future<void> playlistsDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiNeomodernPlaylistsDelete(id: id);
+
+Future<List<UiTrackRow>> playlistsTracks({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiNeomodernPlaylistsTracks(id: id);
+
+Future<void> playlistsAddTracks({
+  required PlatformInt64 id,
+  required Int64List trackIds,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsAddTracks(
+  id: id,
+  trackIds: trackIds,
+);
+
+Future<void> playlistsRemoveTrack({
+  required PlatformInt64 id,
+  required int position,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsRemoveTrack(
+  id: id,
+  position: position,
+);
+
+Future<UiPlayerSnapshot> playlistsPlay({
+  required PlatformInt64 id,
+  required int startIndex,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsPlay(
+  id: id,
+  startIndex: startIndex,
+);
+
+Future<UiPlayerSnapshot> playlistsPlayShuffled({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiNeomodernPlaylistsPlayShuffled(id: id);
+
+Future<int> libraryArtistCount({String? search}) =>
+    RustLib.instance.api.crateApiNeomodernLibraryArtistCount(search: search);
+
+Future<List<UiArtistRow>> libraryArtistsPage({
+  required int offset,
+  required int limit,
+  String? search,
+}) => RustLib.instance.api.crateApiNeomodernLibraryArtistsPage(
+  offset: offset,
+  limit: limit,
+  search: search,
+);
+
+Future<UiArtistDetail?> libraryArtistDetail({required String name}) =>
+    RustLib.instance.api.crateApiNeomodernLibraryArtistDetail(name: name);
+
+Future<UiPlayerSnapshot> libraryPlayArtist({
+  required String name,
+  required bool shuffle,
+}) => RustLib.instance.api.crateApiNeomodernLibraryPlayArtist(
+  name: name,
+  shuffle: shuffle,
+);
+
+Future<UiPlayerSnapshot> libraryPlayArtistFrom({
+  required String name,
+  required int startIndex,
+  required bool shuffle,
+}) => RustLib.instance.api.crateApiNeomodernLibraryPlayArtistFrom(
+  name: name,
+  startIndex: startIndex,
+  shuffle: shuffle,
+);
+
+Future<UiLyrics> lyricsForTrack({
+  required String path,
+  required String title,
+  required String artist,
+  required String album,
+  double? durationSecs,
+}) => RustLib.instance.api.crateApiNeomodernLyricsForTrack(
+  path: path,
+  title: title,
+  artist: artist,
+  album: album,
+  durationSecs: durationSecs,
+);
+
+Future<UiStatsSummary> listeningStats({int? days}) =>
+    RustLib.instance.api.crateApiNeomodernListeningStats(days: days);
+
 class UiAlbumDetail {
   final UiAlbumRow album;
   final List<UiTrackRow> tracks;
@@ -191,6 +376,171 @@ class UiAlbumRow {
           cover == other.cover;
 }
 
+class UiArtistDetail {
+  final String name;
+  final int trackCount;
+  final int albumCount;
+  final BigInt totalDurationMs;
+  final List<String> genres;
+  final BigInt playCount;
+  final BigInt listenedMs;
+  final String? image;
+  final String? bio;
+  final String? fallbackCover;
+  final List<UiArtistTopTrack> popularTracks;
+  final List<UiAlbumRow> albums;
+  final List<UiTrackRow> tracks;
+
+  const UiArtistDetail({
+    required this.name,
+    required this.trackCount,
+    required this.albumCount,
+    required this.totalDurationMs,
+    required this.genres,
+    required this.playCount,
+    required this.listenedMs,
+    this.image,
+    this.bio,
+    this.fallbackCover,
+    required this.popularTracks,
+    required this.albums,
+    required this.tracks,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      trackCount.hashCode ^
+      albumCount.hashCode ^
+      totalDurationMs.hashCode ^
+      genres.hashCode ^
+      playCount.hashCode ^
+      listenedMs.hashCode ^
+      image.hashCode ^
+      bio.hashCode ^
+      fallbackCover.hashCode ^
+      popularTracks.hashCode ^
+      albums.hashCode ^
+      tracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiArtistDetail &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          trackCount == other.trackCount &&
+          albumCount == other.albumCount &&
+          totalDurationMs == other.totalDurationMs &&
+          genres == other.genres &&
+          playCount == other.playCount &&
+          listenedMs == other.listenedMs &&
+          image == other.image &&
+          bio == other.bio &&
+          fallbackCover == other.fallbackCover &&
+          popularTracks == other.popularTracks &&
+          albums == other.albums &&
+          tracks == other.tracks;
+}
+
+class UiArtistRow {
+  final String name;
+  final int trackCount;
+  final int albumCount;
+  final String? cover;
+  final BigInt playCount;
+  final BigInt listenedMs;
+
+  const UiArtistRow({
+    required this.name,
+    required this.trackCount,
+    required this.albumCount,
+    this.cover,
+    required this.playCount,
+    required this.listenedMs,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      trackCount.hashCode ^
+      albumCount.hashCode ^
+      cover.hashCode ^
+      playCount.hashCode ^
+      listenedMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiArtistRow &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          trackCount == other.trackCount &&
+          albumCount == other.albumCount &&
+          cover == other.cover &&
+          playCount == other.playCount &&
+          listenedMs == other.listenedMs;
+}
+
+class UiArtistTopTrack {
+  final UiTrackRow track;
+  final BigInt playCount;
+  final BigInt listenedMs;
+
+  const UiArtistTopTrack({
+    required this.track,
+    required this.playCount,
+    required this.listenedMs,
+  });
+
+  @override
+  int get hashCode => track.hashCode ^ playCount.hashCode ^ listenedMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiArtistTopTrack &&
+          runtimeType == other.runtimeType &&
+          track == other.track &&
+          playCount == other.playCount &&
+          listenedMs == other.listenedMs;
+}
+
+class UiDynamicMix {
+  final String id;
+  final String title;
+  final String subtitle;
+  final int trackCount;
+  final List<String> coverPaths;
+
+  const UiDynamicMix({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.trackCount,
+    required this.coverPaths,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      title.hashCode ^
+      subtitle.hashCode ^
+      trackCount.hashCode ^
+      coverPaths.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiDynamicMix &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          subtitle == other.subtitle &&
+          trackCount == other.trackCount &&
+          coverPaths == other.coverPaths;
+}
+
 @freezed
 sealed class UiEvent with _$UiEvent {
   const UiEvent._();
@@ -225,6 +575,98 @@ class UiFolderInfo {
           path == other.path;
 }
 
+class UiHomeFeed {
+  final List<UiAlbumRow> recentlyPlayedAlbums;
+  final List<UiRecentTrack> recentlyPlayedTracks;
+  final List<UiAlbumRow> recentlyAddedAlbums;
+  final BigInt favoriteCount;
+  final List<UiDynamicMix> mixes;
+  final bool hasHistory;
+
+  const UiHomeFeed({
+    required this.recentlyPlayedAlbums,
+    required this.recentlyPlayedTracks,
+    required this.recentlyAddedAlbums,
+    required this.favoriteCount,
+    required this.mixes,
+    required this.hasHistory,
+  });
+
+  @override
+  int get hashCode =>
+      recentlyPlayedAlbums.hashCode ^
+      recentlyPlayedTracks.hashCode ^
+      recentlyAddedAlbums.hashCode ^
+      favoriteCount.hashCode ^
+      mixes.hashCode ^
+      hasHistory.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiHomeFeed &&
+          runtimeType == other.runtimeType &&
+          recentlyPlayedAlbums == other.recentlyPlayedAlbums &&
+          recentlyPlayedTracks == other.recentlyPlayedTracks &&
+          recentlyAddedAlbums == other.recentlyAddedAlbums &&
+          favoriteCount == other.favoriteCount &&
+          mixes == other.mixes &&
+          hasHistory == other.hasHistory;
+}
+
+class UiHomeMixDetail {
+  final UiDynamicMix mix;
+  final List<UiTrackRow> tracks;
+
+  const UiHomeMixDetail({required this.mix, required this.tracks});
+
+  @override
+  int get hashCode => mix.hashCode ^ tracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiHomeMixDetail &&
+          runtimeType == other.runtimeType &&
+          mix == other.mix &&
+          tracks == other.tracks;
+}
+
+class UiLyrics {
+  final bool found;
+  final bool isInstrumental;
+  final List<UiSyncedLine> syncedLines;
+  final String? plainText;
+  final String? source;
+
+  const UiLyrics({
+    required this.found,
+    required this.isInstrumental,
+    required this.syncedLines,
+    this.plainText,
+    this.source,
+  });
+
+  @override
+  int get hashCode =>
+      found.hashCode ^
+      isInstrumental.hashCode ^
+      syncedLines.hashCode ^
+      plainText.hashCode ^
+      source.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiLyrics &&
+          runtimeType == other.runtimeType &&
+          found == other.found &&
+          isInstrumental == other.isInstrumental &&
+          syncedLines == other.syncedLines &&
+          plainText == other.plainText &&
+          source == other.source;
+}
+
 class UiPlayerSnapshot {
   final String status;
   final int? currentIndex;
@@ -236,6 +678,15 @@ class UiPlayerSnapshot {
   final double volume;
   final bool shuffle;
   final String repeat;
+  final String replaygain;
+  final bool gapless;
+  final bool wasapiExclusive;
+  final bool eqEnabled;
+  final double eqPreampDb;
+  final Float64List eqGainsDb;
+  final double crossfadeSeconds;
+  final PlatformInt64? sleepEndsAt;
+  final bool sleepEndOfTrack;
   final UiTrackInfo? previousTrack;
   final UiTrackInfo? nextTrack;
   final String? context;
@@ -251,6 +702,15 @@ class UiPlayerSnapshot {
     required this.volume,
     required this.shuffle,
     required this.repeat,
+    required this.replaygain,
+    required this.gapless,
+    required this.wasapiExclusive,
+    required this.eqEnabled,
+    required this.eqPreampDb,
+    required this.eqGainsDb,
+    required this.crossfadeSeconds,
+    this.sleepEndsAt,
+    required this.sleepEndOfTrack,
     this.previousTrack,
     this.nextTrack,
     this.context,
@@ -268,6 +728,15 @@ class UiPlayerSnapshot {
       volume.hashCode ^
       shuffle.hashCode ^
       repeat.hashCode ^
+      replaygain.hashCode ^
+      gapless.hashCode ^
+      wasapiExclusive.hashCode ^
+      eqEnabled.hashCode ^
+      eqPreampDb.hashCode ^
+      eqGainsDb.hashCode ^
+      crossfadeSeconds.hashCode ^
+      sleepEndsAt.hashCode ^
+      sleepEndOfTrack.hashCode ^
       previousTrack.hashCode ^
       nextTrack.hashCode ^
       context.hashCode;
@@ -287,9 +756,269 @@ class UiPlayerSnapshot {
           volume == other.volume &&
           shuffle == other.shuffle &&
           repeat == other.repeat &&
+          replaygain == other.replaygain &&
+          gapless == other.gapless &&
+          wasapiExclusive == other.wasapiExclusive &&
+          eqEnabled == other.eqEnabled &&
+          eqPreampDb == other.eqPreampDb &&
+          eqGainsDb == other.eqGainsDb &&
+          crossfadeSeconds == other.crossfadeSeconds &&
+          sleepEndsAt == other.sleepEndsAt &&
+          sleepEndOfTrack == other.sleepEndOfTrack &&
           previousTrack == other.previousTrack &&
           nextTrack == other.nextTrack &&
           context == other.context;
+}
+
+class UiPlaylistInfo {
+  final PlatformInt64 id;
+  final String name;
+  final int trackCount;
+  final String? cover;
+  final List<String> albumCovers;
+
+  const UiPlaylistInfo({
+    required this.id,
+    required this.name,
+    required this.trackCount,
+    this.cover,
+    required this.albumCovers,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      trackCount.hashCode ^
+      cover.hashCode ^
+      albumCovers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPlaylistInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          trackCount == other.trackCount &&
+          cover == other.cover &&
+          albumCovers == other.albumCovers;
+}
+
+class UiRecentTrack {
+  final UiTrackRow track;
+  final PlatformInt64 startedAt;
+
+  const UiRecentTrack({required this.track, required this.startedAt});
+
+  @override
+  int get hashCode => track.hashCode ^ startedAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiRecentTrack &&
+          runtimeType == other.runtimeType &&
+          track == other.track &&
+          startedAt == other.startedAt;
+}
+
+class UiStatsSummary {
+  final BigInt totalListenedMs;
+  final BigInt playCount;
+  final BigInt uniqueTracks;
+  final BigInt uniqueArtists;
+  final BigInt uniqueAlbums;
+  final BigInt activeDays;
+  final BigInt longestStreakDays;
+  final BigInt currentStreakDays;
+  final List<UiTopTrackStat> topTracks;
+  final List<UiTopArtistStat> topArtists;
+  final List<UiTopAlbumStat> topAlbums;
+
+  const UiStatsSummary({
+    required this.totalListenedMs,
+    required this.playCount,
+    required this.uniqueTracks,
+    required this.uniqueArtists,
+    required this.uniqueAlbums,
+    required this.activeDays,
+    required this.longestStreakDays,
+    required this.currentStreakDays,
+    required this.topTracks,
+    required this.topArtists,
+    required this.topAlbums,
+  });
+
+  @override
+  int get hashCode =>
+      totalListenedMs.hashCode ^
+      playCount.hashCode ^
+      uniqueTracks.hashCode ^
+      uniqueArtists.hashCode ^
+      uniqueAlbums.hashCode ^
+      activeDays.hashCode ^
+      longestStreakDays.hashCode ^
+      currentStreakDays.hashCode ^
+      topTracks.hashCode ^
+      topArtists.hashCode ^
+      topAlbums.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiStatsSummary &&
+          runtimeType == other.runtimeType &&
+          totalListenedMs == other.totalListenedMs &&
+          playCount == other.playCount &&
+          uniqueTracks == other.uniqueTracks &&
+          uniqueArtists == other.uniqueArtists &&
+          uniqueAlbums == other.uniqueAlbums &&
+          activeDays == other.activeDays &&
+          longestStreakDays == other.longestStreakDays &&
+          currentStreakDays == other.currentStreakDays &&
+          topTracks == other.topTracks &&
+          topArtists == other.topArtists &&
+          topAlbums == other.topAlbums;
+}
+
+class UiSyncedLine {
+  final PlatformInt64 timeMs;
+  final String text;
+
+  const UiSyncedLine({required this.timeMs, required this.text});
+
+  @override
+  int get hashCode => timeMs.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiSyncedLine &&
+          runtimeType == other.runtimeType &&
+          timeMs == other.timeMs &&
+          text == other.text;
+}
+
+class UiTopAlbumStat {
+  final String album;
+  final String artist;
+  final PlatformInt64? albumId;
+  final String? cover;
+  final BigInt playCount;
+  final BigInt listenedMs;
+
+  const UiTopAlbumStat({
+    required this.album,
+    required this.artist,
+    this.albumId,
+    this.cover,
+    required this.playCount,
+    required this.listenedMs,
+  });
+
+  @override
+  int get hashCode =>
+      album.hashCode ^
+      artist.hashCode ^
+      albumId.hashCode ^
+      cover.hashCode ^
+      playCount.hashCode ^
+      listenedMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiTopAlbumStat &&
+          runtimeType == other.runtimeType &&
+          album == other.album &&
+          artist == other.artist &&
+          albumId == other.albumId &&
+          cover == other.cover &&
+          playCount == other.playCount &&
+          listenedMs == other.listenedMs;
+}
+
+class UiTopArtistStat {
+  final String artist;
+  final String? cover;
+  final BigInt playCount;
+  final BigInt listenedMs;
+  final BigInt uniqueTracks;
+
+  const UiTopArtistStat({
+    required this.artist,
+    this.cover,
+    required this.playCount,
+    required this.listenedMs,
+    required this.uniqueTracks,
+  });
+
+  @override
+  int get hashCode =>
+      artist.hashCode ^
+      cover.hashCode ^
+      playCount.hashCode ^
+      listenedMs.hashCode ^
+      uniqueTracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiTopArtistStat &&
+          runtimeType == other.runtimeType &&
+          artist == other.artist &&
+          cover == other.cover &&
+          playCount == other.playCount &&
+          listenedMs == other.listenedMs &&
+          uniqueTracks == other.uniqueTracks;
+}
+
+class UiTopTrackStat {
+  final PlatformInt64? trackId;
+  final String path;
+  final String title;
+  final String artist;
+  final String album;
+  final String? cover;
+  final BigInt playCount;
+  final BigInt listenedMs;
+
+  const UiTopTrackStat({
+    this.trackId,
+    required this.path,
+    required this.title,
+    required this.artist,
+    required this.album,
+    this.cover,
+    required this.playCount,
+    required this.listenedMs,
+  });
+
+  @override
+  int get hashCode =>
+      trackId.hashCode ^
+      path.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      cover.hashCode ^
+      playCount.hashCode ^
+      listenedMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiTopTrackStat &&
+          runtimeType == other.runtimeType &&
+          trackId == other.trackId &&
+          path == other.path &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          cover == other.cover &&
+          playCount == other.playCount &&
+          listenedMs == other.listenedMs;
 }
 
 class UiTrackInfo {

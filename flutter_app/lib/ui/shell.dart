@@ -1,14 +1,30 @@
 import 'package:flutter/services.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/albums_view.dart';
-import 'package:neomodern/ui/folders_view.dart';
+import 'package:neomodern/ui/artists_view.dart';
+import 'package:neomodern/ui/favorites_view.dart';
+import 'package:neomodern/ui/home_view.dart';
 import 'package:neomodern/ui/player_bar.dart';
-import 'package:neomodern/ui/queue_view.dart';
+import 'package:neomodern/ui/playlists_view.dart';
+import 'package:neomodern/ui/recap_view.dart';
+import 'package:neomodern/ui/right_panel.dart';
+import 'package:neomodern/ui/settings_view.dart';
 import 'package:neomodern/ui/songs_view.dart';
+import 'package:neomodern/ui/track_menu.dart';
 
-enum NavTab { songs, albums, queue, folders }
+enum NavTab {
+  home,
+  songs,
+  albums,
+  artists,
+  recap,
+  settings,
+  favorites,
+  playlist,
+}
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.controller});
@@ -20,7 +36,17 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  NavTab _tab = NavTab.songs;
+  NavTab _tab = NavTab.home;
+  PlatformInt64? _selectedPlaylistId;
+
+  PlatformInt64? _externalAlbumId;
+  int _externalAlbumNonce = 0;
+
+  String? _externalArtistName;
+  int _externalArtistNonce = 0;
+
+  bool _rightPanelOpen = false;
+  RightPanelTab _rightPanelTab = RightPanelTab.lyrics;
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -48,6 +74,62 @@ class _AppShellState extends State<AppShell> {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  void _openAlbum(PlatformInt64 albumId) {
+    setState(() {
+      _tab = NavTab.albums;
+      _externalAlbumId = albumId;
+      _externalAlbumNonce++;
+    });
+  }
+
+  void _openArtist(String name) {
+    setState(() {
+      _tab = NavTab.artists;
+      _externalArtistName = name;
+      _externalArtistNonce++;
+    });
+  }
+
+  void _openPlaylist(PlatformInt64 id) {
+    setState(() {
+      _tab = NavTab.playlist;
+      _selectedPlaylistId = id;
+    });
+  }
+
+  void _openSettings() {
+    setState(() => _tab = NavTab.settings);
+  }
+
+  void _openFavorites() {
+    setState(() => _tab = NavTab.favorites);
+  }
+
+  void _toggleRightPanel(RightPanelTab tab) {
+    setState(() {
+      if (_rightPanelOpen && _rightPanelTab == tab) {
+        _rightPanelOpen = false;
+      } else {
+        _rightPanelOpen = true;
+        _rightPanelTab = tab;
+      }
+    });
+  }
+
+  Future<void> _createPlaylist() async {
+    final name = await showTextPromptDialog(
+      context: context,
+      title: 'Create Playlist',
+      hintText: 'Playlist name',
+      confirmLabel: 'Create',
+    );
+    if (name == null) return;
+    final created = await widget.controller.createPlaylist(name);
+    if (created != null && mounted) {
+      _openPlaylist(created.id);
+    }
   }
 
   @override
@@ -107,6 +189,17 @@ class _AppShellState extends State<AppShell> {
           );
         }
 
+        final mainIndex = switch (_tab) {
+          NavTab.home => 0,
+          NavTab.songs => 1,
+          NavTab.albums => 2,
+          NavTab.artists => 3,
+          NavTab.recap => 4,
+          NavTab.settings => 5,
+          NavTab.favorites => 6,
+          NavTab.playlist => 7,
+        };
+
         return Focus(
           autofocus: true,
           onKeyEvent: _handleKeyEvent,
@@ -150,24 +243,89 @@ class _AppShellState extends State<AppShell> {
                     children: [
                       _Sidebar(
                         selected: _tab,
+                        selectedPlaylistId: _selectedPlaylistId,
                         controller: ctrl,
                         onSelect: (t) => setState(() => _tab = t),
+                        onSelectPlaylist: _openPlaylist,
+                        onCreatePlaylist: _createPlaylist,
                       ),
                       Expanded(
                         child: IndexedStack(
-                          index: _tab.index,
+                          index: mainIndex,
                           children: [
-                            SongsView(controller: ctrl),
-                            AlbumsView(controller: ctrl),
-                            QueueView(controller: ctrl),
-                            FoldersView(controller: ctrl),
+                            HomeView(
+                              controller: ctrl,
+                              onOpenAlbum: _openAlbum,
+                              onOpenArtist: _openArtist,
+                              onOpenFavorites: _openFavorites,
+                              onOpenSettings: _openSettings,
+                            ),
+                            SongsView(
+                              controller: ctrl,
+                              onOpenArtist: _openArtist,
+                              onOpenAlbum: _openAlbum,
+                              onOpenSettings: _openSettings,
+                            ),
+                            AlbumsView(
+                              controller: ctrl,
+                              externalAlbumId: _externalAlbumId,
+                              externalSelectionNonce: _externalAlbumNonce,
+                              onOpenArtist: _openArtist,
+                              onOpenAlbum: _openAlbum,
+                              onOpenSettings: _openSettings,
+                            ),
+                            ArtistsView(
+                              controller: ctrl,
+                              externalArtistName: _externalArtistName,
+                              externalSelectionNonce: _externalArtistNonce,
+                              onOpenAlbum: _openAlbum,
+                              onOpenArtist: _openArtist,
+                            ),
+                            RecapView(
+                              controller: ctrl,
+                              onOpenArtist: _openArtist,
+                              onOpenAlbum: _openAlbum,
+                            ),
+                            SettingsView(controller: ctrl),
+                            FavoritesView(
+                              controller: ctrl,
+                              onOpenArtist: _openArtist,
+                              onOpenAlbum: _openAlbum,
+                            ),
+                            _selectedPlaylistId != null
+                                ? PlaylistsView(
+                                    playlistId: _selectedPlaylistId!,
+                                    controller: ctrl,
+                                    onPlaylistDeleted: () => setState(() {
+                                      _selectedPlaylistId = null;
+                                      _tab = NavTab.home;
+                                    }),
+                                    onOpenArtist: _openArtist,
+                                    onOpenAlbum: _openAlbum,
+                                  )
+                                : const SizedBox.shrink(),
                           ],
                         ),
                       ),
+                      if (_rightPanelOpen)
+                        RightPanel(
+                          controller: ctrl,
+                          activeTab: _rightPanelTab,
+                          onTabChanged: (t) =>
+                              setState(() => _rightPanelTab = t),
+                          onClose: () =>
+                              setState(() => _rightPanelOpen = false),
+                        ),
                     ],
                   ),
                 ),
-                PlayerBar(controller: ctrl),
+                PlayerBar(
+                  controller: ctrl,
+                  rightPanelOpen: _rightPanelOpen,
+                  rightPanelTab: _rightPanelTab,
+                  onTogglePanel: _toggleRightPanel,
+                  onOpenArtist: _openArtist,
+                ),
               ],
             ),
           ),
@@ -180,18 +338,26 @@ class _AppShellState extends State<AppShell> {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.selected,
+    required this.selectedPlaylistId,
     required this.controller,
     required this.onSelect,
+    required this.onSelectPlaylist,
+    required this.onCreatePlaylist,
   });
 
   final NavTab selected;
+  final PlatformInt64? selectedPlaylistId;
   final PlayerController controller;
   final ValueChanged<NavTab> onSelect;
+  final ValueChanged<PlatformInt64> onSelectPlaylist;
+  final VoidCallback onCreatePlaylist;
 
   @override
   Widget build(BuildContext context) {
+    final playlists = controller.playlists;
+
     return Container(
-      width: 224,
+      width: 228,
       decoration: const BoxDecoration(
         color: AppColors.sidebar,
         border: Border(right: BorderSide(color: AppColors.border)),
@@ -200,7 +366,7 @@ class _Sidebar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
             child: Row(
               children: [
                 Container(
@@ -230,6 +396,12 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           _NavItem(
+            icon: Icons.home_rounded,
+            label: 'Home',
+            active: selected == NavTab.home,
+            onTap: () => onSelect(NavTab.home),
+          ),
+          _NavItem(
             icon: Icons.music_note_rounded,
             label: 'Songs',
             active: selected == NavTab.songs,
@@ -242,75 +414,145 @@ class _Sidebar extends StatelessWidget {
             onTap: () => onSelect(NavTab.albums),
           ),
           _NavItem(
-            icon: Icons.queue_music_rounded,
-            label: 'Queue',
-            active: selected == NavTab.queue,
-            trailing: controller.snapshot.queueLength > 0
-                ? '${controller.snapshot.queueLength}'
-                : null,
-            onTap: () => onSelect(NavTab.queue),
+            icon: Icons.person_rounded,
+            label: 'Artists',
+            active: selected == NavTab.artists,
+            onTap: () => onSelect(NavTab.artists),
           ),
           _NavItem(
-            icon: Icons.folder_rounded,
-            label: 'Folders',
-            active: selected == NavTab.folders,
-            onTap: () => onSelect(NavTab.folders),
+            icon: Icons.bar_chart_rounded,
+            label: 'Recap',
+            active: selected == NavTab.recap,
+            onTap: () => onSelect(NavTab.recap),
           ),
-          const Spacer(),
-          Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: controller.isScanning
-                ? Row(
-                    children: [
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Scanning (${controller.scannedCount})',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      const Icon(
-                        Icons.library_music_rounded,
-                        size: 15,
-                        color: AppColors.textMuted,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${controller.trackCount} songs · ${controller.albumCount} albums',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
+          _NavItem(
+            icon: Icons.settings_rounded,
+            label: 'Settings',
+            active: selected == NavTab.settings,
+            onTap: () => onSelect(NavTab.settings),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Divider(height: 1, color: AppColors.border),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 10, 4),
+            child: Row(
+              children: [
+                const Text(
+                  'YOUR LIBRARY',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.9,
+                    color: AppColors.textMuted,
                   ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Create Playlist',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 26, minHeight: 26),
+                  icon: const Icon(
+                    Icons.add_rounded,
+                    size: 17,
+                    color: AppColors.textSecondary,
+                  ),
+                  onPressed: onCreatePlaylist,
+                ),
+              ],
+            ),
+          ),
+          _NavItem(
+            icon: Icons.star_rounded,
+            label: 'Favorites',
+            active: selected == NavTab.favorites,
+            trailing: controller.favoriteCount > 0
+                ? '${controller.favoriteCount}'
+                : null,
+            onTap: () => onSelect(NavTab.favorites),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 8),
+              itemCount: playlists.length,
+              itemBuilder: (context, index) {
+                final pl = playlists[index];
+                final active = selected == NavTab.playlist &&
+                    selectedPlaylistId == pl.id;
+                return _NavItem(
+                  icon: Icons.queue_music_rounded,
+                  label: pl.name,
+                  active: active,
+                  trailing: pl.trackCount > 0 ? '${pl.trackCount}' : null,
+                  onTap: () => onSelectPlaylist(pl.id),
+                );
+              },
+            ),
+          ),
+          InkWell(
+            onTap: controller.folders.isEmpty
+                ? () => onSelect(NavTab.settings)
+                : null,
+            child: Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: controller.isScanning
+                  ? Row(
+                      children: [
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.accent,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Scanning (${controller.scannedCount})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        const Icon(
+                          Icons.library_music_rounded,
+                          size: 15,
+                          color: AppColors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            controller.folders.isEmpty
+                                ? 'Add folder in Settings'
+                                : '${controller.trackCount} songs · ${controller.albumCount} albums',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
           ),
         ],
       ),
@@ -345,18 +587,20 @@ class _NavItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           hoverColor: active ? AppColors.accentMuted : AppColors.surfaceHover,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
               children: [
                 Icon(
                   icon,
-                  size: 19,
+                  size: 18,
                   color: active ? AppColors.accent : AppColors.textSecondary,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 11),
                 Expanded(
                   child: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: active ? FontWeight.w600 : FontWeight.w500,

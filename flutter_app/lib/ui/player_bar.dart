@@ -4,11 +4,24 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
+import 'package:neomodern/ui/right_panel.dart';
+import 'package:neomodern/ui/track_menu.dart';
 
 class PlayerBar extends StatelessWidget {
-  const PlayerBar({super.key, required this.controller});
+  const PlayerBar({
+    super.key,
+    required this.controller,
+    required this.rightPanelOpen,
+    required this.rightPanelTab,
+    required this.onTogglePanel,
+    required this.onOpenArtist,
+  });
 
   final PlayerController controller;
+  final bool rightPanelOpen;
+  final RightPanelTab rightPanelTab;
+  final ValueChanged<RightPanelTab> onTogglePanel;
+  final ValueChanged<String> onOpenArtist;
 
   @override
   Widget build(BuildContext context) {
@@ -16,6 +29,7 @@ class PlayerBar extends StatelessWidget {
     final current = snap.current;
     final duration = snap.durationSeconds;
     final hasTrack = current != null;
+    final sleepActive = snap.sleepEndOfTrack || snap.sleepEndsAt != null;
 
     return Container(
       height: 88,
@@ -26,7 +40,7 @@ class PlayerBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Left: Current track info
+          // Left: Current track info + star favorite
           Expanded(
             flex: 3,
             child: Row(
@@ -56,12 +70,15 @@ class PlayerBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        current != null && current.artist.isNotEmpty
+                      HoverLinkText(
+                        text: current != null && current.artist.isNotEmpty
                             ? current.artist
-                            : (hasTrack ? 'Unknown Artist' : 'Pick a track to play'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                            : (hasTrack
+                                ? 'Unknown Artist'
+                                : 'Pick a track to play'),
+                        onTap: current != null && current.artist.isNotEmpty
+                            ? () => onOpenArtist(current.artist)
+                            : null,
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,
@@ -70,6 +87,13 @@ class PlayerBar extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (hasTrack) ...[
+                  const SizedBox(width: 4),
+                  StarFavoriteButton(
+                    isFavorite: controller.isCurrentFavorite,
+                    onPressed: controller.toggleCurrentFavorite,
+                  ),
+                ],
               ],
             ),
           ),
@@ -213,12 +237,49 @@ class PlayerBar extends StatelessWidget {
             ),
           ),
 
-          // Right: Volume
+          // Right: Sleep indicator, Lyrics & Queue toggles, Volume
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (sleepActive)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Tooltip(
+                      message: 'Sleep Timer active',
+                      child: Icon(
+                        Icons.bedtime_rounded,
+                        size: 17,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                IconButton(
+                  tooltip: 'Lyrics',
+                  icon: Icon(
+                    Icons.lyrics_rounded,
+                    size: 19,
+                    color: rightPanelOpen &&
+                            rightPanelTab == RightPanelTab.lyrics
+                        ? AppColors.accent
+                        : AppColors.textSecondary,
+                  ),
+                  onPressed: () => onTogglePanel(RightPanelTab.lyrics),
+                ),
+                IconButton(
+                  tooltip: 'Queue',
+                  icon: Icon(
+                    Icons.queue_music_rounded,
+                    size: 19,
+                    color: rightPanelOpen &&
+                            rightPanelTab == RightPanelTab.queue
+                        ? AppColors.accent
+                        : AppColors.textSecondary,
+                  ),
+                  onPressed: () => onTogglePanel(RightPanelTab.queue),
+                ),
+                const SizedBox(width: 4),
                 IconButton(
                   tooltip: snap.volume == 0 ? 'Unmute' : 'Mute',
                   icon: Icon(
@@ -233,7 +294,7 @@ class PlayerBar extends StatelessWidget {
                   onPressed: controller.toggleMute,
                 ),
                 SizedBox(
-                  width: 110,
+                  width: 96,
                   child: Slider(
                     value: snap.volume.clamp(0.0, 100.0),
                     max: 100.0,

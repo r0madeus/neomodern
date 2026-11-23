@@ -2,6 +2,7 @@
   "name": "neomodern",
   "private": true,
   "version": "0.9.6",
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "vite",

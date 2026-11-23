@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/neomodern-core",
+    "src-tauri",
+]
+
+# Smaller release binaries (desktop installer and Android APK): no debug
+# symbols, whole-program optimisation. Panics still unwind, so the panic
+# hook can log them.
+[profile.release]
+strip = "symbols"
+lto = "thin"
+codegen-units = 1

@@ -2,10 +2,10 @@
 //! phones (server role), the phone's connection to its paired computer
 //! (client role), pairing, status and remote control.
 //!
-//! Everything runs on the Tauri async runtime; every SQLite call goes
+//! Everything runs on the Tokio async runtime; every SQLite call goes
 //! through `spawn_blocking` and the library mutex is never held across an
 //! `.await`. Events go through an [`EventSink`], so the service runs in
-//! tests without a Tauri app.
+//! tests and headless cores without a Tauri app.
 
 use super::conn::{self, Ctl, Role};
 use super::jam::guest::GuestRt;
@@ -45,24 +45,6 @@ const MAX_KEY_BYTES: usize = 4096;
 /// Where the service's events go (Tauri events in the app, a list in tests).
 pub trait EventSink: Send + Sync {
     fn emit(&self, event: &str, payload: serde_json::Value);
-}
-
-/// Sends events to the app's windows.
-pub struct TauriSink(pub tauri::AppHandle);
-
-impl EventSink for TauriSink {
-    fn emit(&self, event: &str, payload: serde_json::Value) {
-        use tauri::{Emitter, Manager};
-        // High-rate events wait while the page is hidden (see `crate::ui`).
-        if let Some(ui) = self.0.try_state::<Arc<crate::ui::UiVisibility>>()
-            && !ui.wants(event)
-        {
-            return;
-        }
-        if let Err(e) = self.0.emit(event, payload) {
-            log::warn!("failed to emit {event}: {e}");
-        }
-    }
 }
 
 pub struct SyncConfig {
@@ -255,7 +237,7 @@ pub(super) struct Shared {
 pub(super) async fn run_blocking<T: Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(f)
+    tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| format!("background task failed: {e}"))
 }
@@ -544,9 +526,9 @@ impl SyncService {
             }
             st.started = true;
         }
-        tauri::async_runtime::spawn(status_task(Arc::clone(&self.sh)));
-        tauri::async_runtime::spawn(capture_task(Arc::clone(&self.sh)));
-        tauri::async_runtime::spawn(super::jam::host::status_task(Arc::clone(&self.sh)));
+        tokio::spawn(status_task(Arc::clone(&self.sh)));
+        tokio::spawn(capture_task(Arc::clone(&self.sh)));
+        tokio::spawn(super::jam::host::status_task(Arc::clone(&self.sh)));
         if let Err(e) = self.sh.local_device().await {
             log::warn!("sync: no device identity: {e}");
         }
@@ -801,7 +783,7 @@ impl SyncService {
         self.sh.dirty();
         // Tell the UI when the code runs out.
         let sh = Arc::clone(&self.sh);
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             tokio::time::sleep(link::CODE_TTL + Duration::from_millis(200)).await;
             sh.dirty();
         });
@@ -1041,7 +1023,7 @@ impl SyncService {
         if let Some(old) = old {
             old.stop.send_replace(true);
         }
-        tauri::async_runtime::spawn(client_loop(Arc::clone(&self.sh), peer_id, stop_rx, wake));
+        tokio::spawn(client_loop(Arc::clone(&self.sh), peer_id, stop_rx, wake));
     }
 
     fn stop_client(&self) {

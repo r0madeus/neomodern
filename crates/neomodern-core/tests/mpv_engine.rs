@@ -1,8 +1,8 @@
 //! Integration tests against real libmpv with the `null` audio output.
 
-use neomodern_lib::audio::mpv::{MpvEngine, MpvOptions};
-use neomodern_lib::audio::{AudioEngine, EndReason, EngineError, EngineEvent, ReplayGain};
-use neomodern_lib::player::{Player, PlayerEvent, Status};
+use neomodern_core::audio::mpv::{MpvEngine, MpvOptions};
+use neomodern_core::audio::{AudioEngine, EndReason, EngineError, EngineEvent, ReplayGain};
+use neomodern_core::player::{Player, PlayerEvent, Status};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -376,7 +376,7 @@ fn player_plays_whole_queue_with_gapless_off() {
 
 #[test]
 fn equalizer_is_accepted_by_mpv_and_keeps_playing() {
-    use neomodern_lib::audio::Equalizer;
+    use neomodern_core::audio::Equalizer;
     let dir = tempfile::tempdir().unwrap();
     let a = write_wav(dir.path(), "eq.wav", 440.0, 0.5);
     let (engine, rx) = engine();

@@ -511,7 +511,7 @@ pub(in crate::sync) async fn serve(sh: Arc<Shared>, session: Session) {
     let (mut reader, writer) = session.into_split();
     reader.set_idle_timeout(Some(IDLE_TIMEOUT));
     let (in_tx, mut inbox) = mpsc::channel::<Result<JamCmd, String>>(8);
-    let _reader = AbortOnDrop(tauri::async_runtime::spawn(async move {
+    let _reader = AbortOnDrop(tokio::spawn(async move {
         loop {
             let item = match reader.recv().await {
                 Ok(bytes) => JamCmd::parse(&bytes),

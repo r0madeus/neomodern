@@ -1,15 +1,34 @@
-//! Tauri commands of PC <-> phone sync and the remote (docs/SYNC.md).
-//! Thin wrappers around [`SyncService`]; small payloads only.
+//! Tauri commands and event sink for PC <-> phone sync and the remote
+//! (docs/SYNC.md). Thin wrappers around [`SyncService`]; small payloads only.
 
-use super::jam::JamSearchPage;
-use super::jam::guest::JamGuestStatus;
-use super::jam::host::JamStatus;
-use super::remote::{QueuePage, RemoteCmd, RemoteState};
-use super::service::{FoundComputerInfo, PairingOpen, SyncService, SyncStatus};
 use crate::player::Player;
 use crate::session::SessionStore;
+use neomodern_core::sync::EventSink;
+use neomodern_core::sync::jam::JamSearchPage;
+use neomodern_core::sync::jam::guest::JamGuestStatus;
+use neomodern_core::sync::jam::host::JamStatus;
+use neomodern_core::sync::remote::{QueuePage, RemoteCmd, RemoteState};
+use neomodern_core::sync::service::{FoundComputerInfo, PairingOpen, SyncService, SyncStatus};
 use std::sync::Arc;
 use tauri::State;
+
+/// Sends sync service events to the app's windows.
+pub struct TauriSink(pub tauri::AppHandle);
+
+impl EventSink for TauriSink {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        use tauri::{Emitter, Manager};
+        // High-rate events wait while the page is hidden (see `crate::ui`).
+        if let Some(ui) = self.0.try_state::<Arc<crate::ui::UiVisibility>>()
+            && !ui.wants(event)
+        {
+            return;
+        }
+        if let Err(e) = self.0.emit(event, payload) {
+            log::warn!("failed to emit {event}: {e}");
+        }
+    }
+}
 
 type Res<T> = Result<T, String>;
 

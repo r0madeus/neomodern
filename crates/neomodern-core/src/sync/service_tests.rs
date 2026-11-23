@@ -118,7 +118,11 @@ pub(super) async fn device(name: &str, server: bool) -> Dev {
 }
 
 pub(super) fn rt<F: std::future::Future>(f: F) -> F::Output {
-    tauri::async_runtime::block_on(f)
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(f)
 }
 
 macro_rules! wait_for {
@@ -575,7 +579,7 @@ fn remote_commands_are_rate_limited() {
         let mut tasks = Vec::new();
         for i in 0..60 {
             let svc = p.phone.svc.clone();
-            tasks.push(tauri::async_runtime::spawn(async move {
+            tasks.push(tokio::spawn(async move {
                 svc.remote_send(RemoteCmd::SetVolume {
                     percent: f64::from(i % 100),
                 })

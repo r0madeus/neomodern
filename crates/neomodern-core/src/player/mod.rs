@@ -620,10 +620,10 @@ impl Player {
         s.pending_load_seek = None;
     }
 
-    /// Tests elsewhere in the crate: pretend the current song has been
+    /// Tests in downstream workspace crates: pretend the current song has been
     /// heard for `d` (listens need at least 3 s).
-    #[cfg(test)]
-    pub(crate) fn add_listened_for_test(&self, d: Duration) {
+    #[cfg(feature = "test-support")]
+    pub fn add_listened_for_test(&self, d: Duration) {
         if let Some(l) = self.lock().listen.as_mut() {
             l.accumulated += d;
         }

@@ -307,6 +307,7 @@ mod tests {
         let count = |text: &str, needle: &str| text.matches(needle).count();
 
         // (file, needle, expected count): how each is gated.
+        // (`online/` lives in the `src-tauri` shell crate and has its own guard.)
         let allowed: &[(&str, &str, usize)] = &[
             // LRCLIB: every request via LrclibClient::http() (lyrics switch).
             ("lyrics/lrclib.rs", "client_builder()", 1),
@@ -314,17 +315,6 @@ mod tests {
             ("lyrics/netease.rs", "client_builder()", 1),
             // MusicBrainz and Cover Art Archive: via MbClient::http().
             ("metadata/musicbrainz.rs", "client_builder()", 1),
-            // Online search/covers/artist info: via OnlineService::http().
-            ("online/mod.rs", "client_builder()", 1),
-            ("online/mod.rs", "reqwest::Client::new()", 1),
-            // yt-dlp / ffmpeg / kill: only reachable from gated entry points
-            // (search, album_detail, resolve_stream, enqueue_download, the
-            // download worker and status).
-            ("online/mod.rs", "Command::new(", 3),
-            // yt-dlp/ffmpeg download: only via OnlineService::install_tool,
-            // which requires Feature::Online; ToolsDir::install re-checks
-            // it before every request and chunk.
-            ("online/tools.rs", "client_builder()", 1),
             // Update check: update::check_at() requires Feature::Updates.
             ("update.rs", "client_builder()", 1),
             // PC <-> phone sync (docs/SYNC.md): LAN only, never the
@@ -393,7 +383,6 @@ mod tests {
             ("lyrics/lrclib.rs", "self.http"),
             ("lyrics/netease.rs", "self.http"),
             ("metadata/musicbrainz.rs", "self.http"),
-            ("online/mod.rs", "self.client"),
         ] {
             let text = std::fs::read_to_string(root.join(file)).unwrap();
             let text = text.split("#[cfg(test)]").next().unwrap();

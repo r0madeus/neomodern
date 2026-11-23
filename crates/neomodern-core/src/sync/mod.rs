@@ -6,12 +6,10 @@
 //! - `protocol` – the messages inside a session;
 //! - `conn` – one session's event loop (sync rounds, remote, keep-alive);
 //! - `remote` – remote-control commands and the player state the phone sees;
-//! - `service` – the service the app manages; `commands` – its Tauri
-//!   commands;
+//! - `service` – the service the app manages;
 //! - `jam` – the local Jam (K27, `docs/JAM.md`): guests add songs to the
 //!   computer's queue.
 
-pub mod commands;
 mod conn;
 pub mod jam;
 pub mod link;
@@ -27,4 +25,4 @@ mod jam_tests;
 mod service_tests;
 
 pub use remote::RemoteFeed;
-pub use service::{SyncConfig, SyncService, TauriSink, default_device_name};
+pub use service::{EventSink, SyncConfig, SyncService, default_device_name};

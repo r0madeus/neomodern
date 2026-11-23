@@ -16,7 +16,7 @@
 //! field; [`parse_event`] turns them into [`EngineEvent`]s.
 
 use super::android_events::parse_event;
-use super::{
+use crate::audio::{
     AudioEngine, EngineError, EngineEvent, EngineResult, Equalizer, ReplayGain, replaygain,
 };
 use serde_json::{Value, json};

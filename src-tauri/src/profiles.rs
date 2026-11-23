@@ -245,12 +245,46 @@ pub fn switch(lib: &Library, store: &SessionStore, player: &Player, to: ProfileI
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::{AudioEngine, EngineError, ReplayGain};
     use crate::library::Hooks;
     use crate::player::PlayerEvent;
-    use crate::player::bulk_tests::Silent;
     use crate::queue::Track;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::Mutex;
+
+    struct Silent;
+    impl AudioEngine for Silent {
+        fn load(&self, _: &Path) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_next(&self, _: Option<&Path>) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn play(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn pause(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn seek(&self, _: f64) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_volume(&self, _: f64) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_replaygain(&self, _: ReplayGain) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_gapless(&self, _: bool) -> Result<(), EngineError> {
+            Ok(())
+        }
+        fn set_wasapi_exclusive(&self, _: bool) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
 
     struct Setup {
         _tmp: tempfile::TempDir,

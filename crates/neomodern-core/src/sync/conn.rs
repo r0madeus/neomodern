@@ -71,7 +71,7 @@ pub(super) struct Ended {
 }
 
 /// A spawned task that is aborted when this is dropped.
-pub(super) struct AbortOnDrop<T>(pub tauri::async_runtime::JoinHandle<T>);
+pub(super) struct AbortOnDrop<T>(pub tokio::task::JoinHandle<T>);
 
 impl<T> Drop for AbortOnDrop<T> {
     fn drop(&mut self) {
@@ -143,7 +143,7 @@ pub(super) async fn run(
     let (mut reader, writer) = session.into_split();
     reader.set_idle_timeout(Some(IDLE_TIMEOUT));
     let (in_tx, mut inbox) = mpsc::channel::<Result<Msg, String>>(16);
-    let _reader = AbortOnDrop(tauri::async_runtime::spawn(async move {
+    let _reader = AbortOnDrop(tokio::spawn(async move {
         loop {
             let item = match reader.recv().await {
                 Ok(bytes) => Msg::parse(&bytes),

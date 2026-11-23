@@ -1633,7 +1633,7 @@ fn artist_splitting_profiles_and_meta_cache() {
 fn artist_splitting_matches_the_shared_cases() {
     let raw = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../fixtures/artist-split-cases.json"
+        "/../../fixtures/artist-split-cases.json"
     ));
     let doc: serde_json::Value = serde_json::from_str(raw).unwrap();
     let cases = doc["cases"].as_array().unwrap();

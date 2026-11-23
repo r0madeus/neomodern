@@ -672,7 +672,7 @@ impl Library {
     }
 
     /// Bumps the version and notifies the host.
-    pub(crate) fn bump(&self) -> u64 {
+    pub fn bump(&self) -> u64 {
         let v = self.version.fetch_add(1, Ordering::SeqCst) + 1;
         (self.hooks.on_changed)(v);
         v

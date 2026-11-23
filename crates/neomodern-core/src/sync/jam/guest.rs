@@ -341,7 +341,7 @@ impl SyncService {
                 id: local.id.clone(),
                 key: paired.secret,
             };
-            tauri::async_runtime::spawn(guest_loop(
+            tokio::spawn(guest_loop(
                 Arc::clone(&self.sh),
                 generation,
                 session,
@@ -463,7 +463,7 @@ async fn run_session(
     let (mut reader, mut writer) = session.into_split();
     reader.set_idle_timeout(Some(IDLE_TIMEOUT));
     let (in_tx, mut inbox) = mpsc::channel::<Result<JamMsg, String>>(16);
-    let _reader = AbortOnDrop(tauri::async_runtime::spawn(async move {
+    let _reader = AbortOnDrop(tokio::spawn(async move {
         loop {
             let item = match reader.recv().await {
                 Ok(bytes) => JamMsg::parse(&bytes),

@@ -2576,6 +2576,7 @@ dependencies = [
  "libmpv2",
  "lofty",
  "log",
+ "neomodern-core",
  "qrcode",
  "reqwest",
  "rusqlite",
@@ -2601,6 +2602,35 @@ dependencies = [
  "walkdir",
  "webpki-roots",
  "webview2-com",
+]
+
+[[package]]
+name = "neomodern-core"
+version = "0.10.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "hkdf",
+ "hmac",
+ "hound",
+ "image",
+ "libmpv2",
+ "lofty",
+ "log",
+ "qrcode",
+ "reqwest",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "snow",
+ "souvlaki",
+ "spake2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "walkdir",
+ "webpki-roots",
 ]
 
 [[package]]

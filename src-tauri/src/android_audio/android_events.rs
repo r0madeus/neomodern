@@ -2,7 +2,7 @@
 //! Android-only APIs so the parser is unit tested on every platform.
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
-use super::{EndReason, EngineEvent, RemoteCommand};
+use crate::audio::{EndReason, EngineEvent, RemoteCommand};
 use serde_json::Value;
 use std::path::PathBuf;
 

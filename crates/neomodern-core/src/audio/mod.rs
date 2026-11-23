@@ -7,9 +7,6 @@
 //! "next" slot in sync with it (decision K3). This is what makes gapless
 //! playback work without a second, competing playlist inside mpv.
 
-#[cfg(target_os = "android")]
-pub mod android;
-mod android_events;
 #[cfg(not(target_os = "android"))]
 pub mod mpv;
 pub mod replaygain;

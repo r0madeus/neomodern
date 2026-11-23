@@ -1,0 +1,250 @@
+import 'dart:math' as math;
+
+import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/cover_art.dart';
+
+class PlayerBar extends StatelessWidget {
+  const PlayerBar({super.key, required this.controller});
+
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final snap = controller.snapshot;
+    final current = snap.current;
+    final duration = snap.durationSeconds;
+    final hasTrack = current != null;
+
+    return Container(
+      height: 88,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: const BoxDecoration(
+        color: AppColors.sidebar,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          // Left: Current track info
+          Expanded(
+            flex: 3,
+            child: Row(
+              children: [
+                CoverArt(
+                  path: controller.currentCoverPath,
+                  size: 52,
+                  borderRadius: 6,
+                  iconSize: 22,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        current?.title ?? 'Nothing playing',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: hasTrack
+                              ? AppColors.textPrimary
+                              : AppColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        current != null && current.artist.isNotEmpty
+                            ? current.artist
+                            : (hasTrack ? 'Unknown Artist' : 'Pick a track to play'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Center: Transport + seekbar
+          Expanded(
+            flex: 5,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: snap.shuffle ? 'Shuffle on' : 'Shuffle off',
+                      icon: Icon(
+                        Icons.shuffle_rounded,
+                        size: 18,
+                        color: snap.shuffle
+                            ? AppColors.accent
+                            : AppColors.textSecondary,
+                      ),
+                      onPressed: controller.toggleShuffle,
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Previous',
+                      icon: const Icon(
+                        Icons.skip_previous_rounded,
+                        size: 24,
+                        color: AppColors.textPrimary,
+                      ),
+                      onPressed: hasTrack ? controller.previous : null,
+                    ),
+                    const SizedBox(width: 6),
+                    Material(
+                      color: AppColors.accent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: controller.togglePause,
+                        child: SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: Icon(
+                            controller.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: AppColors.canvas,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      tooltip: 'Next',
+                      icon: const Icon(
+                        Icons.skip_next_rounded,
+                        size: 24,
+                        color: AppColors.textPrimary,
+                      ),
+                      onPressed: hasTrack ? controller.next : null,
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Repeat: ${snap.repeat}',
+                      icon: Icon(
+                        snap.repeat == 'one'
+                            ? Icons.repeat_one_rounded
+                            : Icons.repeat_rounded,
+                        size: 18,
+                        color: snap.repeat == 'off'
+                            ? AppColors.textSecondary
+                            : AppColors.accent,
+                      ),
+                      onPressed: controller.cycleRepeat,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                ValueListenableBuilder<double>(
+                  valueListenable: controller.positionNotifier,
+                  builder: (context, pos, _) {
+                    final maxDur =
+                        (duration != null && duration > 0) ? duration : 1.0;
+                    final clampedPos = math.min(math.max(pos, 0.0), maxDur);
+                    return Row(
+                      children: [
+                        SizedBox(
+                          width: 44,
+                          child: Text(
+                            hasTrack ? formatDuration(clampedPos) : '--:--',
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: SliderTheme(
+                            data: Theme.of(context).sliderTheme.copyWith(
+                                  trackHeight: 3,
+                                  thumbShape: const RoundSliderThumbShape(
+                                    enabledThumbRadius: 5,
+                                  ),
+                                ),
+                            child: Slider(
+                              value: hasTrack ? clampedPos : 0,
+                              max: maxDur,
+                              onChangeStart: hasTrack
+                                  ? (_) => controller.beginSeekDrag()
+                                  : null,
+                              onChanged: hasTrack
+                                  ? (v) => controller.updateSeekDrag(v)
+                                  : null,
+                              onChangeEnd: hasTrack
+                                  ? (v) => controller.endSeekDrag(v)
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 44,
+                          child: Text(
+                            hasTrack ? formatDuration(duration) : '--:--',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          // Right: Volume
+          Expanded(
+            flex: 2,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  tooltip: snap.volume == 0 ? 'Unmute' : 'Mute',
+                  icon: Icon(
+                    snap.volume == 0
+                        ? Icons.volume_off_rounded
+                        : snap.volume < 50
+                            ? Icons.volume_down_rounded
+                            : Icons.volume_up_rounded,
+                    size: 19,
+                    color: AppColors.textSecondary,
+                  ),
+                  onPressed: controller.toggleMute,
+                ),
+                SizedBox(
+                  width: 110,
+                  child: Slider(
+                    value: snap.volume.clamp(0.0, 100.0),
+                    max: 100.0,
+                    onChanged: (v) => controller.setVolume(v),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -9,10 +9,12 @@ import 'package:neomodern/ui/favorites_view.dart';
 import 'package:neomodern/ui/home_view.dart';
 import 'package:neomodern/ui/player_bar.dart';
 import 'package:neomodern/ui/playlists_view.dart';
+import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/recap_view.dart';
 import 'package:neomodern/ui/right_panel.dart';
 import 'package:neomodern/ui/settings_view.dart';
 import 'package:neomodern/ui/songs_view.dart';
+import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/track_menu.dart';
 
 enum NavTab {
@@ -20,6 +22,7 @@ enum NavTab {
   songs,
   albums,
   artists,
+  sources,
   recap,
   settings,
   favorites,
@@ -189,143 +192,157 @@ class _AppShellState extends State<AppShell> {
           );
         }
 
-        final mainIndex = switch (_tab) {
+        final activeTab =
+            (_tab == NavTab.sources && !ctrl.hasEnabledSourceProviders)
+                ? NavTab.home
+                : _tab;
+
+        final mainIndex = switch (activeTab) {
           NavTab.home => 0,
           NavTab.songs => 1,
           NavTab.albums => 2,
           NavTab.artists => 3,
-          NavTab.recap => 4,
-          NavTab.settings => 5,
-          NavTab.favorites => 6,
-          NavTab.playlist => 7,
+          NavTab.sources => 4,
+          NavTab.recap => 5,
+          NavTab.settings => 6,
+          NavTab.favorites => 7,
+          NavTab.playlist => 8,
         };
 
         return Focus(
           autofocus: true,
           onKeyEvent: _handleKeyEvent,
           child: Scaffold(
-            body: Column(
+            body: Stack(
               children: [
-                if (ctrl.lastError != null)
-                  Container(
-                    width: double.infinity,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    color: AppColors.danger.withAlpha(36),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.warning_amber_rounded,
-                            size: 16, color: AppColors.danger),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            ctrl.lastError!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          iconSize: 16,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.close_rounded),
-                          onPressed: ctrl.clearError,
-                        ),
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: Row(
-                    children: [
-                      _Sidebar(
-                        selected: _tab,
-                        selectedPlaylistId: _selectedPlaylistId,
-                        controller: ctrl,
-                        onSelect: (t) => setState(() => _tab = t),
-                        onSelectPlaylist: _openPlaylist,
-                        onCreatePlaylist: _createPlaylist,
-                      ),
-                      Expanded(
-                        child: IndexedStack(
-                          index: mainIndex,
+                Column(
+                  children: [
+                    if (ctrl.lastError != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        color: AppColors.danger.withAlpha(36),
+                        child: Row(
                           children: [
-                            HomeView(
-                              controller: ctrl,
-                              onOpenAlbum: _openAlbum,
-                              onOpenArtist: _openArtist,
-                              onOpenFavorites: _openFavorites,
-                              onOpenSettings: _openSettings,
+                            const Icon(Icons.warning_amber_rounded,
+                                size: 16, color: AppColors.danger),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                ctrl.lastError!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
                             ),
-                            SongsView(
-                              controller: ctrl,
-                              onOpenArtist: _openArtist,
-                              onOpenAlbum: _openAlbum,
-                              onOpenSettings: _openSettings,
+                            IconButton(
+                              iconSize: 16,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: ctrl.clearError,
                             ),
-                            AlbumsView(
-                              controller: ctrl,
-                              externalAlbumId: _externalAlbumId,
-                              externalSelectionNonce: _externalAlbumNonce,
-                              onOpenArtist: _openArtist,
-                              onOpenAlbum: _openAlbum,
-                              onOpenSettings: _openSettings,
-                            ),
-                            ArtistsView(
-                              controller: ctrl,
-                              externalArtistName: _externalArtistName,
-                              externalSelectionNonce: _externalArtistNonce,
-                              onOpenAlbum: _openAlbum,
-                              onOpenArtist: _openArtist,
-                            ),
-                            RecapView(
-                              controller: ctrl,
-                              onOpenArtist: _openArtist,
-                              onOpenAlbum: _openAlbum,
-                            ),
-                            SettingsView(controller: ctrl),
-                            FavoritesView(
-                              controller: ctrl,
-                              onOpenArtist: _openArtist,
-                              onOpenAlbum: _openAlbum,
-                            ),
-                            _selectedPlaylistId != null
-                                ? PlaylistsView(
-                                    playlistId: _selectedPlaylistId!,
-                                    controller: ctrl,
-                                    onPlaylistDeleted: () => setState(() {
-                                      _selectedPlaylistId = null;
-                                      _tab = NavTab.home;
-                                    }),
-                                    onOpenArtist: _openArtist,
-                                    onOpenAlbum: _openAlbum,
-                                  )
-                                : const SizedBox.shrink(),
                           ],
                         ),
                       ),
-                      if (_rightPanelOpen)
-                        RightPanel(
-                          controller: ctrl,
-                          activeTab: _rightPanelTab,
-                          onTabChanged: (t) =>
-                              setState(() => _rightPanelTab = t),
-                          onClose: () =>
-                              setState(() => _rightPanelOpen = false),
-                        ),
-                    ],
-                  ),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          _Sidebar(
+                            selected: activeTab,
+                            selectedPlaylistId: _selectedPlaylistId,
+                            controller: ctrl,
+                            onSelect: (t) => setState(() => _tab = t),
+                            onSelectPlaylist: _openPlaylist,
+                            onCreatePlaylist: _createPlaylist,
+                            onOpenProfiles: () =>
+                                showProfilesDialog(context, ctrl),
+                          ),
+                          Expanded(
+                            child: IndexedStack(
+                              index: mainIndex,
+                              children: [
+                                HomeView(
+                                  controller: ctrl,
+                                  onOpenAlbum: _openAlbum,
+                                  onOpenArtist: _openArtist,
+                                  onOpenFavorites: _openFavorites,
+                                  onOpenSettings: _openSettings,
+                                ),
+                                SongsView(
+                                  controller: ctrl,
+                                  onOpenArtist: _openArtist,
+                                  onOpenAlbum: _openAlbum,
+                                  onOpenSettings: _openSettings,
+                                ),
+                                AlbumsView(
+                                  controller: ctrl,
+                                  externalAlbumId: _externalAlbumId,
+                                  externalSelectionNonce: _externalAlbumNonce,
+                                  onOpenArtist: _openArtist,
+                                  onOpenAlbum: _openAlbum,
+                                  onOpenSettings: _openSettings,
+                                ),
+                                ArtistsView(
+                                  controller: ctrl,
+                                  externalArtistName: _externalArtistName,
+                                  externalSelectionNonce: _externalArtistNonce,
+                                  onOpenAlbum: _openAlbum,
+                                  onOpenArtist: _openArtist,
+                                ),
+                                SourcesView(controller: ctrl),
+                                RecapView(
+                                  controller: ctrl,
+                                  onOpenArtist: _openArtist,
+                                  onOpenAlbum: _openAlbum,
+                                ),
+                                SettingsView(controller: ctrl),
+                                FavoritesView(
+                                  controller: ctrl,
+                                  onOpenArtist: _openArtist,
+                                  onOpenAlbum: _openAlbum,
+                                ),
+                                _selectedPlaylistId != null
+                                    ? PlaylistsView(
+                                        playlistId: _selectedPlaylistId!,
+                                        controller: ctrl,
+                                        onPlaylistDeleted: () => setState(() {
+                                          _selectedPlaylistId = null;
+                                          _tab = NavTab.home;
+                                        }),
+                                        onOpenArtist: _openArtist,
+                                        onOpenAlbum: _openAlbum,
+                                      )
+                                    : const SizedBox.shrink(),
+                              ],
+                            ),
+                          ),
+                          if (_rightPanelOpen)
+                            RightPanel(
+                              controller: ctrl,
+                              activeTab: _rightPanelTab,
+                              onTabChanged: (t) =>
+                                  setState(() => _rightPanelTab = t),
+                              onClose: () =>
+                                  setState(() => _rightPanelOpen = false),
+                            ),
+                        ],
+                      ),
+                    ),
+                    PlayerBar(
+                      controller: ctrl,
+                      rightPanelOpen: _rightPanelOpen,
+                      rightPanelTab: _rightPanelTab,
+                      onTogglePanel: _toggleRightPanel,
+                      onOpenArtist: _openArtist,
+                    ),
+                  ],
                 ),
-                PlayerBar(
-                  controller: ctrl,
-                  rightPanelOpen: _rightPanelOpen,
-                  rightPanelTab: _rightPanelTab,
-                  onTogglePanel: _toggleRightPanel,
-                  onOpenArtist: _openArtist,
-                ),
+                if (ctrl.isProfileLocked) ProfileLockOverlay(controller: ctrl),
               ],
             ),
           ),
@@ -343,6 +360,7 @@ class _Sidebar extends StatelessWidget {
     required this.onSelect,
     required this.onSelectPlaylist,
     required this.onCreatePlaylist,
+    required this.onOpenProfiles,
   });
 
   final NavTab selected;
@@ -351,6 +369,7 @@ class _Sidebar extends StatelessWidget {
   final ValueChanged<NavTab> onSelect;
   final ValueChanged<PlatformInt64> onSelectPlaylist;
   final VoidCallback onCreatePlaylist;
+  final VoidCallback onOpenProfiles;
 
   @override
   Widget build(BuildContext context) {
@@ -419,6 +438,13 @@ class _Sidebar extends StatelessWidget {
             active: selected == NavTab.artists,
             onTap: () => onSelect(NavTab.artists),
           ),
+          if (controller.hasEnabledSourceProviders)
+            _NavItem(
+              icon: Icons.hub_rounded,
+              label: 'Sources',
+              active: selected == NavTab.sources,
+              onTap: () => onSelect(NavTab.sources),
+            ),
           _NavItem(
             icon: Icons.bar_chart_rounded,
             label: 'Recap',
@@ -553,6 +579,10 @@ class _Sidebar extends StatelessWidget {
                       ],
                     ),
             ),
+          ),
+          ProfileBadgeButton(
+            controller: controller,
+            onTap: onOpenProfiles,
           ),
         ],
       ),

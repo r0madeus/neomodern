@@ -28,7 +28,7 @@
 // Section: imports
 
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
-use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
+use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
 
 // Section: boilerplate
@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 366639673;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 447312296;
 
 // Section: executor
 
@@ -250,7 +250,7 @@ fn wire__crate__api__neomodern__init_core_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "init_core",
             port: Some(port_),
@@ -269,11 +269,15 @@ fn wire__crate__api__neomodern__init_core_impl(
             let api_data_dir = <String>::sse_decode(&mut deserializer);
             let api_cache_dir = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::neomodern::init_core(api_data_dir, api_cache_dir)?;
-                    std::result::Result::Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::neomodern::init_core(api_data_dir, api_cache_dir).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -1147,6 +1151,219 @@ fn wire__crate__api__neomodern__lyrics_for_track_impl(
         },
     )
 }
+fn wire__crate__api__neomodern__party_end_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "party_end",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::party_end().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__party_new_code_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "party_new_code",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::party_new_code().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__party_remove_guest_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "party_remove_guest",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::party_remove_guest(api_id).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__party_set_enabled_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "party_set_enabled",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::neomodern::party_set_enabled(api_enabled).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__party_start_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "party_start",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::party_start().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__party_status_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "party_status",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::party_status().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__neomodern__player_next_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1990,6 +2207,246 @@ fn wire__crate__api__neomodern__playlists_tracks_impl(
         },
     )
 }
+fn wire__crate__api__neomodern__profile_create_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "profile_create",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::profile_create(api_name)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__profile_delete_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "profile_delete",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::profile_delete(api_id).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__profile_rename_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "profile_rename",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::profile_rename(api_id, api_name)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__profile_set_pin_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "profile_set_pin",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            let api_pin = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::profile_set_pin(api_id, api_pin)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__profile_switch_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "profile_switch",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            let api_pin = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::neomodern::profile_switch(api_id, api_pin).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__profile_unlock_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "profile_unlock",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pin = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::profile_unlock(api_pin)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__profiles_list_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "profiles_list",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::profiles_list()?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__neomodern__queue_clear_queued_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2220,6 +2677,229 @@ fn wire__crate__api__neomodern__settings_set_offline_impl(
         },
     )
 }
+fn wire__crate__api__neomodern__source_provider_add_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "source_provider_add",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_base_url = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::neomodern::source_provider_add(api_name, api_base_url)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__source_provider_play_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "source_provider_play",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_provider_id = <String>::sse_decode(&mut deserializer);
+            let api_external_id = <String>::sse_decode(&mut deserializer);
+            let api_title = <String>::sse_decode(&mut deserializer);
+            let api_artist = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::source_provider_play(
+                            api_provider_id,
+                            api_external_id,
+                            api_title,
+                            api_artist,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__source_provider_remove_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "source_provider_remove",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::source_provider_remove(api_id)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__source_provider_search_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "source_provider_search",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_provider_id = <String>::sse_decode(&mut deserializer);
+            let api_query = <String>::sse_decode(&mut deserializer);
+            let api_limit = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::source_provider_search(
+                            api_provider_id,
+                            api_query,
+                            api_limit,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__source_provider_toggle_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "source_provider_toggle",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::neomodern::source_provider_toggle(api_id, api_enabled)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__source_providers_list_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "source_providers_list",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::source_providers_list()?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__neomodern__subscribe_events_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2251,6 +2931,258 @@ fn wire__crate__api__neomodern__subscribe_events_impl(
                 transform_result_sse::<_, String>(
                     (move || async move {
                         let output_ok = crate::api::neomodern::subscribe_events(api_sink).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__sync_now_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_now",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::sync_now().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__sync_pair_close_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_pair_close",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::sync_pair_close().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__sync_pair_open_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_pair_open",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::sync_pair_open().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__sync_remove_peer_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_remove_peer",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_peer_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::neomodern::sync_remove_peer(api_peer_id).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__sync_set_allow_phone_connections_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_set_allow_phone_connections",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_allow = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::neomodern::sync_set_allow_phone_connections(api_allow)
+                                .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__sync_set_device_name_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_set_device_name",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::neomodern::sync_set_device_name(api_name).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__neomodern__sync_status_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_status",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::neomodern::sync_status().await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -2323,6 +3255,18 @@ impl SseDecode for Vec<String> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<bool>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2420,6 +3364,20 @@ impl SseDecode for Vec<crate::api::neomodern::UiDynamicMix> {
     }
 }
 
+impl SseDecode for Vec<crate::api::neomodern::UiExternalTrack> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::neomodern::UiExternalTrack>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::neomodern::UiFolderInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2427,6 +3385,48 @@ impl SseDecode for Vec<crate::api::neomodern::UiFolderInfo> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::neomodern::UiFolderInfo>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::neomodern::UiPartyGuestInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::neomodern::UiPartyGuestInfo>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::neomodern::UiPartyRecent> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::neomodern::UiPartyRecent>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::neomodern::UiPeerStatus> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::neomodern::UiPeerStatus>::sse_decode(
                 deserializer,
             ));
         }
@@ -2448,6 +3448,18 @@ impl SseDecode for Vec<crate::api::neomodern::UiPlaylistInfo> {
     }
 }
 
+impl SseDecode for Vec<crate::api::neomodern::UiProfile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::neomodern::UiProfile>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::neomodern::UiRecentTrack> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2455,6 +3467,20 @@ impl SseDecode for Vec<crate::api::neomodern::UiRecentTrack> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::neomodern::UiRecentTrack>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::neomodern::UiSourceProvider> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::neomodern::UiSourceProvider>::sse_decode(
                 deserializer,
             ));
         }
@@ -2590,6 +3616,17 @@ impl SseDecode for Option<i64> {
     }
 }
 
+impl SseDecode for Option<u16> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u16>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2661,6 +3698,13 @@ impl SseDecode for Option<crate::api::neomodern::UiTrackInfo> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for u16 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u16::<NativeEndian>().unwrap()
     }
 }
 
@@ -2836,6 +3880,9 @@ impl SseDecode for crate::api::neomodern::UiEvent {
                 };
             }
             4 => {
+                return crate::api::neomodern::UiEvent::SyncChanged;
+            }
+            5 => {
                 let mut var_field0 = <String>::sse_decode(deserializer);
                 return crate::api::neomodern::UiEvent::Error(var_field0);
             }
@@ -2843,6 +3890,28 @@ impl SseDecode for crate::api::neomodern::UiEvent {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiExternalTrack {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_providerId = <String>::sse_decode(deserializer);
+        let mut var_externalId = <String>::sse_decode(deserializer);
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_artist = <String>::sse_decode(deserializer);
+        let mut var_album = <Option<String>>::sse_decode(deserializer);
+        let mut var_durationMs = <Option<u64>>::sse_decode(deserializer);
+        let mut var_coverUrl = <Option<String>>::sse_decode(deserializer);
+        return crate::api::neomodern::UiExternalTrack {
+            provider_id: var_providerId,
+            external_id: var_externalId,
+            title: var_title,
+            artist: var_artist,
+            album: var_album,
+            duration_ms: var_durationMs,
+            cover_url: var_coverUrl,
+        };
     }
 }
 
@@ -2908,6 +3977,117 @@ impl SseDecode for crate::api::neomodern::UiLyrics {
             synced_lines: var_syncedLines,
             plain_text: var_plainText,
             source: var_source,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiPairingOpen {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_code = <String>::sse_decode(deserializer);
+        let mut var_addresses = <Vec<String>>::sse_decode(deserializer);
+        let mut var_port = <u16>::sse_decode(deserializer);
+        let mut var_remainingSecs = <u64>::sse_decode(deserializer);
+        let mut var_profileName = <String>::sse_decode(deserializer);
+        let mut var_pairingUri = <String>::sse_decode(deserializer);
+        let mut var_qrMatrix = <Vec<bool>>::sse_decode(deserializer);
+        let mut var_qrSize = <u32>::sse_decode(deserializer);
+        return crate::api::neomodern::UiPairingOpen {
+            code: var_code,
+            addresses: var_addresses,
+            port: var_port,
+            remaining_secs: var_remainingSecs,
+            profile_name: var_profileName,
+            pairing_uri: var_pairingUri,
+            qr_matrix: var_qrMatrix,
+            qr_size: var_qrSize,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiPartyGuestInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_added = <u32>::sse_decode(deserializer);
+        let mut var_connected = <bool>::sse_decode(deserializer);
+        return crate::api::neomodern::UiPartyGuestInfo {
+            id: var_id,
+            name: var_name,
+            added: var_added,
+            connected: var_connected,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiPartyRecent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_artist = <String>::sse_decode(deserializer);
+        let mut var_addedBy = <String>::sse_decode(deserializer);
+        return crate::api::neomodern::UiPartyRecent {
+            title: var_title,
+            artist: var_artist,
+            added_by: var_addedBy,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiPartyStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_enabled = <bool>::sse_decode(deserializer);
+        let mut var_running = <bool>::sse_decode(deserializer);
+        let mut var_code = <Option<String>>::sse_decode(deserializer);
+        let mut var_joinUri = <Option<String>>::sse_decode(deserializer);
+        let mut var_qrMatrix = <Vec<bool>>::sse_decode(deserializer);
+        let mut var_qrSize = <u32>::sse_decode(deserializer);
+        let mut var_addresses = <Vec<String>>::sse_decode(deserializer);
+        let mut var_guests =
+            <Vec<crate::api::neomodern::UiPartyGuestInfo>>::sse_decode(deserializer);
+        let mut var_recent = <Vec<crate::api::neomodern::UiPartyRecent>>::sse_decode(deserializer);
+        return crate::api::neomodern::UiPartyStatus {
+            enabled: var_enabled,
+            running: var_running,
+            code: var_code,
+            join_uri: var_joinUri,
+            qr_matrix: var_qrMatrix,
+            qr_size: var_qrSize,
+            addresses: var_addresses,
+            guests: var_guests,
+            recent: var_recent,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiPeerStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_address = <Option<String>>::sse_decode(deserializer);
+        let mut var_connected = <bool>::sse_decode(deserializer);
+        let mut var_syncing = <bool>::sse_decode(deserializer);
+        let mut var_lastSyncAt = <Option<i64>>::sse_decode(deserializer);
+        let mut var_profileName = <String>::sse_decode(deserializer);
+        let mut var_profileId = <i64>::sse_decode(deserializer);
+        let mut var_lastError = <Option<String>>::sse_decode(deserializer);
+        let mut var_rounds = <u64>::sse_decode(deserializer);
+        return crate::api::neomodern::UiPeerStatus {
+            id: var_id,
+            name: var_name,
+            kind: var_kind,
+            address: var_address,
+            connected: var_connected,
+            syncing: var_syncing,
+            last_sync_at: var_lastSyncAt,
+            profile_name: var_profileName,
+            profile_id: var_profileId,
+            last_error: var_lastError,
+            rounds: var_rounds,
         };
     }
 }
@@ -2985,6 +4165,42 @@ impl SseDecode for crate::api::neomodern::UiPlaylistInfo {
     }
 }
 
+impl SseDecode for crate::api::neomodern::UiProfile {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <i64>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_color = <String>::sse_decode(deserializer);
+        let mut var_createdAt = <i64>::sse_decode(deserializer);
+        let mut var_hasPin = <bool>::sse_decode(deserializer);
+        return crate::api::neomodern::UiProfile {
+            id: var_id,
+            name: var_name,
+            color: var_color,
+            created_at: var_createdAt,
+            has_pin: var_hasPin,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiProfilesState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_active = <i64>::sse_decode(deserializer);
+        let mut var_profiles = <Vec<crate::api::neomodern::UiProfile>>::sse_decode(deserializer);
+        let mut var_colors = <Vec<String>>::sse_decode(deserializer);
+        let mut var_maxProfiles = <u32>::sse_decode(deserializer);
+        let mut var_locked = <bool>::sse_decode(deserializer);
+        return crate::api::neomodern::UiProfilesState {
+            active: var_active,
+            profiles: var_profiles,
+            colors: var_colors,
+            max_profiles: var_maxProfiles,
+            locked: var_locked,
+        };
+    }
+}
+
 impl SseDecode for crate::api::neomodern::UiRecentTrack {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2993,6 +4209,22 @@ impl SseDecode for crate::api::neomodern::UiRecentTrack {
         return crate::api::neomodern::UiRecentTrack {
             track: var_track,
             started_at: var_startedAt,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiSourceProvider {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_baseUrl = <String>::sse_decode(deserializer);
+        let mut var_enabled = <bool>::sse_decode(deserializer);
+        return crate::api::neomodern::UiSourceProvider {
+            id: var_id,
+            name: var_name,
+            base_url: var_baseUrl,
+            enabled: var_enabled,
         };
     }
 }
@@ -3026,6 +4258,38 @@ impl SseDecode for crate::api::neomodern::UiStatsSummary {
             top_tracks: var_topTracks,
             top_artists: var_topArtists,
             top_albums: var_topAlbums,
+        };
+    }
+}
+
+impl SseDecode for crate::api::neomodern::UiSyncStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_role = <String>::sse_decode(deserializer);
+        let mut var_deviceId = <String>::sse_decode(deserializer);
+        let mut var_deviceName = <String>::sse_decode(deserializer);
+        let mut var_activeProfile = <i64>::sse_decode(deserializer);
+        let mut var_allowPhoneConnections = <bool>::sse_decode(deserializer);
+        let mut var_listeningPort = <Option<u16>>::sse_decode(deserializer);
+        let mut var_listeningAddresses = <Vec<String>>::sse_decode(deserializer);
+        let mut var_pairingState = <String>::sse_decode(deserializer);
+        let mut var_pairingCode = <Option<String>>::sse_decode(deserializer);
+        let mut var_pairingRemainingSecs = <Option<u64>>::sse_decode(deserializer);
+        let mut var_pairingProfileName = <Option<String>>::sse_decode(deserializer);
+        let mut var_peers = <Vec<crate::api::neomodern::UiPeerStatus>>::sse_decode(deserializer);
+        return crate::api::neomodern::UiSyncStatus {
+            role: var_role,
+            device_id: var_deviceId,
+            device_name: var_deviceName,
+            active_profile: var_activeProfile,
+            allow_phone_connections: var_allowPhoneConnections,
+            listening_port: var_listeningPort,
+            listening_addresses: var_listeningAddresses,
+            pairing_state: var_pairingState,
+            pairing_code: var_pairingCode,
+            pairing_remaining_secs: var_pairingRemainingSecs,
+            pairing_profile_name: var_pairingProfileName,
+            peers: var_peers,
         };
     }
 }
@@ -3273,107 +4537,174 @@ fn pde_ffi_dispatcher_primary_impl(
         }
         31 => wire__crate__api__neomodern__listening_stats_impl(port, ptr, rust_vec_len, data_len),
         32 => wire__crate__api__neomodern__lyrics_for_track_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__neomodern__player_next_impl(port, ptr, rust_vec_len, data_len),
-        34 => {
+        33 => wire__crate__api__neomodern__party_end_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__neomodern__party_new_code_impl(port, ptr, rust_vec_len, data_len),
+        35 => {
+            wire__crate__api__neomodern__party_remove_guest_impl(port, ptr, rust_vec_len, data_len)
+        }
+        36 => {
+            wire__crate__api__neomodern__party_set_enabled_impl(port, ptr, rust_vec_len, data_len)
+        }
+        37 => wire__crate__api__neomodern__party_start_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__neomodern__party_status_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__neomodern__player_next_impl(port, ptr, rust_vec_len, data_len),
+        40 => {
             wire__crate__api__neomodern__player_play_index_impl(port, ptr, rust_vec_len, data_len)
         }
-        35 => {
+        41 => {
             wire__crate__api__neomodern__player_play_tracks_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => wire__crate__api__neomodern__player_previous_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__neomodern__player_seek_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__neomodern__player_set_crossfade_impl(
+        42 => wire__crate__api__neomodern__player_previous_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__neomodern__player_seek_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__neomodern__player_set_crossfade_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__api__neomodern__player_set_equalizer_impl(
+        45 => wire__crate__api__neomodern__player_set_equalizer_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => {
+        46 => {
             wire__crate__api__neomodern__player_set_gapless_impl(port, ptr, rust_vec_len, data_len)
         }
-        41 => {
+        47 => {
             wire__crate__api__neomodern__player_set_repeat_impl(port, ptr, rust_vec_len, data_len)
         }
-        42 => wire__crate__api__neomodern__player_set_replaygain_impl(
+        48 => wire__crate__api__neomodern__player_set_replaygain_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        43 => {
+        49 => {
             wire__crate__api__neomodern__player_set_shuffle_impl(port, ptr, rust_vec_len, data_len)
         }
-        44 => wire__crate__api__neomodern__player_set_sleep_timer_impl(
+        50 => wire__crate__api__neomodern__player_set_sleep_timer_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        45 => {
+        51 => {
             wire__crate__api__neomodern__player_set_volume_impl(port, ptr, rust_vec_len, data_len)
         }
-        46 => wire__crate__api__neomodern__player_set_wasapi_exclusive_impl(
+        52 => wire__crate__api__neomodern__player_set_wasapi_exclusive_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__neomodern__player_snapshot_impl(port, ptr, rust_vec_len, data_len),
-        48 => {
+        53 => wire__crate__api__neomodern__player_snapshot_impl(port, ptr, rust_vec_len, data_len),
+        54 => {
             wire__crate__api__neomodern__player_toggle_pause_impl(port, ptr, rust_vec_len, data_len)
         }
-        49 => wire__crate__api__neomodern__playlists_add_tracks_impl(
+        55 => wire__crate__api__neomodern__playlists_add_tracks_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__neomodern__playlists_create_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__neomodern__playlists_delete_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__neomodern__playlists_list_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__neomodern__playlists_play_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__neomodern__playlists_play_shuffled_impl(
+        56 => wire__crate__api__neomodern__playlists_create_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__neomodern__playlists_delete_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__neomodern__playlists_list_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__neomodern__playlists_play_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__neomodern__playlists_play_shuffled_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__api__neomodern__playlists_remove_track_impl(
+        61 => wire__crate__api__neomodern__playlists_remove_track_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__api__neomodern__playlists_rename_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__neomodern__playlists_tracks_impl(port, ptr, rust_vec_len, data_len),
-        58 => {
+        62 => wire__crate__api__neomodern__playlists_rename_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__neomodern__playlists_tracks_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__neomodern__profile_create_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__neomodern__profile_delete_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__neomodern__profile_rename_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__neomodern__profile_set_pin_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__neomodern__profile_switch_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__neomodern__profile_unlock_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__neomodern__profiles_list_impl(port, ptr, rust_vec_len, data_len),
+        71 => {
             wire__crate__api__neomodern__queue_clear_queued_impl(port, ptr, rust_vec_len, data_len)
         }
-        59 => wire__crate__api__neomodern__queue_enqueue_impl(port, ptr, rust_vec_len, data_len),
-        60 => {
+        72 => wire__crate__api__neomodern__queue_enqueue_impl(port, ptr, rust_vec_len, data_len),
+        73 => {
             wire__crate__api__neomodern__queue_insert_next_impl(port, ptr, rust_vec_len, data_len)
         }
-        61 => wire__crate__api__neomodern__queue_page_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__neomodern__queue_remove_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__neomodern__settings_get_offline_impl(
+        74 => wire__crate__api__neomodern__queue_page_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__neomodern__queue_remove_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__neomodern__settings_get_offline_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__api__neomodern__settings_set_offline_impl(
+        77 => wire__crate__api__neomodern__settings_set_offline_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__api__neomodern__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        78 => {
+            wire__crate__api__neomodern__source_provider_add_impl(port, ptr, rust_vec_len, data_len)
+        }
+        79 => wire__crate__api__neomodern__source_provider_play_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        80 => wire__crate__api__neomodern__source_provider_remove_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        81 => wire__crate__api__neomodern__source_provider_search_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        82 => wire__crate__api__neomodern__source_provider_toggle_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        83 => wire__crate__api__neomodern__source_providers_list_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        84 => wire__crate__api__neomodern__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__neomodern__sync_now_impl(port, ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__neomodern__sync_pair_close_impl(port, ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__neomodern__sync_pair_open_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__neomodern__sync_remove_peer_impl(port, ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__neomodern__sync_set_allow_phone_connections_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        90 => wire__crate__api__neomodern__sync_set_device_name_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        91 => wire__crate__api__neomodern__sync_status_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3566,8 +4897,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiEvent {
                 done.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::neomodern::UiEvent::SyncChanged => [4.into_dart()].into_dart(),
             crate::api::neomodern::UiEvent::Error(field0) => {
-                [4.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+                [5.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -3583,6 +4915,32 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiEvent>
     for crate::api::neomodern::UiEvent
 {
     fn into_into_dart(self) -> crate::api::neomodern::UiEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiExternalTrack {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.provider_id.into_into_dart().into_dart(),
+            self.external_id.into_into_dart().into_dart(),
+            self.title.into_into_dart().into_dart(),
+            self.artist.into_into_dart().into_dart(),
+            self.album.into_into_dart().into_dart(),
+            self.duration_ms.into_into_dart().into_dart(),
+            self.cover_url.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiExternalTrack
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiExternalTrack>
+    for crate::api::neomodern::UiExternalTrack
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiExternalTrack {
         self
     }
 }
@@ -3678,6 +5036,136 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiLyrics>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiPairingOpen {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.code.into_into_dart().into_dart(),
+            self.addresses.into_into_dart().into_dart(),
+            self.port.into_into_dart().into_dart(),
+            self.remaining_secs.into_into_dart().into_dart(),
+            self.profile_name.into_into_dart().into_dart(),
+            self.pairing_uri.into_into_dart().into_dart(),
+            self.qr_matrix.into_into_dart().into_dart(),
+            self.qr_size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiPairingOpen
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiPairingOpen>
+    for crate::api::neomodern::UiPairingOpen
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiPairingOpen {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiPartyGuestInfo {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.added.into_into_dart().into_dart(),
+            self.connected.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiPartyGuestInfo
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiPartyGuestInfo>
+    for crate::api::neomodern::UiPartyGuestInfo
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiPartyGuestInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiPartyRecent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.title.into_into_dart().into_dart(),
+            self.artist.into_into_dart().into_dart(),
+            self.added_by.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiPartyRecent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiPartyRecent>
+    for crate::api::neomodern::UiPartyRecent
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiPartyRecent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiPartyStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.enabled.into_into_dart().into_dart(),
+            self.running.into_into_dart().into_dart(),
+            self.code.into_into_dart().into_dart(),
+            self.join_uri.into_into_dart().into_dart(),
+            self.qr_matrix.into_into_dart().into_dart(),
+            self.qr_size.into_into_dart().into_dart(),
+            self.addresses.into_into_dart().into_dart(),
+            self.guests.into_into_dart().into_dart(),
+            self.recent.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiPartyStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiPartyStatus>
+    for crate::api::neomodern::UiPartyStatus
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiPartyStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiPeerStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.address.into_into_dart().into_dart(),
+            self.connected.into_into_dart().into_dart(),
+            self.syncing.into_into_dart().into_dart(),
+            self.last_sync_at.into_into_dart().into_dart(),
+            self.profile_name.into_into_dart().into_dart(),
+            self.profile_id.into_into_dart().into_dart(),
+            self.last_error.into_into_dart().into_dart(),
+            self.rounds.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiPeerStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiPeerStatus>
+    for crate::api::neomodern::UiPeerStatus
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiPeerStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiPlayerSnapshot {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3743,6 +5231,54 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiPlaylistInfo>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiProfile {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.color.into_into_dart().into_dart(),
+            self.created_at.into_into_dart().into_dart(),
+            self.has_pin.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiProfile
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiProfile>
+    for crate::api::neomodern::UiProfile
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiProfile {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiProfilesState {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.active.into_into_dart().into_dart(),
+            self.profiles.into_into_dart().into_dart(),
+            self.colors.into_into_dart().into_dart(),
+            self.max_profiles.into_into_dart().into_dart(),
+            self.locked.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiProfilesState
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiProfilesState>
+    for crate::api::neomodern::UiProfilesState
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiProfilesState {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiRecentTrack {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3760,6 +5296,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiRecentTrack>
     for crate::api::neomodern::UiRecentTrack
 {
     fn into_into_dart(self) -> crate::api::neomodern::UiRecentTrack {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiSourceProvider {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.base_url.into_into_dart().into_dart(),
+            self.enabled.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiSourceProvider
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiSourceProvider>
+    for crate::api::neomodern::UiSourceProvider
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiSourceProvider {
         self
     }
 }
@@ -3790,6 +5349,37 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiStatsSummary>
     for crate::api::neomodern::UiStatsSummary
 {
     fn into_into_dart(self) -> crate::api::neomodern::UiStatsSummary {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::neomodern::UiSyncStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.role.into_into_dart().into_dart(),
+            self.device_id.into_into_dart().into_dart(),
+            self.device_name.into_into_dart().into_dart(),
+            self.active_profile.into_into_dart().into_dart(),
+            self.allow_phone_connections.into_into_dart().into_dart(),
+            self.listening_port.into_into_dart().into_dart(),
+            self.listening_addresses.into_into_dart().into_dart(),
+            self.pairing_state.into_into_dart().into_dart(),
+            self.pairing_code.into_into_dart().into_dart(),
+            self.pairing_remaining_secs.into_into_dart().into_dart(),
+            self.pairing_profile_name.into_into_dart().into_dart(),
+            self.peers.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::neomodern::UiSyncStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiSyncStatus>
+    for crate::api::neomodern::UiSyncStatus
+{
+    fn into_into_dart(self) -> crate::api::neomodern::UiSyncStatus {
         self
     }
 }
@@ -4007,6 +5597,16 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <bool>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<f64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4077,12 +5677,52 @@ impl SseEncode for Vec<crate::api::neomodern::UiDynamicMix> {
     }
 }
 
+impl SseEncode for Vec<crate::api::neomodern::UiExternalTrack> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::neomodern::UiExternalTrack>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::neomodern::UiFolderInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::neomodern::UiFolderInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::neomodern::UiPartyGuestInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::neomodern::UiPartyGuestInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::neomodern::UiPartyRecent> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::neomodern::UiPartyRecent>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::neomodern::UiPeerStatus> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::neomodern::UiPeerStatus>::sse_encode(item, serializer);
         }
     }
 }
@@ -4097,12 +5737,32 @@ impl SseEncode for Vec<crate::api::neomodern::UiPlaylistInfo> {
     }
 }
 
+impl SseEncode for Vec<crate::api::neomodern::UiProfile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::neomodern::UiProfile>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::neomodern::UiRecentTrack> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::neomodern::UiRecentTrack>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::neomodern::UiSourceProvider> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::neomodern::UiSourceProvider>::sse_encode(item, serializer);
         }
     }
 }
@@ -4207,6 +5867,16 @@ impl SseEncode for Option<i64> {
     }
 }
 
+impl SseEncode for Option<u16> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u16>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4264,6 +5934,13 @@ impl SseEncode for Option<crate::api::neomodern::UiTrackInfo> {
         if let Some(value) = self {
             <crate::api::neomodern::UiTrackInfo>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for u16 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u16::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -4385,14 +6062,30 @@ impl SseEncode for crate::api::neomodern::UiEvent {
                 <u64>::sse_encode(total, serializer);
                 <bool>::sse_encode(done, serializer);
             }
-            crate::api::neomodern::UiEvent::Error(field0) => {
+            crate::api::neomodern::UiEvent::SyncChanged => {
                 <i32>::sse_encode(4, serializer);
+            }
+            crate::api::neomodern::UiEvent::Error(field0) => {
+                <i32>::sse_encode(5, serializer);
                 <String>::sse_encode(field0, serializer);
             }
             _ => {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiExternalTrack {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.provider_id, serializer);
+        <String>::sse_encode(self.external_id, serializer);
+        <String>::sse_encode(self.title, serializer);
+        <String>::sse_encode(self.artist, serializer);
+        <Option<String>>::sse_encode(self.album, serializer);
+        <Option<u64>>::sse_encode(self.duration_ms, serializer);
+        <Option<String>>::sse_encode(self.cover_url, serializer);
     }
 }
 
@@ -4444,6 +6137,71 @@ impl SseEncode for crate::api::neomodern::UiLyrics {
     }
 }
 
+impl SseEncode for crate::api::neomodern::UiPairingOpen {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.code, serializer);
+        <Vec<String>>::sse_encode(self.addresses, serializer);
+        <u16>::sse_encode(self.port, serializer);
+        <u64>::sse_encode(self.remaining_secs, serializer);
+        <String>::sse_encode(self.profile_name, serializer);
+        <String>::sse_encode(self.pairing_uri, serializer);
+        <Vec<bool>>::sse_encode(self.qr_matrix, serializer);
+        <u32>::sse_encode(self.qr_size, serializer);
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiPartyGuestInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <u32>::sse_encode(self.added, serializer);
+        <bool>::sse_encode(self.connected, serializer);
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiPartyRecent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.title, serializer);
+        <String>::sse_encode(self.artist, serializer);
+        <String>::sse_encode(self.added_by, serializer);
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiPartyStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.enabled, serializer);
+        <bool>::sse_encode(self.running, serializer);
+        <Option<String>>::sse_encode(self.code, serializer);
+        <Option<String>>::sse_encode(self.join_uri, serializer);
+        <Vec<bool>>::sse_encode(self.qr_matrix, serializer);
+        <u32>::sse_encode(self.qr_size, serializer);
+        <Vec<String>>::sse_encode(self.addresses, serializer);
+        <Vec<crate::api::neomodern::UiPartyGuestInfo>>::sse_encode(self.guests, serializer);
+        <Vec<crate::api::neomodern::UiPartyRecent>>::sse_encode(self.recent, serializer);
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiPeerStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.kind, serializer);
+        <Option<String>>::sse_encode(self.address, serializer);
+        <bool>::sse_encode(self.connected, serializer);
+        <bool>::sse_encode(self.syncing, serializer);
+        <Option<i64>>::sse_encode(self.last_sync_at, serializer);
+        <String>::sse_encode(self.profile_name, serializer);
+        <i64>::sse_encode(self.profile_id, serializer);
+        <Option<String>>::sse_encode(self.last_error, serializer);
+        <u64>::sse_encode(self.rounds, serializer);
+    }
+}
+
 impl SseEncode for crate::api::neomodern::UiPlayerSnapshot {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4483,11 +6241,43 @@ impl SseEncode for crate::api::neomodern::UiPlaylistInfo {
     }
 }
 
+impl SseEncode for crate::api::neomodern::UiProfile {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.color, serializer);
+        <i64>::sse_encode(self.created_at, serializer);
+        <bool>::sse_encode(self.has_pin, serializer);
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiProfilesState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.active, serializer);
+        <Vec<crate::api::neomodern::UiProfile>>::sse_encode(self.profiles, serializer);
+        <Vec<String>>::sse_encode(self.colors, serializer);
+        <u32>::sse_encode(self.max_profiles, serializer);
+        <bool>::sse_encode(self.locked, serializer);
+    }
+}
+
 impl SseEncode for crate::api::neomodern::UiRecentTrack {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::neomodern::UiTrackRow>::sse_encode(self.track, serializer);
         <i64>::sse_encode(self.started_at, serializer);
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiSourceProvider {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.base_url, serializer);
+        <bool>::sse_encode(self.enabled, serializer);
     }
 }
 
@@ -4505,6 +6295,24 @@ impl SseEncode for crate::api::neomodern::UiStatsSummary {
         <Vec<crate::api::neomodern::UiTopTrackStat>>::sse_encode(self.top_tracks, serializer);
         <Vec<crate::api::neomodern::UiTopArtistStat>>::sse_encode(self.top_artists, serializer);
         <Vec<crate::api::neomodern::UiTopAlbumStat>>::sse_encode(self.top_albums, serializer);
+    }
+}
+
+impl SseEncode for crate::api::neomodern::UiSyncStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.role, serializer);
+        <String>::sse_encode(self.device_id, serializer);
+        <String>::sse_encode(self.device_name, serializer);
+        <i64>::sse_encode(self.active_profile, serializer);
+        <bool>::sse_encode(self.allow_phone_connections, serializer);
+        <Option<u16>>::sse_encode(self.listening_port, serializer);
+        <Vec<String>>::sse_encode(self.listening_addresses, serializer);
+        <String>::sse_encode(self.pairing_state, serializer);
+        <Option<String>>::sse_encode(self.pairing_code, serializer);
+        <Option<u64>>::sse_encode(self.pairing_remaining_secs, serializer);
+        <Option<String>>::sse_encode(self.pairing_profile_name, serializer);
+        <Vec<crate::api::neomodern::UiPeerStatus>>::sse_encode(self.peers, serializer);
     }
 }
 
@@ -4598,7 +6406,7 @@ mod io {
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
-    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
+    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
@@ -4622,7 +6430,7 @@ mod web {
     };
     use flutter_rust_bridge::for_generated::wasm_bindgen;
     use flutter_rust_bridge::for_generated::wasm_bindgen::prelude::*;
-    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
+    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate

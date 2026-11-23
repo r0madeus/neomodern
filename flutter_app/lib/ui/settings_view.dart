@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/sources_view.dart';
+import 'package:neomodern/ui/sync_settings_section.dart';
 
 class SettingsView extends StatefulWidget {
   const SettingsView({super.key, required this.controller});
@@ -530,6 +532,14 @@ class _SettingsViewState extends State<SettingsView> {
             ),
           ],
         ),
+
+        const SizedBox(height: 20),
+
+        SyncSettingsSection(controller: ctrl),
+
+        const SizedBox(height: 20),
+
+        ExternalSourcesSettingsSection(controller: ctrl),
       ],
     );
   }

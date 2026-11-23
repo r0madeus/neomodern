@@ -56,14 +56,15 @@ extension UiEventPatterns on UiEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UiEvent_State value)?  state,TResult Function( UiEvent_Position value)?  position,TResult Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult Function( UiEvent_ScanProgress value)?  scanProgress,TResult Function( UiEvent_Error value)?  error,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UiEvent_State value)?  state,TResult Function( UiEvent_Position value)?  position,TResult Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult Function( UiEvent_ScanProgress value)?  scanProgress,TResult Function( UiEvent_SyncChanged value)?  syncChanged,TResult Function( UiEvent_Error value)?  error,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
 return state(_that);case UiEvent_Position() when position != null:
 return position(_that);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged(_that);case UiEvent_ScanProgress() when scanProgress != null:
-return scanProgress(_that);case UiEvent_Error() when error != null:
+return scanProgress(_that);case UiEvent_SyncChanged() when syncChanged != null:
+return syncChanged(_that);case UiEvent_Error() when error != null:
 return error(_that);case _:
   return orElse();
 
@@ -82,14 +83,15 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UiEvent_State value)  state,required TResult Function( UiEvent_Position value)  position,required TResult Function( UiEvent_LibraryChanged value)  libraryChanged,required TResult Function( UiEvent_ScanProgress value)  scanProgress,required TResult Function( UiEvent_Error value)  error,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UiEvent_State value)  state,required TResult Function( UiEvent_Position value)  position,required TResult Function( UiEvent_LibraryChanged value)  libraryChanged,required TResult Function( UiEvent_ScanProgress value)  scanProgress,required TResult Function( UiEvent_SyncChanged value)  syncChanged,required TResult Function( UiEvent_Error value)  error,}){
 final _that = this;
 switch (_that) {
 case UiEvent_State():
 return state(_that);case UiEvent_Position():
 return position(_that);case UiEvent_LibraryChanged():
 return libraryChanged(_that);case UiEvent_ScanProgress():
-return scanProgress(_that);case UiEvent_Error():
+return scanProgress(_that);case UiEvent_SyncChanged():
+return syncChanged(_that);case UiEvent_Error():
 return error(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -104,14 +106,15 @@ return error(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UiEvent_State value)?  state,TResult? Function( UiEvent_Position value)?  position,TResult? Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult? Function( UiEvent_ScanProgress value)?  scanProgress,TResult? Function( UiEvent_Error value)?  error,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UiEvent_State value)?  state,TResult? Function( UiEvent_Position value)?  position,TResult? Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult? Function( UiEvent_ScanProgress value)?  scanProgress,TResult? Function( UiEvent_SyncChanged value)?  syncChanged,TResult? Function( UiEvent_Error value)?  error,}){
 final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
 return state(_that);case UiEvent_Position() when position != null:
 return position(_that);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged(_that);case UiEvent_ScanProgress() when scanProgress != null:
-return scanProgress(_that);case UiEvent_Error() when error != null:
+return scanProgress(_that);case UiEvent_SyncChanged() when syncChanged != null:
+return syncChanged(_that);case UiEvent_Error() when error != null:
 return error(_that);case _:
   return null;
 
@@ -129,13 +132,14 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( UiPlayerSnapshot field0)?  state,TResult Function( double seconds,  double? duration)?  position,TResult Function()?  libraryChanged,TResult Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult Function( String field0)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( UiPlayerSnapshot field0)?  state,TResult Function( double seconds,  double? duration)?  position,TResult Function()?  libraryChanged,TResult Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult Function()?  syncChanged,TResult Function( String field0)?  error,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
 return state(_that.field0);case UiEvent_Position() when position != null:
 return position(_that.seconds,_that.duration);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged();case UiEvent_ScanProgress() when scanProgress != null:
-return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_Error() when error != null:
+return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_SyncChanged() when syncChanged != null:
+return syncChanged();case UiEvent_Error() when error != null:
 return error(_that.field0);case _:
   return orElse();
 
@@ -154,13 +158,14 @@ return error(_that.field0);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( UiPlayerSnapshot field0)  state,required TResult Function( double seconds,  double? duration)  position,required TResult Function()  libraryChanged,required TResult Function( BigInt scanned,  BigInt total,  bool done)  scanProgress,required TResult Function( String field0)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( UiPlayerSnapshot field0)  state,required TResult Function( double seconds,  double? duration)  position,required TResult Function()  libraryChanged,required TResult Function( BigInt scanned,  BigInt total,  bool done)  scanProgress,required TResult Function()  syncChanged,required TResult Function( String field0)  error,}) {final _that = this;
 switch (_that) {
 case UiEvent_State():
 return state(_that.field0);case UiEvent_Position():
 return position(_that.seconds,_that.duration);case UiEvent_LibraryChanged():
 return libraryChanged();case UiEvent_ScanProgress():
-return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_Error():
+return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_SyncChanged():
+return syncChanged();case UiEvent_Error():
 return error(_that.field0);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -175,13 +180,14 @@ return error(_that.field0);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( UiPlayerSnapshot field0)?  state,TResult? Function( double seconds,  double? duration)?  position,TResult? Function()?  libraryChanged,TResult? Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult? Function( String field0)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( UiPlayerSnapshot field0)?  state,TResult? Function( double seconds,  double? duration)?  position,TResult? Function()?  libraryChanged,TResult? Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult? Function()?  syncChanged,TResult? Function( String field0)?  error,}) {final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
 return state(_that.field0);case UiEvent_Position() when position != null:
 return position(_that.seconds,_that.duration);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged();case UiEvent_ScanProgress() when scanProgress != null:
-return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_Error() when error != null:
+return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_SyncChanged() when syncChanged != null:
+return syncChanged();case UiEvent_Error() when error != null:
 return error(_that.field0);case _:
   return null;
 
@@ -431,6 +437,38 @@ as bool,
 
 
 }
+
+/// @nodoc
+
+
+class UiEvent_SyncChanged extends UiEvent {
+  const UiEvent_SyncChanged(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UiEvent_SyncChanged);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UiEvent.syncChanged()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 

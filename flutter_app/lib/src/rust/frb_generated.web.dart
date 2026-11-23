@@ -45,6 +45,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
+  int dco_decode_box_autoadd_u_16(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -78,6 +81,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<bool> dco_decode_list_bool(dynamic raw);
+
+  @protected
   List<double> dco_decode_list_prim_f_64_loose(dynamic raw);
 
   @protected
@@ -102,13 +108,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<UiDynamicMix> dco_decode_list_ui_dynamic_mix(dynamic raw);
 
   @protected
+  List<UiExternalTrack> dco_decode_list_ui_external_track(dynamic raw);
+
+  @protected
   List<UiFolderInfo> dco_decode_list_ui_folder_info(dynamic raw);
+
+  @protected
+  List<UiPartyGuestInfo> dco_decode_list_ui_party_guest_info(dynamic raw);
+
+  @protected
+  List<UiPartyRecent> dco_decode_list_ui_party_recent(dynamic raw);
+
+  @protected
+  List<UiPeerStatus> dco_decode_list_ui_peer_status(dynamic raw);
 
   @protected
   List<UiPlaylistInfo> dco_decode_list_ui_playlist_info(dynamic raw);
 
   @protected
+  List<UiProfile> dco_decode_list_ui_profile(dynamic raw);
+
+  @protected
   List<UiRecentTrack> dco_decode_list_ui_recent_track(dynamic raw);
+
+  @protected
+  List<UiSourceProvider> dco_decode_list_ui_source_provider(dynamic raw);
 
   @protected
   List<UiSyncedLine> dco_decode_list_ui_synced_line(dynamic raw);
@@ -141,6 +165,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
+  int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -157,6 +184,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiTrackInfo? dco_decode_opt_box_autoadd_ui_track_info(dynamic raw);
+
+  @protected
+  int dco_decode_u_16(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -189,6 +219,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiEvent dco_decode_ui_event(dynamic raw);
 
   @protected
+  UiExternalTrack dco_decode_ui_external_track(dynamic raw);
+
+  @protected
   UiFolderInfo dco_decode_ui_folder_info(dynamic raw);
 
   @protected
@@ -201,16 +234,43 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiLyrics dco_decode_ui_lyrics(dynamic raw);
 
   @protected
+  UiPairingOpen dco_decode_ui_pairing_open(dynamic raw);
+
+  @protected
+  UiPartyGuestInfo dco_decode_ui_party_guest_info(dynamic raw);
+
+  @protected
+  UiPartyRecent dco_decode_ui_party_recent(dynamic raw);
+
+  @protected
+  UiPartyStatus dco_decode_ui_party_status(dynamic raw);
+
+  @protected
+  UiPeerStatus dco_decode_ui_peer_status(dynamic raw);
+
+  @protected
   UiPlayerSnapshot dco_decode_ui_player_snapshot(dynamic raw);
 
   @protected
   UiPlaylistInfo dco_decode_ui_playlist_info(dynamic raw);
 
   @protected
+  UiProfile dco_decode_ui_profile(dynamic raw);
+
+  @protected
+  UiProfilesState dco_decode_ui_profiles_state(dynamic raw);
+
+  @protected
   UiRecentTrack dco_decode_ui_recent_track(dynamic raw);
 
   @protected
+  UiSourceProvider dco_decode_ui_source_provider(dynamic raw);
+
+  @protected
   UiStatsSummary dco_decode_ui_stats_summary(dynamic raw);
+
+  @protected
+  UiSyncStatus dco_decode_ui_sync_status(dynamic raw);
 
   @protected
   UiSyncedLine dco_decode_ui_synced_line(dynamic raw);
@@ -257,6 +317,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
@@ -300,6 +363,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<bool> sse_decode_list_bool(SseDeserializer deserializer);
+
+  @protected
   List<double> sse_decode_list_prim_f_64_loose(SseDeserializer deserializer);
 
   @protected
@@ -328,7 +394,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<UiExternalTrack> sse_decode_list_ui_external_track(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<UiFolderInfo> sse_decode_list_ui_folder_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiPartyGuestInfo> sse_decode_list_ui_party_guest_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiPartyRecent> sse_decode_list_ui_party_recent(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiPeerStatus> sse_decode_list_ui_peer_status(
     SseDeserializer deserializer,
   );
 
@@ -338,7 +424,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<UiProfile> sse_decode_list_ui_profile(SseDeserializer deserializer);
+
+  @protected
   List<UiRecentTrack> sse_decode_list_ui_recent_track(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiSourceProvider> sse_decode_list_ui_source_provider(
     SseDeserializer deserializer,
   );
 
@@ -381,6 +475,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
@@ -405,6 +502,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiTrackInfo? sse_decode_opt_box_autoadd_ui_track_info(
     SseDeserializer deserializer,
   );
+
+  @protected
+  int sse_decode_u_16(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -437,6 +537,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiEvent sse_decode_ui_event(SseDeserializer deserializer);
 
   @protected
+  UiExternalTrack sse_decode_ui_external_track(SseDeserializer deserializer);
+
+  @protected
   UiFolderInfo sse_decode_ui_folder_info(SseDeserializer deserializer);
 
   @protected
@@ -449,16 +552,43 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiLyrics sse_decode_ui_lyrics(SseDeserializer deserializer);
 
   @protected
+  UiPairingOpen sse_decode_ui_pairing_open(SseDeserializer deserializer);
+
+  @protected
+  UiPartyGuestInfo sse_decode_ui_party_guest_info(SseDeserializer deserializer);
+
+  @protected
+  UiPartyRecent sse_decode_ui_party_recent(SseDeserializer deserializer);
+
+  @protected
+  UiPartyStatus sse_decode_ui_party_status(SseDeserializer deserializer);
+
+  @protected
+  UiPeerStatus sse_decode_ui_peer_status(SseDeserializer deserializer);
+
+  @protected
   UiPlayerSnapshot sse_decode_ui_player_snapshot(SseDeserializer deserializer);
 
   @protected
   UiPlaylistInfo sse_decode_ui_playlist_info(SseDeserializer deserializer);
 
   @protected
+  UiProfile sse_decode_ui_profile(SseDeserializer deserializer);
+
+  @protected
+  UiProfilesState sse_decode_ui_profiles_state(SseDeserializer deserializer);
+
+  @protected
   UiRecentTrack sse_decode_ui_recent_track(SseDeserializer deserializer);
 
   @protected
+  UiSourceProvider sse_decode_ui_source_provider(SseDeserializer deserializer);
+
+  @protected
   UiStatsSummary sse_decode_ui_stats_summary(SseDeserializer deserializer);
+
+  @protected
+  UiSyncStatus sse_decode_ui_sync_status(SseDeserializer deserializer);
 
   @protected
   UiSyncedLine sse_decode_ui_synced_line(SseDeserializer deserializer);
@@ -512,6 +642,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
@@ -558,6 +691,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_bool(List<bool> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_f_64_loose(
@@ -608,8 +744,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_ui_external_track(
+    List<UiExternalTrack> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_ui_folder_info(
     List<UiFolderInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_party_guest_info(
+    List<UiPartyGuestInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_party_recent(
+    List<UiPartyRecent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_peer_status(
+    List<UiPeerStatus> self,
     SseSerializer serializer,
   );
 
@@ -620,8 +780,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_ui_profile(
+    List<UiProfile> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_ui_recent_track(
     List<UiRecentTrack> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_source_provider(
+    List<UiSourceProvider> self,
     SseSerializer serializer,
   );
 
@@ -677,6 +849,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
@@ -705,6 +880,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     UiTrackInfo? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
@@ -743,6 +921,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ui_event(UiEvent self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_external_track(
+    UiExternalTrack self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ui_folder_info(UiFolderInfo self, SseSerializer serializer);
 
   @protected
@@ -758,6 +942,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ui_lyrics(UiLyrics self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_pairing_open(UiPairingOpen self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_party_guest_info(
+    UiPartyGuestInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_party_recent(UiPartyRecent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_party_status(UiPartyStatus self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_peer_status(UiPeerStatus self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ui_player_snapshot(
     UiPlayerSnapshot self,
     SseSerializer serializer,
@@ -770,13 +972,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_ui_profile(UiProfile self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_profiles_state(
+    UiProfilesState self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ui_recent_track(UiRecentTrack self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_source_provider(
+    UiSourceProvider self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_ui_stats_summary(
     UiStatsSummary self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_ui_sync_status(UiSyncStatus self, SseSerializer serializer);
 
   @protected
   void sse_encode_ui_synced_line(UiSyncedLine self, SseSerializer serializer);

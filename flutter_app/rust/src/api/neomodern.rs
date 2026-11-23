@@ -4,24 +4,57 @@ use neomodern_core::audio::mpv::{MpvEngine, MpvOptions};
 use neomodern_core::audio::{Equalizer, NetGuardedEngine, ReplayGain};
 use neomodern_core::library::{
     AlbumDetail, AlbumRow, ArtistProfile, ArtistRow, ArtistTopTrack, DynamicMix, FolderInfo,
-    HomeFeed, HomeMixDetail, Hooks, Library, ListeningStats, NewListenEvent, PlaylistInfo,
-    ProfileId, RecentTrack, SortSpec, TopAlbumStat, TopArtistStat, TopTrackStat, TrackRow,
+    HomeFeed, HomeMixDetail, Hooks, Library, ListeningStats, MAX_PROFILES, NewListenEvent,
+    PROFILE_COLORS, PlaylistInfo, Profile, ProfileId, RecentTrack, SortSpec, TopAlbumStat,
+    TopArtistStat, TopTrackStat, TrackRow,
 };
 use neomodern_core::lyrics::{LyricsOptions, LyricsResult, LyricsService, LyricsSource};
+#[cfg(not(target_os = "android"))]
+use neomodern_core::media_keys::{self, Extra as MediaKeysExtra, MediaKeys};
 use neomodern_core::net::Feature;
 use neomodern_core::player::{Player, PlayerEvent, PlayerSnapshot, Status, TrackInfo};
 use neomodern_core::queue::{RepeatMode, Track};
 use neomodern_core::session::SessionStore;
+use neomodern_core::source_provider::{
+    ExternalTrack, HttpJsonProvider, ProviderConfig, ProviderKind, ProviderRegistry,
+    load_provider_configs, save_provider_configs, validate_base_url,
+};
+use neomodern_core::sync::jam::host::JamStatus;
+use neomodern_core::sync::pair_link::PairQr;
+use neomodern_core::sync::service::{PairingOpen, SyncStatus};
+use neomodern_core::sync::{
+    EventSink, RemoteFeed, SyncConfig, SyncService, default_device_name, link,
+};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
+
+struct CoreEventSink {
+    event_tx: broadcast::Sender<UiEvent>,
+}
+
+impl EventSink for CoreEventSink {
+    fn emit(&self, event: &str, _payload: serde_json::Value) {
+        if event == "sync://status" || event == "jam://status" {
+            let _ = self.event_tx.send(UiEvent::SyncChanged);
+        }
+    }
+}
 
 struct CoreState {
     player: Arc<Player>,
     library: Arc<Library>,
     session: Arc<SessionStore>,
     lyrics: Arc<LyricsService>,
+    sync: SyncService,
+    profile_lock: AtomicBool,
+    source_config_path: PathBuf,
+    source_configs: Mutex<Vec<ProviderConfig>>,
+    source_registry: Arc<ProviderRegistry>,
+    #[cfg(not(target_os = "android"))]
+    media_keys: Option<MediaKeys>,
     event_tx: broadcast::Sender<UiEvent>,
 }
 
@@ -525,6 +558,238 @@ impl From<ListeningStats> for UiStatsSummary {
 }
 
 #[derive(Debug, Clone)]
+pub struct UiProfile {
+    pub id: i64,
+    pub name: String,
+    pub color: String,
+    pub created_at: i64,
+    pub has_pin: bool,
+}
+
+impl From<Profile> for UiProfile {
+    fn from(p: Profile) -> Self {
+        Self {
+            id: p.id.0,
+            name: p.name,
+            color: p.color,
+            created_at: p.created_at,
+            has_pin: p.has_pin,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiProfilesState {
+    pub active: i64,
+    pub profiles: Vec<UiProfile>,
+    pub colors: Vec<String>,
+    pub max_profiles: u32,
+    pub locked: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiPeerStatus {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub address: Option<String>,
+    pub connected: bool,
+    pub syncing: bool,
+    pub last_sync_at: Option<i64>,
+    pub profile_name: String,
+    pub profile_id: i64,
+    pub last_error: Option<String>,
+    pub rounds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiSyncStatus {
+    pub role: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub active_profile: i64,
+    pub allow_phone_connections: bool,
+    pub listening_port: Option<u16>,
+    pub listening_addresses: Vec<String>,
+    pub pairing_state: String,
+    pub pairing_code: Option<String>,
+    pub pairing_remaining_secs: Option<u64>,
+    pub pairing_profile_name: Option<String>,
+    pub peers: Vec<UiPeerStatus>,
+}
+
+impl From<SyncStatus> for UiSyncStatus {
+    fn from(s: SyncStatus) -> Self {
+        Self {
+            role: s.role.to_owned(),
+            device_id: s.device_id,
+            device_name: s.device_name,
+            active_profile: s.active_profile,
+            allow_phone_connections: s.allow_phone_connections,
+            listening_port: s.listening.as_ref().map(|l| l.port),
+            listening_addresses: s.listening.map(|l| l.addresses).unwrap_or_default(),
+            pairing_state: s.pairing.state.to_owned(),
+            pairing_code: s.pairing.code,
+            pairing_remaining_secs: s.pairing.remaining_secs,
+            pairing_profile_name: s.pairing.profile_name,
+            peers: s
+                .peers
+                .into_iter()
+                .map(|p| UiPeerStatus {
+                    id: p.id,
+                    name: p.name,
+                    kind: p.kind.to_owned(),
+                    address: p.address,
+                    connected: p.connected,
+                    syncing: p.syncing,
+                    last_sync_at: p.last_sync_at,
+                    profile_name: p.profile_name,
+                    profile_id: p.profile_id,
+                    last_error: p.last_error,
+                    rounds: p.rounds,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiPairingOpen {
+    pub code: String,
+    pub addresses: Vec<String>,
+    pub port: u16,
+    pub remaining_secs: u64,
+    pub profile_name: String,
+    pub pairing_uri: String,
+    pub qr_matrix: Vec<bool>,
+    pub qr_size: u32,
+}
+
+fn qr_parts(qr: Option<PairQr>) -> (String, Vec<bool>, u32) {
+    match qr {
+        Some(q) => {
+            let size = u32::try_from(q.size).unwrap_or(0);
+            let matrix = q.modules.bytes().map(|b| b == b'1').collect();
+            (q.link, matrix, size)
+        }
+        None => (String::new(), Vec::new(), 0),
+    }
+}
+
+impl From<PairingOpen> for UiPairingOpen {
+    fn from(p: PairingOpen) -> Self {
+        let (pairing_uri, qr_matrix, qr_size) = qr_parts(p.qr);
+        Self {
+            code: p.code,
+            addresses: p.addresses,
+            port: p.port,
+            remaining_secs: p.remaining_secs,
+            profile_name: p.profile_name,
+            pairing_uri,
+            qr_matrix,
+            qr_size,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiPartyGuestInfo {
+    pub id: String,
+    pub name: String,
+    pub added: u32,
+    pub connected: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiPartyRecent {
+    pub title: String,
+    pub artist: String,
+    pub added_by: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiPartyStatus {
+    pub enabled: bool,
+    pub running: bool,
+    pub code: Option<String>,
+    pub join_uri: Option<String>,
+    pub qr_matrix: Vec<bool>,
+    pub qr_size: u32,
+    pub addresses: Vec<String>,
+    pub guests: Vec<UiPartyGuestInfo>,
+    pub recent: Vec<UiPartyRecent>,
+}
+
+impl From<JamStatus> for UiPartyStatus {
+    fn from(s: JamStatus) -> Self {
+        let (qr_link, qr_matrix, qr_size) = qr_parts(s.qr);
+        let join_uri = s.link.or_else(|| (!qr_link.is_empty()).then_some(qr_link));
+        Self {
+            enabled: s.enabled,
+            running: s.running,
+            code: s.code,
+            join_uri,
+            qr_matrix,
+            qr_size,
+            addresses: s.addresses,
+            guests: s
+                .guests
+                .into_iter()
+                .map(|g| UiPartyGuestInfo {
+                    id: g.id,
+                    name: g.name,
+                    added: g.added,
+                    connected: g.connected,
+                })
+                .collect(),
+            recent: s
+                .recent
+                .into_iter()
+                .map(|r| UiPartyRecent {
+                    title: r.title,
+                    artist: r.artist,
+                    added_by: r.added_by,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiSourceProvider {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiExternalTrack {
+    pub provider_id: String,
+    pub external_id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub duration_ms: Option<u64>,
+    pub cover_url: Option<String>,
+}
+
+impl From<ExternalTrack> for UiExternalTrack {
+    fn from(t: ExternalTrack) -> Self {
+        Self {
+            provider_id: t.provider_id,
+            external_id: t.external_id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            duration_ms: t.duration_ms,
+            cover_url: t.cover_url,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum UiEvent {
     State(UiPlayerSnapshot),
     Position {
@@ -537,6 +802,7 @@ pub enum UiEvent {
         total: u64,
         done: bool,
     },
+    SyncChanged,
     Error(String),
 }
 
@@ -568,134 +834,219 @@ fn source_label(source: LyricsSource) -> String {
     }
 }
 
-pub fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSnapshot, String> {
-    let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(existing) = CORE.get() {
-        return Ok(existing.player.snapshot().into());
-    }
+pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSnapshot, String> {
+    let startup = {
+        let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = CORE.get() {
+            return Ok(existing.player.snapshot().into());
+        }
 
-    let data_path = PathBuf::from(&data_dir);
-    let cache_path = PathBuf::from(&cache_dir);
+        let data_path = PathBuf::from(&data_dir);
+        let cache_path = PathBuf::from(&cache_dir);
 
-    let session = Arc::new(SessionStore::new(data_path.join("session.json")));
-    let (event_tx, _) = broadcast::channel::<UiEvent>(256);
+        let session = Arc::new(SessionStore::new(data_path.join("session.json")));
+        let (event_tx, _) = broadcast::channel::<UiEvent>(256);
+        let remote_feed = RemoteFeed::new();
 
-    let (engine_tx, engine_rx) = std::sync::mpsc::channel();
-    #[cfg(not(target_os = "android"))]
-    let engine = MpvEngine::new(MpvOptions::default(), engine_tx)
-        .map_err(|e| format!("failed to start audio engine: {e}"))?;
-    #[cfg(target_os = "android")]
-    return Err("Android audio engine is not yet wired in neomodern_bridge".to_string());
+        let (engine_tx, engine_rx) = std::sync::mpsc::channel();
+        #[cfg(not(target_os = "android"))]
+        let engine = MpvEngine::new(MpvOptions::default(), engine_tx)
+            .map_err(|e| format!("failed to start audio engine: {e}"))?;
+        #[cfg(target_os = "android")]
+        return Err("Android audio engine is not yet wired in neomodern_bridge".to_string());
 
-    let observer_session = Arc::clone(&session);
-    let observer_tx = event_tx.clone();
-    let player = Arc::new(Player::new(
-        Box::new(NetGuardedEngine::new(
-            Box::new(engine),
-            session.net_policy(),
-        )),
-        Box::new(move |event| match event {
-            PlayerEvent::State(snap) => {
-                if let Some(state) = CORE.get() {
-                    observer_session.on_player_state(&snap, || state.player.export_session());
+        let observer_session = Arc::clone(&session);
+        let observer_feed = remote_feed.clone();
+        let observer_tx = event_tx.clone();
+        let player = Arc::new(Player::new(
+            Box::new(NetGuardedEngine::new(
+                Box::new(engine),
+                session.net_policy(),
+            )),
+            Box::new(move |event| {
+                observer_feed.on_player_event(&event);
+                match event {
+                    PlayerEvent::State(snap) => {
+                        if let Some(state) = CORE.get() {
+                            observer_session
+                                .on_player_state(&snap, || state.player.export_session());
+                            #[cfg(not(target_os = "android"))]
+                            if let Some(keys) = state.media_keys.as_ref() {
+                                keys.publish(&snap, |path| MediaKeysExtra {
+                                    album: state
+                                        .library
+                                        .track_meta(path)
+                                        .ok()
+                                        .flatten()
+                                        .map(|m| m.album),
+                                    cover: state.library.track_cover(path).ok().flatten(),
+                                });
+                            }
+                        }
+                        let _ = observer_tx.send(UiEvent::State(snap.into()));
+                    }
+                    PlayerEvent::Position { seconds, duration } => {
+                        if let Some(state) = CORE.get() {
+                            let (qv, idx, pos) = state.player.progress_state();
+                            observer_session.maybe_save_progress(qv, idx, pos, || {
+                                state.player.export_session()
+                            });
+                        }
+                        let _ = observer_tx.send(UiEvent::Position { seconds, duration });
+                    }
+                    PlayerEvent::Listen(rec) => {
+                        if let Some(state) = CORE.get()
+                            && let Err(e) = state.library.record_listen_event(NewListenEvent {
+                                path: rec.path,
+                                title: rec.title,
+                                artist: rec.artist,
+                                duration_ms: rec.duration_ms,
+                                started_at: rec.started_at,
+                                ended_at: rec.ended_at,
+                                listened_ms: rec.listened_ms,
+                                completed: rec.completed,
+                                skipped: rec.skipped,
+                            })
+                        {
+                            log::warn!("failed to record listen event: {e}");
+                        }
+                    }
+                    PlayerEvent::Error(message) => {
+                        let _ = observer_tx.send(UiEvent::Error(message));
+                    }
                 }
-                let _ = observer_tx.send(UiEvent::State(snap.into()));
-            }
-            PlayerEvent::Position { seconds, duration } => {
-                if let Some(state) = CORE.get() {
-                    let (qv, idx, pos) = state.player.progress_state();
-                    observer_session
-                        .maybe_save_progress(qv, idx, pos, || state.player.export_session());
-                }
-                let _ = observer_tx.send(UiEvent::Position { seconds, duration });
-            }
-            PlayerEvent::Listen(rec) => {
-                if let Some(state) = CORE.get()
-                    && let Err(e) = state.library.record_listen_event(NewListenEvent {
-                        path: rec.path,
-                        title: rec.title,
-                        artist: rec.artist,
-                        duration_ms: rec.duration_ms,
-                        started_at: rec.started_at,
-                        ended_at: rec.ended_at,
-                        listened_ms: rec.listened_ms,
-                        completed: rec.completed,
-                        skipped: rec.skipped,
-                    })
-                {
-                    log::warn!("failed to record listen event: {e}");
-                }
-            }
-            PlayerEvent::Error(message) => {
-                let _ = observer_tx.send(UiEvent::Error(message));
-            }
-        }),
-    ));
+            }),
+        ));
 
-    player.restore_session(session.load());
+        player.restore_session(session.load());
 
-    let progress_tx = event_tx.clone();
-    let changed_tx = event_tx.clone();
-    let library = Arc::new(
-        Library::open(
-            &data_path.join("library.sqlite3"),
-            &cache_path.join("covers"),
-            Hooks {
-                on_progress: Box::new(move |p| {
-                    let _ = progress_tx.send(UiEvent::ScanProgress {
-                        scanned: p.scanned,
-                        total: 0,
-                        done: p.done,
-                    });
-                }),
-                on_changed: Box::new(move |_version| {
-                    let _ = changed_tx.send(UiEvent::LibraryChanged);
-                }),
-            },
-        )
-        .map_err(|e| format!("failed to open library: {e}"))?
-        .with_user_images_dir(data_path.join("images")),
-    );
+        #[cfg(not(target_os = "android"))]
+        let media_keys = media_keys::create(None, &player);
 
-    let wanted_profile = ProfileId(session.active_profile());
-    if let Err(e) = library.set_active_profile(wanted_profile) {
-        log::warn!(
-            "profile {} not found ({e}); using the first one",
-            wanted_profile.0
+        let progress_tx = event_tx.clone();
+        let changed_tx = event_tx.clone();
+        let library = Arc::new(
+            Library::open(
+                &data_path.join("library.sqlite3"),
+                &cache_path.join("covers"),
+                Hooks {
+                    on_progress: Box::new(move |p| {
+                        let _ = progress_tx.send(UiEvent::ScanProgress {
+                            scanned: p.scanned,
+                            total: 0,
+                            done: p.done,
+                        });
+                    }),
+                    on_changed: Box::new(move |_version| {
+                        if let Some(state) = CORE.get() {
+                            state.sync.library_changed();
+                        }
+                        let _ = changed_tx.send(UiEvent::LibraryChanged);
+                    }),
+                },
+            )
+            .map_err(|e| format!("failed to open library: {e}"))?
+            .with_user_images_dir(data_path.join("images")),
         );
-        session.adopt_active_profile(library.active_profile().0);
-    }
 
-    match library.repair_missing_covers() {
-        Ok(folders) if !folders.is_empty() => library.start_scan(folders),
-        Ok(_) => {}
-        Err(e) => log::warn!("could not check album covers: {e}"),
-    }
+        let wanted_profile = ProfileId(session.active_profile());
+        if let Err(e) = library.set_active_profile(wanted_profile) {
+            log::warn!(
+                "profile {} not found ({e}); using the first one",
+                wanted_profile.0
+            );
+            session.adopt_active_profile(library.active_profile().0);
+        }
 
-    let lyrics = Arc::new(
-        LyricsService::new(&cache_path.join("lyrics"))
-            .map_err(|e| format!("failed to open lyrics cache: {e}"))?
-            .with_net_policy(session.net_policy()),
-    );
+        let profile_lock = AtomicBool::new(
+            library
+                .profile_has_pin(library.active_profile())
+                .unwrap_or(false),
+        );
 
-    let state = Arc::new(CoreState {
-        player: Arc::clone(&player),
-        library,
-        session,
-        lyrics,
-        event_tx,
-    });
-    let _ = CORE.set(state);
+        match library.repair_missing_covers() {
+            Ok(folders) if !folders.is_empty() => library.start_scan(folders),
+            Ok(_) => {}
+            Err(e) => log::warn!("could not check album covers: {e}"),
+        }
 
-    let worker = Arc::clone(&player);
-    std::thread::Builder::new()
-        .name("engine-events".into())
-        .spawn(move || {
-            while let Ok(ev) = engine_rx.recv() {
-                worker.handle_engine_event(ev);
+        let lyrics = Arc::new(
+            LyricsService::new(&cache_path.join("lyrics"))
+                .map_err(|e| format!("failed to open lyrics cache: {e}"))?
+                .with_net_policy(session.net_policy()),
+        );
+
+        let sync = SyncService::new(
+            Arc::clone(&library),
+            Some(Arc::clone(&player)),
+            remote_feed,
+            Arc::new(CoreEventSink {
+                event_tx: event_tx.clone(),
+            }),
+            SyncConfig {
+                port: link::DEFAULT_PORT,
+                server: cfg!(not(target_os = "android")),
+                default_name: default_device_name(),
+                backup_dir: data_path.join("sync-backups"),
+            },
+        );
+
+        let source_config_path = data_path.join("source_providers.json");
+        let configs = load_provider_configs(&source_config_path);
+        let source_registry = Arc::new(ProviderRegistry::new());
+        for cfg in &configs {
+            if cfg.enabled {
+                match HttpJsonProvider::from_config(cfg, session.net_policy()) {
+                    Ok(p) => {
+                        source_registry.register(Arc::new(p));
+                    }
+                    Err(e) => {
+                        log::warn!("skipping invalid source provider {}: {e}", cfg.id);
+                    }
+                }
             }
-        })
-        .map_err(|e| format!("failed to start engine-events thread: {e}"))?;
+        }
+
+        let allow_phones = session.allow_phone_connections();
+        let party_enabled = session.jam_enabled();
+        let sync_clone = sync.clone();
+
+        let state = Arc::new(CoreState {
+            player: Arc::clone(&player),
+            library,
+            session,
+            lyrics,
+            sync,
+            profile_lock,
+            source_config_path,
+            source_configs: Mutex::new(configs),
+            source_registry,
+            #[cfg(not(target_os = "android"))]
+            media_keys,
+            event_tx,
+        });
+        let _ = CORE.set(state);
+
+        let worker = Arc::clone(&player);
+        std::thread::Builder::new()
+            .name("engine-events".into())
+            .spawn(move || {
+                while let Ok(ev) = engine_rx.recv() {
+                    worker.handle_engine_event(ev);
+                }
+            })
+            .map_err(|e| format!("failed to start engine-events thread: {e}"))?;
+
+        (player, sync_clone, allow_phones, party_enabled)
+    };
+
+    let (player, sync, allow_phones, party_enabled) = startup;
+    tokio::spawn(async move {
+        sync.start(allow_phones).await;
+        if party_enabled && let Err(e) = sync.jam_set_enabled(true).await {
+            log::info!("party queue: {e}");
+        }
+    });
 
     Ok(player.snapshot().into())
 }
@@ -1018,7 +1369,11 @@ pub fn library_album_count(search: Option<String>) -> Result<u32, String> {
 
 pub fn library_album_detail(album_id: i64) -> Result<Option<UiAlbumDetail>, String> {
     let lib = &core()?.library;
-    if lib.album_info(album_id).map_err(|e| e.to_string())?.is_none() {
+    if lib
+        .album_info(album_id)
+        .map_err(|e| e.to_string())?
+        .is_none()
+    {
         return Ok(None);
     }
     let detail = lib.album(album_id).map_err(|e| e.to_string())?;
@@ -1428,6 +1783,374 @@ pub fn listening_stats(days: Option<u32>) -> Result<UiStatsSummary, String> {
         .unwrap_or(0);
     let from = days.map(|d| now.saturating_sub(i64::from(d) * 86_400));
     lib.listening_stats(from, None)
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------
+// Profiles & PIN (K24 / K25)
+// ---------------------------------------------------------------------
+
+fn build_profiles_state(state: &CoreState) -> Result<UiProfilesState, String> {
+    let profiles = state
+        .library
+        .profiles()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    Ok(UiProfilesState {
+        active: state.library.active_profile().0,
+        profiles,
+        colors: PROFILE_COLORS.iter().map(|c| (*c).to_owned()).collect(),
+        max_profiles: u32::try_from(MAX_PROFILES).unwrap_or(8),
+        locked: state.profile_lock.load(Ordering::SeqCst),
+    })
+}
+
+pub fn profiles_list() -> Result<UiProfilesState, String> {
+    build_profiles_state(core()?)
+}
+
+pub fn profile_create(name: String) -> Result<UiProfilesState, String> {
+    let state = core()?;
+    if state.profile_lock.load(Ordering::SeqCst) {
+        return Err("unlock the profile first".into());
+    }
+    state
+        .library
+        .create_profile(&name)
+        .map_err(|e| e.to_string())?;
+    build_profiles_state(state)
+}
+
+pub fn profile_rename(id: i64, name: String) -> Result<UiProfilesState, String> {
+    let state = core()?;
+    if state.profile_lock.load(Ordering::SeqCst) {
+        return Err("unlock the profile first".into());
+    }
+    state
+        .library
+        .rename_profile(ProfileId(id), &name)
+        .map_err(|e| e.to_string())?;
+    build_profiles_state(state)
+}
+
+pub async fn profile_delete(id: i64) -> Result<UiProfilesState, String> {
+    let state = core()?;
+    if state.profile_lock.load(Ordering::SeqCst) {
+        return Err("unlock the profile first".into());
+    }
+    state
+        .library
+        .delete_profile(ProfileId(id))
+        .map_err(|e| e.to_string())?;
+    state.sync.profile_deleted(ProfileId(id)).await?;
+    state.session.forget_profile(id);
+    state.session.save_now(&state.player.export_session());
+    build_profiles_state(state)
+}
+
+pub async fn profile_switch(id: i64, pin: Option<String>) -> Result<UiPlayerSnapshot, String> {
+    let state = core()?;
+    let target = ProfileId(id);
+    if state.library.active_profile() != target {
+        state
+            .library
+            .check_profile_pin(target, pin.as_deref())
+            .map_err(|e| e.to_string())?;
+        if !state
+            .library
+            .profiles()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .any(|p| p.id == target)
+        {
+            return Err("no such profile".into());
+        }
+        let leaving = state.player.take_for_profile_switch();
+        let next = state.session.switch_profile(leaving, id);
+        state
+            .library
+            .set_active_profile(target)
+            .map_err(|e| e.to_string())?;
+        let snap = state.player.load_profile_state(next);
+        state.profile_lock.store(false, Ordering::SeqCst);
+        if let Err(e) = state.sync.profile_switched().await {
+            log::warn!("sync: could not follow profile switch: {e}");
+        }
+        let _ = state.event_tx.send(UiEvent::State(snap.clone().into()));
+        let _ = state.event_tx.send(UiEvent::SyncChanged);
+        return Ok(snap.into());
+    }
+    if state.profile_lock.load(Ordering::SeqCst) {
+        state
+            .library
+            .check_profile_pin(target, pin.as_deref())
+            .map_err(|e| e.to_string())?;
+        state.profile_lock.store(false, Ordering::SeqCst);
+    }
+    Ok(state.player.snapshot().into())
+}
+
+pub fn profile_set_pin(id: i64, pin: Option<String>) -> Result<UiProfilesState, String> {
+    let state = core()?;
+    if state.profile_lock.load(Ordering::SeqCst) {
+        return Err("unlock the profile first".into());
+    }
+    state
+        .library
+        .set_profile_pin(ProfileId(id), pin.as_deref())
+        .map_err(|e| e.to_string())?;
+    build_profiles_state(state)
+}
+
+pub fn profile_unlock(pin: String) -> Result<UiProfilesState, String> {
+    let state = core()?;
+    state
+        .library
+        .check_profile_pin(state.library.active_profile(), Some(&pin))
+        .map_err(|e| e.to_string())?;
+    state.profile_lock.store(false, Ordering::SeqCst);
+    build_profiles_state(state)
+}
+
+// ---------------------------------------------------------------------
+// Local Network Sync & Party Queue (K21 / K23 / K27 / K29)
+// ---------------------------------------------------------------------
+
+pub async fn sync_status() -> Result<UiSyncStatus, String> {
+    core()?.sync.status().await.map(Into::into)
+}
+
+pub async fn sync_set_allow_phone_connections(allow: bool) -> Result<UiSyncStatus, String> {
+    let state = core()?;
+    let status = state.sync.set_allow_phone_connections(allow).await?;
+    state.session.set_allow_phone_connections(allow);
+    state.session.save_now(&state.player.export_session());
+    Ok(status.into())
+}
+
+pub async fn sync_set_device_name(name: String) -> Result<UiSyncStatus, String> {
+    core()?.sync.set_device_name(&name).await.map(Into::into)
+}
+
+pub async fn sync_pair_open() -> Result<UiPairingOpen, String> {
+    core()?.sync.pair_open().await.map(Into::into)
+}
+
+pub async fn sync_pair_close() -> Result<UiSyncStatus, String> {
+    let state = core()?;
+    state.sync.pair_close();
+    state.sync.status().await.map(Into::into)
+}
+
+pub async fn sync_remove_peer(peer_id: String) -> Result<UiSyncStatus, String> {
+    core()?.sync.remove_peer(&peer_id).await.map(Into::into)
+}
+
+pub async fn sync_now() -> Result<UiSyncStatus, String> {
+    core()?.sync.sync_now().await.map(Into::into)
+}
+
+pub async fn party_status() -> Result<UiPartyStatus, String> {
+    core()?.sync.jam_status().await.map(Into::into)
+}
+
+pub async fn party_set_enabled(enabled: bool) -> Result<UiPartyStatus, String> {
+    let state = core()?;
+    let status = state.sync.jam_set_enabled(enabled).await?;
+    state.session.set_jam_enabled(enabled);
+    state.session.save_now(&state.player.export_session());
+    Ok(status.into())
+}
+
+pub async fn party_start() -> Result<UiPartyStatus, String> {
+    core()?.sync.jam_start().await.map(Into::into)
+}
+
+pub async fn party_end() -> Result<UiPartyStatus, String> {
+    core()?.sync.jam_end().await.map(Into::into)
+}
+
+pub async fn party_new_code() -> Result<UiPartyStatus, String> {
+    core()?.sync.jam_new_code().await.map(Into::into)
+}
+
+pub async fn party_remove_guest(id: String) -> Result<UiPartyStatus, String> {
+    core()?.sync.jam_remove_guest(&id).await.map(Into::into)
+}
+
+// ---------------------------------------------------------------------
+// External Sources (K29 neutral SourceProvider)
+// ---------------------------------------------------------------------
+
+fn map_source_configs(configs: &[ProviderConfig]) -> Vec<UiSourceProvider> {
+    configs
+        .iter()
+        .filter_map(|cfg| match &cfg.kind {
+            ProviderKind::HttpJson { base_url } => Some(UiSourceProvider {
+                id: cfg.id.clone(),
+                name: cfg.name.clone(),
+                base_url: base_url.clone(),
+                enabled: cfg.enabled,
+            }),
+            #[cfg(not(target_os = "android"))]
+            ProviderKind::Cli { .. } => None,
+        })
+        .collect()
+}
+
+fn generate_provider_id(name: &str, existing: &[ProviderConfig]) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash && !slug.is_empty() {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    let base = slug.trim_matches('-');
+    let base = if base.is_empty() { "source" } else { base };
+    if !existing.iter().any(|c| c.id == base) {
+        return base.to_owned();
+    }
+    let mut n = 2usize;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !existing.iter().any(|c| c.id == candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+pub fn source_providers_list() -> Result<Vec<UiSourceProvider>, String> {
+    let state = core()?;
+    let configs = state
+        .source_configs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    Ok(map_source_configs(&configs))
+}
+
+pub fn source_provider_add(
+    name: String,
+    base_url: String,
+) -> Result<Vec<UiSourceProvider>, String> {
+    let state = core()?;
+    let clean_name = name.trim().to_owned();
+    if clean_name.is_empty() {
+        return Err("source name must not be empty".into());
+    }
+    let normalized_url = validate_base_url(&base_url).map_err(|e| e.to_string())?;
+    let mut configs = state
+        .source_configs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let id = generate_provider_id(&clean_name, &configs);
+    let provider = HttpJsonProvider::new(id.clone(), &normalized_url, state.session.net_policy())
+        .map_err(|e| e.to_string())?;
+    let mut updated = configs.clone();
+    updated.push(ProviderConfig {
+        id,
+        name: clean_name,
+        kind: ProviderKind::HttpJson {
+            base_url: normalized_url,
+        },
+        enabled: true,
+    });
+    save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
+    state.source_registry.register(Arc::new(provider));
+    *configs = updated;
+    Ok(map_source_configs(&configs))
+}
+
+pub fn source_provider_remove(id: String) -> Result<Vec<UiSourceProvider>, String> {
+    let state = core()?;
+    let mut configs = state
+        .source_configs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut updated = configs.clone();
+    let before = updated.len();
+    updated.retain(|c| c.id != id);
+    if updated.len() == before {
+        return Err("source provider not found".into());
+    }
+    save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
+    state.source_registry.remove(&id);
+    *configs = updated;
+    Ok(map_source_configs(&configs))
+}
+
+pub fn source_provider_toggle(id: String, enabled: bool) -> Result<Vec<UiSourceProvider>, String> {
+    let state = core()?;
+    let mut configs = state
+        .source_configs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut updated = configs.clone();
+    let Some(entry) = updated.iter_mut().find(|c| c.id == id) else {
+        return Err("source provider not found".into());
+    };
+    entry.enabled = enabled;
+    if enabled {
+        let provider = HttpJsonProvider::from_config(entry, state.session.net_policy())
+            .map_err(|e| e.to_string())?;
+        save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
+        state.source_registry.register(Arc::new(provider));
+    } else {
+        save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
+        state.source_registry.remove(&id);
+    }
+    *configs = updated;
+    Ok(map_source_configs(&configs))
+}
+
+pub async fn source_provider_search(
+    provider_id: String,
+    query: String,
+    limit: u32,
+) -> Result<Vec<UiExternalTrack>, String> {
+    let state = core()?;
+    let provider = state
+        .source_registry
+        .get(&provider_id)
+        .ok_or_else(|| "source provider is disabled or not found".to_string())?;
+    let tracks = provider
+        .search(&query, limit.clamp(1, 100) as usize)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(tracks.into_iter().map(Into::into).collect())
+}
+
+pub async fn source_provider_play(
+    provider_id: String,
+    external_id: String,
+    title: String,
+    artist: String,
+) -> Result<UiPlayerSnapshot, String> {
+    let state = core()?;
+    let provider = state
+        .source_registry
+        .get(&provider_id)
+        .ok_or_else(|| "source provider is disabled or not found".to_string())?;
+    let stream = provider
+        .resolve_stream(&external_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let track = Track {
+        path: PathBuf::from(stream.url),
+        title: (!title.trim().is_empty()).then_some(title),
+        artist: (!artist.trim().is_empty()).then_some(artist),
+    };
+    state
+        .player
+        .replace_queue_from(vec![track], 0, Some(format!("source:{provider_id}")))
         .map(Into::into)
         .map_err(|e| e.to_string())
 }

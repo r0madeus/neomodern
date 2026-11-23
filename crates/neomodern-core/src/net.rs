@@ -317,6 +317,8 @@ mod tests {
             ("metadata/musicbrainz.rs", "client_builder()", 1),
             // Update check: update::check_at() requires Feature::Updates.
             ("update.rs", "client_builder()", 1),
+            // External SourceProvider HTTP/JSON: gated by Feature::Online via HttpJsonProvider::http().
+            ("source_provider/http_json.rs", "client_builder()", 1),
             // PC <-> phone sync (docs/SYNC.md): LAN only, never the
             // internet. The listener (IPv4 + best-effort IPv6) drops
             // non-private sources and is off by default: the sync service

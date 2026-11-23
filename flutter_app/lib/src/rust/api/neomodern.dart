@@ -9,9 +9,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'neomodern.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_tracks`, `core`, `source_label`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `core`, `generate_provider_id`, `map_source_configs`, `qr_parts`, `source_label`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreEventSink`, `CoreState`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<UiPlayerSnapshot> initCore({
   required String dataDir,
@@ -319,6 +319,118 @@ Future<UiLyrics> lyricsForTrack({
 Future<UiStatsSummary> listeningStats({int? days}) =>
     RustLib.instance.api.crateApiNeomodernListeningStats(days: days);
 
+Future<UiProfilesState> profilesList() =>
+    RustLib.instance.api.crateApiNeomodernProfilesList();
+
+Future<UiProfilesState> profileCreate({required String name}) =>
+    RustLib.instance.api.crateApiNeomodernProfileCreate(name: name);
+
+Future<UiProfilesState> profileRename({
+  required PlatformInt64 id,
+  required String name,
+}) => RustLib.instance.api.crateApiNeomodernProfileRename(id: id, name: name);
+
+Future<UiProfilesState> profileDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiNeomodernProfileDelete(id: id);
+
+Future<UiPlayerSnapshot> profileSwitch({
+  required PlatformInt64 id,
+  String? pin,
+}) => RustLib.instance.api.crateApiNeomodernProfileSwitch(id: id, pin: pin);
+
+Future<UiProfilesState> profileSetPin({
+  required PlatformInt64 id,
+  String? pin,
+}) => RustLib.instance.api.crateApiNeomodernProfileSetPin(id: id, pin: pin);
+
+Future<UiProfilesState> profileUnlock({required String pin}) =>
+    RustLib.instance.api.crateApiNeomodernProfileUnlock(pin: pin);
+
+Future<UiSyncStatus> syncStatus() =>
+    RustLib.instance.api.crateApiNeomodernSyncStatus();
+
+Future<UiSyncStatus> syncSetAllowPhoneConnections({required bool allow}) =>
+    RustLib.instance.api.crateApiNeomodernSyncSetAllowPhoneConnections(
+      allow: allow,
+    );
+
+Future<UiSyncStatus> syncSetDeviceName({required String name}) =>
+    RustLib.instance.api.crateApiNeomodernSyncSetDeviceName(name: name);
+
+Future<UiPairingOpen> syncPairOpen() =>
+    RustLib.instance.api.crateApiNeomodernSyncPairOpen();
+
+Future<UiSyncStatus> syncPairClose() =>
+    RustLib.instance.api.crateApiNeomodernSyncPairClose();
+
+Future<UiSyncStatus> syncRemovePeer({required String peerId}) =>
+    RustLib.instance.api.crateApiNeomodernSyncRemovePeer(peerId: peerId);
+
+Future<UiSyncStatus> syncNow() =>
+    RustLib.instance.api.crateApiNeomodernSyncNow();
+
+Future<UiPartyStatus> partyStatus() =>
+    RustLib.instance.api.crateApiNeomodernPartyStatus();
+
+Future<UiPartyStatus> partySetEnabled({required bool enabled}) =>
+    RustLib.instance.api.crateApiNeomodernPartySetEnabled(enabled: enabled);
+
+Future<UiPartyStatus> partyStart() =>
+    RustLib.instance.api.crateApiNeomodernPartyStart();
+
+Future<UiPartyStatus> partyEnd() =>
+    RustLib.instance.api.crateApiNeomodernPartyEnd();
+
+Future<UiPartyStatus> partyNewCode() =>
+    RustLib.instance.api.crateApiNeomodernPartyNewCode();
+
+Future<UiPartyStatus> partyRemoveGuest({required String id}) =>
+    RustLib.instance.api.crateApiNeomodernPartyRemoveGuest(id: id);
+
+Future<List<UiSourceProvider>> sourceProvidersList() =>
+    RustLib.instance.api.crateApiNeomodernSourceProvidersList();
+
+Future<List<UiSourceProvider>> sourceProviderAdd({
+  required String name,
+  required String baseUrl,
+}) => RustLib.instance.api.crateApiNeomodernSourceProviderAdd(
+  name: name,
+  baseUrl: baseUrl,
+);
+
+Future<List<UiSourceProvider>> sourceProviderRemove({required String id}) =>
+    RustLib.instance.api.crateApiNeomodernSourceProviderRemove(id: id);
+
+Future<List<UiSourceProvider>> sourceProviderToggle({
+  required String id,
+  required bool enabled,
+}) => RustLib.instance.api.crateApiNeomodernSourceProviderToggle(
+  id: id,
+  enabled: enabled,
+);
+
+Future<List<UiExternalTrack>> sourceProviderSearch({
+  required String providerId,
+  required String query,
+  required int limit,
+}) => RustLib.instance.api.crateApiNeomodernSourceProviderSearch(
+  providerId: providerId,
+  query: query,
+  limit: limit,
+);
+
+Future<UiPlayerSnapshot> sourceProviderPlay({
+  required String providerId,
+  required String externalId,
+  required String title,
+  required String artist,
+}) => RustLib.instance.api.crateApiNeomodernSourceProviderPlay(
+  providerId: providerId,
+  externalId: externalId,
+  title: title,
+  artist: artist,
+);
+
 class UiAlbumDetail {
   final UiAlbumRow album;
   final List<UiTrackRow> tracks;
@@ -554,7 +666,51 @@ sealed class UiEvent with _$UiEvent {
     required BigInt total,
     required bool done,
   }) = UiEvent_ScanProgress;
+  const factory UiEvent.syncChanged() = UiEvent_SyncChanged;
   const factory UiEvent.error(String field0) = UiEvent_Error;
+}
+
+class UiExternalTrack {
+  final String providerId;
+  final String externalId;
+  final String title;
+  final String artist;
+  final String? album;
+  final BigInt? durationMs;
+  final String? coverUrl;
+
+  const UiExternalTrack({
+    required this.providerId,
+    required this.externalId,
+    required this.title,
+    required this.artist,
+    this.album,
+    this.durationMs,
+    this.coverUrl,
+  });
+
+  @override
+  int get hashCode =>
+      providerId.hashCode ^
+      externalId.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      durationMs.hashCode ^
+      coverUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiExternalTrack &&
+          runtimeType == other.runtimeType &&
+          providerId == other.providerId &&
+          externalId == other.externalId &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          durationMs == other.durationMs &&
+          coverUrl == other.coverUrl;
 }
 
 class UiFolderInfo {
@@ -665,6 +821,215 @@ class UiLyrics {
           syncedLines == other.syncedLines &&
           plainText == other.plainText &&
           source == other.source;
+}
+
+class UiPairingOpen {
+  final String code;
+  final List<String> addresses;
+  final int port;
+  final BigInt remainingSecs;
+  final String profileName;
+  final String pairingUri;
+  final List<bool> qrMatrix;
+  final int qrSize;
+
+  const UiPairingOpen({
+    required this.code,
+    required this.addresses,
+    required this.port,
+    required this.remainingSecs,
+    required this.profileName,
+    required this.pairingUri,
+    required this.qrMatrix,
+    required this.qrSize,
+  });
+
+  @override
+  int get hashCode =>
+      code.hashCode ^
+      addresses.hashCode ^
+      port.hashCode ^
+      remainingSecs.hashCode ^
+      profileName.hashCode ^
+      pairingUri.hashCode ^
+      qrMatrix.hashCode ^
+      qrSize.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPairingOpen &&
+          runtimeType == other.runtimeType &&
+          code == other.code &&
+          addresses == other.addresses &&
+          port == other.port &&
+          remainingSecs == other.remainingSecs &&
+          profileName == other.profileName &&
+          pairingUri == other.pairingUri &&
+          qrMatrix == other.qrMatrix &&
+          qrSize == other.qrSize;
+}
+
+class UiPartyGuestInfo {
+  final String id;
+  final String name;
+  final int added;
+  final bool connected;
+
+  const UiPartyGuestInfo({
+    required this.id,
+    required this.name,
+    required this.added,
+    required this.connected,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ added.hashCode ^ connected.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPartyGuestInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          added == other.added &&
+          connected == other.connected;
+}
+
+class UiPartyRecent {
+  final String title;
+  final String artist;
+  final String addedBy;
+
+  const UiPartyRecent({
+    required this.title,
+    required this.artist,
+    required this.addedBy,
+  });
+
+  @override
+  int get hashCode => title.hashCode ^ artist.hashCode ^ addedBy.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPartyRecent &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          artist == other.artist &&
+          addedBy == other.addedBy;
+}
+
+class UiPartyStatus {
+  final bool enabled;
+  final bool running;
+  final String? code;
+  final String? joinUri;
+  final List<bool> qrMatrix;
+  final int qrSize;
+  final List<String> addresses;
+  final List<UiPartyGuestInfo> guests;
+  final List<UiPartyRecent> recent;
+
+  const UiPartyStatus({
+    required this.enabled,
+    required this.running,
+    this.code,
+    this.joinUri,
+    required this.qrMatrix,
+    required this.qrSize,
+    required this.addresses,
+    required this.guests,
+    required this.recent,
+  });
+
+  @override
+  int get hashCode =>
+      enabled.hashCode ^
+      running.hashCode ^
+      code.hashCode ^
+      joinUri.hashCode ^
+      qrMatrix.hashCode ^
+      qrSize.hashCode ^
+      addresses.hashCode ^
+      guests.hashCode ^
+      recent.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPartyStatus &&
+          runtimeType == other.runtimeType &&
+          enabled == other.enabled &&
+          running == other.running &&
+          code == other.code &&
+          joinUri == other.joinUri &&
+          qrMatrix == other.qrMatrix &&
+          qrSize == other.qrSize &&
+          addresses == other.addresses &&
+          guests == other.guests &&
+          recent == other.recent;
+}
+
+class UiPeerStatus {
+  final String id;
+  final String name;
+  final String kind;
+  final String? address;
+  final bool connected;
+  final bool syncing;
+  final PlatformInt64? lastSyncAt;
+  final String profileName;
+  final PlatformInt64 profileId;
+  final String? lastError;
+  final BigInt rounds;
+
+  const UiPeerStatus({
+    required this.id,
+    required this.name,
+    required this.kind,
+    this.address,
+    required this.connected,
+    required this.syncing,
+    this.lastSyncAt,
+    required this.profileName,
+    required this.profileId,
+    this.lastError,
+    required this.rounds,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      kind.hashCode ^
+      address.hashCode ^
+      connected.hashCode ^
+      syncing.hashCode ^
+      lastSyncAt.hashCode ^
+      profileName.hashCode ^
+      profileId.hashCode ^
+      lastError.hashCode ^
+      rounds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPeerStatus &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          kind == other.kind &&
+          address == other.address &&
+          connected == other.connected &&
+          syncing == other.syncing &&
+          lastSyncAt == other.lastSyncAt &&
+          profileName == other.profileName &&
+          profileId == other.profileId &&
+          lastError == other.lastError &&
+          rounds == other.rounds;
 }
 
 class UiPlayerSnapshot {
@@ -805,6 +1170,76 @@ class UiPlaylistInfo {
           albumCovers == other.albumCovers;
 }
 
+class UiProfile {
+  final PlatformInt64 id;
+  final String name;
+  final String color;
+  final PlatformInt64 createdAt;
+  final bool hasPin;
+
+  const UiProfile({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.createdAt,
+    required this.hasPin,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      color.hashCode ^
+      createdAt.hashCode ^
+      hasPin.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiProfile &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          color == other.color &&
+          createdAt == other.createdAt &&
+          hasPin == other.hasPin;
+}
+
+class UiProfilesState {
+  final PlatformInt64 active;
+  final List<UiProfile> profiles;
+  final List<String> colors;
+  final int maxProfiles;
+  final bool locked;
+
+  const UiProfilesState({
+    required this.active,
+    required this.profiles,
+    required this.colors,
+    required this.maxProfiles,
+    required this.locked,
+  });
+
+  @override
+  int get hashCode =>
+      active.hashCode ^
+      profiles.hashCode ^
+      colors.hashCode ^
+      maxProfiles.hashCode ^
+      locked.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiProfilesState &&
+          runtimeType == other.runtimeType &&
+          active == other.active &&
+          profiles == other.profiles &&
+          colors == other.colors &&
+          maxProfiles == other.maxProfiles &&
+          locked == other.locked;
+}
+
 class UiRecentTrack {
   final UiTrackRow track;
   final PlatformInt64 startedAt;
@@ -821,6 +1256,34 @@ class UiRecentTrack {
           runtimeType == other.runtimeType &&
           track == other.track &&
           startedAt == other.startedAt;
+}
+
+class UiSourceProvider {
+  final String id;
+  final String name;
+  final String baseUrl;
+  final bool enabled;
+
+  const UiSourceProvider({
+    required this.id,
+    required this.name,
+    required this.baseUrl,
+    required this.enabled,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ baseUrl.hashCode ^ enabled.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiSourceProvider &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          baseUrl == other.baseUrl &&
+          enabled == other.enabled;
 }
 
 class UiStatsSummary {
@@ -880,6 +1343,69 @@ class UiStatsSummary {
           topTracks == other.topTracks &&
           topArtists == other.topArtists &&
           topAlbums == other.topAlbums;
+}
+
+class UiSyncStatus {
+  final String role;
+  final String deviceId;
+  final String deviceName;
+  final PlatformInt64 activeProfile;
+  final bool allowPhoneConnections;
+  final int? listeningPort;
+  final List<String> listeningAddresses;
+  final String pairingState;
+  final String? pairingCode;
+  final BigInt? pairingRemainingSecs;
+  final String? pairingProfileName;
+  final List<UiPeerStatus> peers;
+
+  const UiSyncStatus({
+    required this.role,
+    required this.deviceId,
+    required this.deviceName,
+    required this.activeProfile,
+    required this.allowPhoneConnections,
+    this.listeningPort,
+    required this.listeningAddresses,
+    required this.pairingState,
+    this.pairingCode,
+    this.pairingRemainingSecs,
+    this.pairingProfileName,
+    required this.peers,
+  });
+
+  @override
+  int get hashCode =>
+      role.hashCode ^
+      deviceId.hashCode ^
+      deviceName.hashCode ^
+      activeProfile.hashCode ^
+      allowPhoneConnections.hashCode ^
+      listeningPort.hashCode ^
+      listeningAddresses.hashCode ^
+      pairingState.hashCode ^
+      pairingCode.hashCode ^
+      pairingRemainingSecs.hashCode ^
+      pairingProfileName.hashCode ^
+      peers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiSyncStatus &&
+          runtimeType == other.runtimeType &&
+          role == other.role &&
+          deviceId == other.deviceId &&
+          deviceName == other.deviceName &&
+          activeProfile == other.activeProfile &&
+          allowPhoneConnections == other.allowPhoneConnections &&
+          listeningPort == other.listeningPort &&
+          listeningAddresses == other.listeningAddresses &&
+          pairingState == other.pairingState &&
+          pairingCode == other.pairingCode &&
+          pairingRemainingSecs == other.pairingRemainingSecs &&
+          pairingProfileName == other.pairingProfileName &&
+          peers == other.peers;
 }
 
 class UiSyncedLine {

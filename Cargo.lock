@@ -2817,6 +2817,7 @@ dependencies = [
  "flutter_rust_bridge",
  "log",
  "neomodern-core",
+ "serde_json",
  "tokio",
 ]
 

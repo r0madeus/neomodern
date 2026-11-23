@@ -9,6 +9,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
+pub mod http_json;
+
+pub use http_json::{
+    HttpJsonProvider, load_provider_configs, save_provider_configs, validate_base_url,
+};
+
 /// Heap-allocated future used by [`SourceProvider`] trait methods so the trait
 /// remains dyn-compatible without external macro crates.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

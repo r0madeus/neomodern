@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
+import 'package:neomodern/src/rust/api/neomodern.dart' as rust_api;
 import 'package:path_provider/path_provider.dart';
 
 class PlayerController extends ChangeNotifier {
@@ -96,6 +97,13 @@ class PlayerController extends ChangeNotifier {
   String? _lyricsTrackPath;
   bool _lyricsLoading = false;
 
+  // Profiles, Sync, Party Queue, and External Sources
+  UiProfilesState? _profilesState;
+  UiSyncStatus? _syncStatus;
+  UiPairingOpen? _pairingOpen;
+  UiPartyStatus? _partyStatus;
+  List<UiSourceProvider> _sourceProviders = const [];
+
   bool get initialized => _initialized;
   String? get initError => _initError;
   String? get lastError => _lastError;
@@ -119,6 +127,26 @@ class PlayerController extends ChangeNotifier {
   List<UiPlaylistInfo> get playlists => _playlists;
   UiLyrics? get currentLyrics => _currentLyrics;
   bool get lyricsLoading => _lyricsLoading;
+
+  UiProfilesState? get profilesState => _profilesState;
+  bool get isProfileLocked => _profilesState?.locked ?? false;
+  UiProfile? get activeProfile {
+    final state = _profilesState;
+    if (state == null || state.profiles.isEmpty) return null;
+    for (final p in state.profiles) {
+      if (p.id == state.active) return p;
+    }
+    return state.profiles.first;
+  }
+
+  UiSyncStatus? get syncStatus => _syncStatus;
+  UiPairingOpen? get pairingOpen => _pairingOpen;
+  UiPartyStatus? get partyStatus => _partyStatus;
+  List<UiSourceProvider> get sourceProviders => _sourceProviders;
+  List<UiSourceProvider> get enabledSourceProviders =>
+      _sourceProviders.where((p) => p.enabled).toList();
+  bool get hasEnabledSourceProviders =>
+      _sourceProviders.any((p) => p.enabled);
 
   bool isFavorite(PlatformInt64 trackId) =>
       _favoriteIds.contains(trackId.toInt());
@@ -154,6 +182,9 @@ class PlayerController extends ChangeNotifier {
         _refreshFavorites(),
         _refreshPlaylists(),
         _refreshHome(),
+        _refreshProfiles(),
+        _refreshSyncAndParty(),
+        _refreshSourceProviders(),
       ]);
 
       _initialized = true;
@@ -207,6 +238,8 @@ class PlayerController extends ChangeNotifier {
         _isScanning = !done;
         _scannedCount = scanned.toInt();
         notifyListeners();
+      case UiEvent_SyncChanged():
+        unawaited(_onSyncChanged());
       case UiEvent_Error(:final field0):
         _lastError = field0;
         notifyListeners();
@@ -254,6 +287,9 @@ class PlayerController extends ChangeNotifier {
         _refreshFavorites(),
         _refreshPlaylists(),
         _refreshHome(),
+        _refreshProfiles(),
+        _refreshSyncAndParty(),
+        _refreshSourceProviders(),
       ]);
       _refreshCurrentCover(_snapshot.current?.path, force: true);
       notifyListeners();
@@ -980,6 +1016,292 @@ class PlayerController extends ChangeNotifier {
       _lastError = e.toString();
       notifyListeners();
     }
+  }
+
+  // Profiles & PIN
+  Future<void> _refreshProfiles() async {
+    _profilesState = await profilesList();
+  }
+
+  Future<void> refreshProfiles() async {
+    try {
+      await _refreshProfiles();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<String?> createProfile(String name) async {
+    try {
+      _profilesState = await profileCreate(name: name);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> renameProfile(PlatformInt64 id, String name) async {
+    try {
+      _profilesState = await profileRename(id: id, name: name);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> deleteProfile(PlatformInt64 id) async {
+    try {
+      _profilesState = await profileDelete(id: id);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> switchProfile(PlatformInt64 id, {String? pin}) async {
+    try {
+      final snap = await profileSwitch(id: id, pin: pin);
+      _applySnapshot(snap);
+      await Future.wait([
+        _refreshProfiles(),
+        _refreshSyncAndParty(),
+        _refreshFavorites(),
+        _refreshPlaylists(),
+        _refreshHome(),
+      ]);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> setProfilePin(PlatformInt64 id, String? pin) async {
+    try {
+      _profilesState = await profileSetPin(id: id, pin: pin);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> unlockActiveProfile(String pin) async {
+    try {
+      _profilesState = await profileUnlock(pin: pin);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  // Local Network Sync & Party Queue
+  Future<void> _refreshSyncAndParty() async {
+    final results = await Future.wait([
+      rust_api.syncStatus(),
+      rust_api.partyStatus(),
+    ]);
+    _syncStatus = results[0] as UiSyncStatus;
+    _partyStatus = results[1] as UiPartyStatus;
+    if (_syncStatus?.pairingState != 'open') {
+      _pairingOpen = null;
+    }
+  }
+
+  Future<void> _onSyncChanged() async {
+    try {
+      await _refreshSyncAndParty();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> refreshSyncAndParty() async {
+    try {
+      await _refreshSyncAndParty();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> setAllowPhoneConnections(bool allow) async {
+    try {
+      _syncStatus = await syncSetAllowPhoneConnections(allow: allow);
+      if (!allow) {
+        _pairingOpen = null;
+      }
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<String?> setDeviceName(String name) async {
+    try {
+      _syncStatus = await syncSetDeviceName(name: name);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<void> openPairing() async {
+    try {
+      _pairingOpen = await syncPairOpen();
+      _syncStatus = await rust_api.syncStatus();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> closePairing() async {
+    try {
+      _pairingOpen = null;
+      _syncStatus = await syncPairClose();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeSyncPeer(String peerId) async {
+    try {
+      _syncStatus = await syncRemovePeer(peerId: peerId);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> triggerSyncNow() async {
+    try {
+      _syncStatus = await syncNow();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> setPartyEnabled(bool enabled) async {
+    try {
+      _partyStatus = await partySetEnabled(enabled: enabled);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> startParty() async {
+    try {
+      _partyStatus = await partyStart();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> endParty() async {
+    try {
+      _partyStatus = await partyEnd();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> newPartyCode() async {
+    try {
+      _partyStatus = await partyNewCode();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> removePartyGuest(String id) async {
+    try {
+      _partyStatus = await partyRemoveGuest(id: id);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  // External Sources
+  Future<void> _refreshSourceProviders() async {
+    _sourceProviders = await sourceProvidersList();
+  }
+
+  Future<String?> addSourceProvider(String name, String baseUrl) async {
+    try {
+      _sourceProviders = await sourceProviderAdd(name: name, baseUrl: baseUrl);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<void> removeSourceProvider(String id) async {
+    try {
+      _sourceProviders = await sourceProviderRemove(id: id);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleSourceProvider(String id, bool enabled) async {
+    try {
+      _sourceProviders = await sourceProviderToggle(id: id, enabled: enabled);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<List<UiExternalTrack>> searchExternalSource(
+    String providerId,
+    String query, {
+    int limit = 25,
+  }) {
+    return sourceProviderSearch(
+      providerId: providerId,
+      query: query,
+      limit: limit,
+    );
+  }
+
+  Future<void> playExternalTrack(UiExternalTrack track) async {
+    await _runPlayerCmd(
+      () => sourceProviderPlay(
+        providerId: track.providerId,
+        externalId: track.externalId,
+        title: track.title,
+        artist: track.artist,
+      ),
+    );
   }
 
   @override

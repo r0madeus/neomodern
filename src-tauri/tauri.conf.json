@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NeoModern",
-  "version": "0.9.6",
+  "version": "0.10.0",
   "identifier": "io.github.r0madeus.neomodern",
   "build": {
     "frontendDist": "../dist",
@@ -59,6 +59,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "r0madeus",
     "targets": [
       "nsis"
     ],

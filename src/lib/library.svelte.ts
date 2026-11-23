@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { appSettings } from './appSettings.svelte'
 import { t } from './i18n.svelte'
 import { player, type PlayerSnapshot } from './player.svelte'
+import { createResyncHandler } from './resync'
 
 export type Sort = 'artist' | 'title' | 'album' | 'added' | 'duration'
 export type SortDir = 'asc' | 'desc'
@@ -242,17 +243,24 @@ class LibraryStore {
     }, 150)
   }
 
+  #resync = createResyncHandler({
+    onRefresh: () => void this.refresh(),
+    matches: (detail) => Boolean(detail.library),
+  })
+
   async init(): Promise<void> {
+    this.#resync.bind()
     await listen<ScanPayload>('library://scan', (e) => {
       const { folder, scanned, done } = e.payload
       this.scan = done ? null : { folder, scanned }
-      if (done) void this.refresh()
+      if (done) this.#resync.trigger()
     })
-    await listen<number>('library://changed', () => void this.refresh())
+    await listen<number>('library://changed', () => this.#resync.trigger())
     await this.refresh()
   }
 
   async refresh(): Promise<void> {
+    this.#resync.markClean()
     try {
       const [stats, folders] = await Promise.all([
         invoke<LibraryStats>('library_stats'),

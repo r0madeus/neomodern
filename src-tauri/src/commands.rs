@@ -17,7 +17,7 @@ fn s<T>(r: Result<T, crate::player::PlayerError>) -> Res<T> {
     r.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_replace(
     player: State<'_, Arc<Player>>,
     paths: Vec<String>,
@@ -26,7 +26,7 @@ pub fn queue_replace(
     s(player.replace_queue(to_paths(paths), start_index))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_append(player: State<'_, Arc<Player>>, paths: Vec<String>) -> Res<PlayerSnapshot> {
     s(player.append(to_paths(paths)))
 }
@@ -90,17 +90,17 @@ pub fn queue_add(
     s(player.enqueue(tracks))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_clear_added(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     s(player.clear_queued())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_remove(player: State<'_, Arc<Player>>, index: usize) -> Res<PlayerSnapshot> {
     s(player.remove(index))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_move(player: State<'_, Arc<Player>>, from: usize, to: usize) -> Res<PlayerSnapshot> {
     s(player.move_entry(from, to))
 }
@@ -114,7 +114,7 @@ pub struct UpNextPage {
     indexes: Vec<usize>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_up_next(player: State<'_, Arc<Player>>, offset: usize, limit: usize) -> UpNextPage {
     let (total, entries) = player.up_next_page(offset, limit.min(1000));
     UpNextPage {
@@ -123,7 +123,7 @@ pub fn queue_up_next(player: State<'_, Arc<Player>>, offset: usize, limit: usize
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_page(
     player: State<'_, Arc<Player>>,
     offset: usize,
@@ -132,57 +132,57 @@ pub fn queue_page(
     Ok(player.queue_page(offset, limit))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_play_index(player: State<'_, Arc<Player>>, index: usize) -> Res<PlayerSnapshot> {
     s(player.play_index(index))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_play(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     s(player.play())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_pause(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     s(player.pause())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_toggle_pause(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     s(player.toggle_pause())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_next(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     s(player.next())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_previous(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     s(player.previous())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_seek(player: State<'_, Arc<Player>>, seconds: f64) -> Res<PlayerSnapshot> {
     s(player.seek(seconds))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_volume(player: State<'_, Arc<Player>>, percent: f64) -> Res<PlayerSnapshot> {
     s(player.set_volume(percent))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_shuffle(player: State<'_, Arc<Player>>, enabled: bool) -> Res<PlayerSnapshot> {
     s(player.set_shuffle(enabled))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_repeat(player: State<'_, Arc<Player>>, mode: RepeatMode) -> Res<PlayerSnapshot> {
     s(player.set_repeat(mode))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_replaygain(
     player: State<'_, Arc<Player>>,
     mode: ReplayGain,
@@ -190,12 +190,12 @@ pub fn player_set_replaygain(
     s(player.set_replaygain(mode))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_gapless(player: State<'_, Arc<Player>>, enabled: bool) -> Res<PlayerSnapshot> {
     s(player.set_gapless(enabled))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_wasapi_exclusive(
     player: State<'_, Arc<Player>>,
     enabled: bool,
@@ -203,7 +203,7 @@ pub fn player_set_wasapi_exclusive(
     s(player.set_wasapi_exclusive(enabled))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_equalizer(
     player: State<'_, Arc<Player>>,
     equalizer: crate::audio::Equalizer,
@@ -212,14 +212,14 @@ pub fn player_set_equalizer(
 }
 
 /// Crossfade length in seconds; 0 turns it off.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_crossfade(player: State<'_, Arc<Player>>, seconds: f64) -> Res<PlayerSnapshot> {
     s(player.set_crossfade(seconds))
 }
 
 /// Sleep timer: pause after `minutes`, or at the end of the current track
 /// with `endOfTrack`; neither turns it off.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_set_sleep_timer(
     player: State<'_, Arc<Player>>,
     minutes: Option<f64>,
@@ -229,12 +229,12 @@ pub fn player_set_sleep_timer(
 }
 
 /// Previous queue entry regardless of the position (swipe gesture).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_previous_track(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     s(player.previous_track())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn player_snapshot(player: State<'_, Arc<Player>>) -> Res<PlayerSnapshot> {
     Ok(player.snapshot())
 }
@@ -361,7 +361,7 @@ pub async fn app_install_update(
 }
 
 /// Opens a release page of this project in the browser.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_open_release(
     app: tauri::AppHandle,
     store: State<'_, Arc<SessionStore>>,
@@ -381,7 +381,7 @@ pub fn app_open_release(
 }
 
 /// Folder holding the log files (shown in Settings for bug reports).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_log_dir(app: tauri::AppHandle) -> Res<String> {
     use tauri::Manager;
     app.path()
@@ -444,7 +444,7 @@ pub async fn app_save_diagnostics(app: tauri::AppHandle, path: String) -> Res<()
 }
 
 /// Shows the newest log file in the OS file manager (desktop only).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_open_log_dir(app: tauri::AppHandle) -> Res<()> {
     #[cfg(target_os = "android")]
     {
@@ -466,7 +466,7 @@ pub fn app_open_log_dir(app: tauri::AppHandle) -> Res<()> {
 }
 
 /// Opens the "new issue" page of the project; the user pastes the report.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_report_issue(app: tauri::AppHandle) -> Res<()> {
     use tauri_plugin_opener::OpenerExt;
     app.opener()
@@ -556,7 +556,7 @@ pub fn app_finish_welcome(store: State<'_, Arc<SessionStore>>, player: State<'_,
 }
 
 /// Highlights `path` in the OS file manager (desktop only).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_reveal_file(app: tauri::AppHandle, path: String) -> Res<()> {
     #[cfg(target_os = "android")]
     {
@@ -1201,7 +1201,7 @@ fn app_settings_now(store: &SessionStore, tray: &TrayStatus) -> AppSettings {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_settings(
     store: State<'_, Arc<SessionStore>>,
     tray: State<'_, TrayStatus>,

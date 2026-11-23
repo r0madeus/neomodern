@@ -27,9 +27,21 @@ pub const WATCH_EVERY: Duration = Duration::from_secs(5);
 /// Events sent several times a second; skipped while the page is hidden.
 const HIGH_RATE_EVENTS: [&str; 2] = ["player://position", "remote://position"];
 
+/// Coalesced changes that happened while the window was hidden.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiddenChanges {
+    pub state: bool,
+    pub history: bool,
+    pub library: bool,
+}
+
 #[derive(Debug)]
 pub struct UiVisibility {
     visible: AtomicBool,
+    dirty_state: AtomicBool,
+    dirty_history: AtomicBool,
+    dirty_library: AtomicBool,
     watch: Mutex<Watch>,
 }
 
@@ -54,6 +66,9 @@ impl Default for UiVisibility {
     fn default() -> Self {
         Self {
             visible: AtomicBool::new(true),
+            dirty_state: AtomicBool::new(false),
+            dirty_history: AtomicBool::new(false),
+            dirty_library: AtomicBool::new(false),
             watch: Mutex::new(Watch::default()),
         }
     }
@@ -61,19 +76,41 @@ impl Default for UiVisibility {
 
 impl UiVisibility {
     pub fn visible(&self) -> bool {
-        self.visible.load(Ordering::Relaxed)
+        self.visible.load(Ordering::Acquire)
     }
 
-    pub fn set(&self, visible: bool) {
-        self.set_at(visible, Instant::now());
+    pub fn mark_dirty_state(&self) {
+        self.dirty_state.store(true, Ordering::Release);
     }
 
-    fn set_at(&self, visible: bool, now: Instant) {
-        self.visible.store(visible, Ordering::Relaxed);
+    pub fn mark_dirty_history(&self) {
+        self.dirty_history.store(true, Ordering::Release);
+    }
+
+    pub fn mark_dirty_library(&self) {
+        self.dirty_library.store(true, Ordering::Release);
+    }
+
+    pub fn set(&self, visible: bool) -> HiddenChanges {
+        self.set_at(visible, Instant::now())
+    }
+
+    fn set_at(&self, visible: bool, now: Instant) -> HiddenChanges {
+        self.visible.store(visible, Ordering::Release);
+        let changes = if visible {
+            HiddenChanges {
+                state: self.dirty_state.swap(false, Ordering::AcqRel),
+                history: self.dirty_history.swap(false, Ordering::AcqRel),
+                library: self.dirty_library.swap(false, Ordering::AcqRel),
+            }
+        } else {
+            HiddenChanges::default()
+        };
         // Hidden pages are frozen on purpose; start counting afresh.
         let mut w = self.lock();
         w.last = visible.then_some(now);
         w.stalled_since = None;
+        changes
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Watch> {
@@ -144,8 +181,8 @@ pub fn app_heartbeat(ui: State<'_, Arc<UiVisibility>>) {
 
 /// The page tells the backend it became visible or hidden.
 #[tauri::command]
-pub fn app_set_visible(ui: State<'_, Arc<UiVisibility>>, visible: bool) {
-    ui.set(visible);
+pub fn app_set_visible(ui: State<'_, Arc<UiVisibility>>, visible: bool) -> HiddenChanges {
+    ui.set(visible)
 }
 
 #[cfg(test)]
@@ -191,5 +228,60 @@ mod tests {
         // Coming back starts a fresh count, not a stall of ten minutes.
         ui.set_at(true, t0 + Duration::from_secs(600));
         assert_eq!(ui.check(t0 + Duration::from_secs(605)), None);
+    }
+
+    #[test]
+    fn hidden_changes_are_coalesced_and_cleared_on_visible() {
+        let ui = UiVisibility::default();
+        assert_eq!(ui.set(false), HiddenChanges::default());
+
+        ui.mark_dirty_state();
+        ui.mark_dirty_state();
+        ui.mark_dirty_history();
+        // Still hidden: transitioning to hidden again must not leak or clear flags.
+        assert_eq!(ui.set(false), HiddenChanges::default());
+
+        ui.mark_dirty_library();
+
+        assert_eq!(
+            ui.set(true),
+            HiddenChanges {
+                state: true,
+                history: true,
+                library: true,
+            }
+        );
+        // Flags were cleared when becoming visible.
+        assert_eq!(ui.set(true), HiddenChanges::default());
+        assert_eq!(ui.set(false), HiddenChanges::default());
+        assert_eq!(ui.set(true), HiddenChanges::default());
+    }
+
+    #[test]
+    fn hidden_changes_track_each_flag_independently() {
+        let ui = UiVisibility::default();
+        ui.set(false);
+        ui.mark_dirty_history();
+        assert_eq!(
+            ui.set(true),
+            HiddenChanges {
+                state: false,
+                history: true,
+                library: false,
+            }
+        );
+        assert_eq!(ui.set(true), HiddenChanges::default());
+
+        ui.set(false);
+        ui.mark_dirty_state();
+        ui.mark_dirty_library();
+        assert_eq!(
+            ui.set(true),
+            HiddenChanges {
+                state: true,
+                history: false,
+                library: true,
+            }
+        );
     }
 }

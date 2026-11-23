@@ -7,6 +7,7 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { appSettings } from './appSettings.svelte'
 import type { TrackRow } from './library.svelte'
 import { player, type PlayerSnapshot } from './player.svelte'
+import { createResyncHandler } from './resync'
 
 export interface PlaylistInfo {
   id: number
@@ -44,15 +45,21 @@ class PlaylistStore {
   notice = $state<string | null>(null)
 
   #noticeTimer: ReturnType<typeof setTimeout> | undefined
+  #resync = createResyncHandler({
+    onRefresh: () => void this.refresh(),
+    matches: (detail) => Boolean(detail.library),
+  })
 
   async init(): Promise<void> {
+    this.#resync.bind()
     // Playlist edits, and library changes (a rescan can drop tracks).
-    await listen('playlists://changed', () => void this.refresh())
-    await listen('library://changed', () => void this.refresh())
+    await listen('playlists://changed', () => this.#resync.trigger())
+    await listen('library://changed', () => this.#resync.trigger())
     await this.refresh()
   }
 
   async refresh(): Promise<void> {
+    this.#resync.markClean()
     try {
       this.list = await invoke<PlaylistInfo[]>('playlists_list')
       this.loaded = true

@@ -51,7 +51,7 @@
 </script>
 
 <footer
-  class="relative grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] items-center gap-6 overflow-hidden border-t border-zinc-200/80 bg-white/85 px-5 py-3 backdrop-blur-xl dark:border-zinc-800/80 dark:bg-zinc-900/85"
+  class="relative grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] items-center gap-6 overflow-hidden border-t border-zinc-200/80 bg-white/95 px-5 py-3 dark:border-zinc-800/80 dark:bg-zinc-900/95"
 >
   {#if ambientGlow}
     <div

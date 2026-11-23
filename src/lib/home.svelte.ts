@@ -4,6 +4,7 @@ import { t } from './i18n.svelte'
 import type { AlbumRow, TrackRow } from './library.svelte'
 import { player, type PlayerSnapshot } from './player.svelte'
 import { playlists, type PlaylistInfo } from './playlists.svelte'
+import { createResyncHandler, isDocumentHidden } from './resync'
 
 export interface DynamicMix {
   id: string
@@ -73,15 +74,20 @@ class HomeStore {
   #inFlight: Promise<void> | null = null
   #queued = false
   #refreshTimer: ReturnType<typeof setTimeout> | null = null
+  #resync = createResyncHandler({
+    onRefresh: () => this.#scheduleRefresh(),
+    matches: (detail) => Boolean(detail.library || detail.history),
+  })
 
   async init(): Promise<void> {
     if (this.#initialized) return
     this.#initialized = true
+    this.#resync.bind()
     await Promise.all([
-      listen('library://changed', () => this.#scheduleRefresh()),
-      listen('favorites://changed', () => this.#scheduleRefresh()),
-      listen('playlists://changed', () => this.#scheduleRefresh()),
-      listen('library://history', () => this.#scheduleRefresh()),
+      listen('library://changed', () => this.#resync.trigger()),
+      listen('favorites://changed', () => this.#resync.trigger()),
+      listen('playlists://changed', () => this.#resync.trigger()),
+      listen('library://history', () => this.#resync.trigger()),
     ])
     await this.refresh()
   }
@@ -90,6 +96,10 @@ class HomeStore {
     if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer)
     this.#refreshTimer = setTimeout(() => {
       this.#refreshTimer = null
+      if (isDocumentHidden()) {
+        this.#resync.trigger()
+        return
+      }
       void this.refresh()
     }, 250)
   }
@@ -97,6 +107,7 @@ class HomeStore {
   // Bursts of change events are coalesced: one query in flight, and at most
   // one more queued to run after it.
   refresh(): Promise<void> {
+    this.#resync.markClean()
     if (this.#refreshTimer !== null) {
       clearTimeout(this.#refreshTimer)
       this.#refreshTimer = null

@@ -107,6 +107,7 @@ pub fn run() {
             let ui_visibility = Arc::new(ui::UiVisibility::default());
             app.manage(Arc::clone(&ui_visibility));
             ui::spawn_watchdog(Arc::clone(&ui_visibility));
+            let changed_ui = Arc::clone(&ui_visibility);
             #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
                 webview_guard::install(&window);
@@ -147,7 +148,12 @@ pub fn run() {
                                     }
                                 });
                             }
-                            handle.emit("player://state", snap)
+                            if ui_visibility.visible() {
+                                handle.emit("player://state", snap)
+                            } else {
+                                ui_visibility.mark_dirty_state();
+                                Ok(())
+                            }
                         }
                         PlayerEvent::Position { seconds, duration } => {
                             if let Some(p) = handle.try_state::<Arc<Player>>() {
@@ -181,8 +187,11 @@ pub fn run() {
                                 }) {
                                     log::warn!("failed to record listen event: {e}");
                                     Ok(())
-                                } else {
+                                } else if ui_visibility.visible() {
                                     handle.emit("library://history", ())
+                                } else {
+                                    ui_visibility.mark_dirty_history();
+                                    Ok(())
                                 }
                             } else {
                                 Ok(())
@@ -239,8 +248,12 @@ pub fn run() {
                             if let Some(svc) = changed_handle.try_state::<sync::SyncService>() {
                                 svc.library_changed();
                             }
-                            if let Err(e) = changed_handle.emit("library://changed", version) {
-                                log::warn!("failed to emit library change event: {e}");
+                            if changed_ui.visible() {
+                                if let Err(e) = changed_handle.emit("library://changed", version) {
+                                    log::warn!("failed to emit library change event: {e}");
+                                }
+                            } else {
+                                changed_ui.mark_dirty_library();
                             }
                         }),
                     },

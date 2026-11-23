@@ -108,7 +108,7 @@
                           aria-label={t(isPinned ? 'Unpin “{title}”' : 'Pin “{title}”', { title: a.title })}
                           aria-pressed={isPinned}
                           class={[
-                            'absolute top-2 right-2 rounded-full bg-black/55 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/75 focus-visible:opacity-100',
+                            'absolute top-2 right-2 rounded-full bg-black/65 p-1.5 text-white transition hover:bg-black/75 focus-visible:opacity-100',
                             isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
                           ]}
                           onclick={() => void pinned.toggle('album', a.id)}

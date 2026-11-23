@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { createResyncHandler } from './resync'
 
 export interface StatsSummary {
   totalListenedMs: number
@@ -130,12 +131,19 @@ export function rangeBounds(
 class HistoryStore {
   version = $state(0)
   private ready = false
+  private resync = createResyncHandler({
+    onRefresh: () => {
+      this.version += 1
+    },
+    matches: (detail) => Boolean(detail.history),
+  })
 
   async init() {
     if (this.ready) return
     this.ready = true
+    this.resync.bind()
     await listen('library://history', () => {
-      this.version += 1
+      this.resync.trigger()
     })
   }
 

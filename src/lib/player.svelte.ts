@@ -3,6 +3,7 @@
 // events and sends commands back.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { RESYNC_EVENT, trackVisibilitySync, type ResyncChanges } from './resync'
 
 export type Status = 'playing' | 'paused' | 'stopped'
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -111,7 +112,7 @@ class PlayerStore {
   // from the last update so the seek bar moves smoothly (rule 5).
   #anchor = $state({ seconds: 0, at: 0 })
   #now = $state(0)
-  #frame = 0
+  #clockTimer: ReturnType<typeof setInterval> | null = null
   #loadedQueueVersion = -1
   #unmutedVolume = 100
   #visibilityBound = false
@@ -136,15 +137,28 @@ class PlayerStore {
       document.addEventListener('visibilitychange', () => {
         // While hidden the webview freezes the page; the backend stops sending
         // position updates so they do not pile up (src-tauri/src/ui.rs).
-        void invoke('app_set_visible', { visible: document.visibilityState !== 'hidden' }).catch(() => {})
         if (document.visibilityState === 'hidden') {
-          cancelAnimationFrame(this.#frame)
-          this.#frame = 0
-        } else if (document.visibilityState === 'visible' && this.snapshot.status === 'playing') {
-          const elapsed = Math.max(0, (performance.now() - this.#anchor.at) / 1000)
-          const duration = this.snapshot.durationSeconds ?? Infinity
-          this.#setAnchor(Math.max(0, Math.min(this.#anchor.seconds + elapsed, duration)))
-          this.#startClock()
+          this.#stopClock()
+          void invoke('app_set_visible', { visible: false }).catch(() => {})
+          return
+        }
+        if (document.visibilityState === 'visible') {
+          if (this.snapshot.status === 'playing') {
+            const elapsed = Math.max(0, (performance.now() - this.#anchor.at) / 1000)
+            const duration = this.snapshot.durationSeconds ?? Infinity
+            this.#setAnchor(Math.max(0, Math.min(this.#anchor.seconds + elapsed, duration)))
+            this.#startClock()
+          }
+          const sync = (async () => {
+            const changes = await invoke<ResyncChanges>('app_set_visible', { visible: true }).catch(() => null)
+            if (changes?.state) {
+              void this.#run('player_snapshot')
+            }
+            if ((changes?.history || changes?.library) && typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent(RESYNC_EVENT, { detail: changes }))
+            }
+          })()
+          trackVisibilitySync(sync)
         }
       })
     }
@@ -264,11 +278,8 @@ class PlayerStore {
     this.#setAnchor(next.positionSeconds)
     if (next.queueVersion !== this.#loadedQueueVersion) void this.#loadQueue(next.queueVersion)
     this.#refreshUpNext()
-    if (next.status === 'playing' && !wasPlaying) this.#startClock()
-    if (next.status !== 'playing') {
-      cancelAnimationFrame(this.#frame)
-      this.#frame = 0
-    }
+    if (next.status === 'playing' && (!wasPlaying || this.#clockTimer === null)) this.#startClock()
+    if (next.status !== 'playing') this.#stopClock()
   }
 
   #setAnchor(seconds: number): void {
@@ -277,20 +288,25 @@ class PlayerStore {
     this.#now = at
   }
 
+  #stopClock(): void {
+    if (this.#clockTimer !== null) {
+      clearInterval(this.#clockTimer)
+      this.#clockTimer = null
+    }
+  }
+
   #startClock(): void {
-    cancelAnimationFrame(this.#frame)
-    this.#frame = 0
+    this.#stopClock()
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-    const tick = (t: number) => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        this.#frame = 0
+    if (this.snapshot.status !== 'playing') return
+    // Poll at 10 Hz instead of 60 Hz rAF while keeping seekbars and 0.1s lyric sync smooth.
+    this.#clockTimer = setInterval(() => {
+      if ((typeof document !== 'undefined' && document.visibilityState === 'hidden') || this.snapshot.status !== 'playing') {
+        this.#stopClock()
         return
       }
-      // Throttle position reactivity to ~10 Hz while keeping seekbars and 0.1s lyric sync smooth.
-      if (t - this.#now >= 100) this.#now = t
-      if (this.snapshot.status === 'playing') this.#frame = requestAnimationFrame(tick)
-    }
-    this.#frame = requestAnimationFrame(tick)
+      this.#now = performance.now()
+    }, 100)
   }
 
   #refreshUpNext(): void {

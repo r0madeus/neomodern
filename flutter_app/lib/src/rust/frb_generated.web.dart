@@ -6,6 +6,7 @@
 // Static analysis wrongly picks the IO variant, thus ignore this
 // ignore_for_file: argument_type_not_assignable
 
+import 'android_engine.dart';
 import 'api/neomodern.dart';
 
 import 'dart:async';
@@ -25,6 +26,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw);
+
+  @protected
+  RustStreamSink<UiAndroidAudioCmd>
+  dco_decode_StreamSink_ui_android_audio_cmd_Sse(dynamic raw);
 
   @protected
   RustStreamSink<UiEvent> dco_decode_StreamSink_ui_event_Sse(dynamic raw);
@@ -55,6 +60,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiAlbumDetail dco_decode_box_autoadd_ui_album_detail(dynamic raw);
+
+  @protected
+  UiAndroidAudioEvent dco_decode_box_autoadd_ui_android_audio_event(
+    dynamic raw,
+  );
 
   @protected
   UiArtistDetail dco_decode_box_autoadd_ui_artist_detail(dynamic raw);
@@ -204,6 +214,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumRow dco_decode_ui_album_row(dynamic raw);
 
   @protected
+  UiAndroidAudioCmd dco_decode_ui_android_audio_cmd(dynamic raw);
+
+  @protected
+  UiAndroidAudioEvent dco_decode_ui_android_audio_event(dynamic raw);
+
+  @protected
   UiArtistDetail dco_decode_ui_artist_detail(dynamic raw);
 
   @protected
@@ -297,6 +313,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
+  RustStreamSink<UiAndroidAudioCmd>
+  sse_decode_StreamSink_ui_android_audio_cmd_Sse(SseDeserializer deserializer);
+
+  @protected
   RustStreamSink<UiEvent> sse_decode_StreamSink_ui_event_Sse(
     SseDeserializer deserializer,
   );
@@ -327,6 +347,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiAlbumDetail sse_decode_box_autoadd_ui_album_detail(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiAndroidAudioEvent sse_decode_box_autoadd_ui_android_audio_event(
     SseDeserializer deserializer,
   );
 
@@ -522,6 +547,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumRow sse_decode_ui_album_row(SseDeserializer deserializer);
 
   @protected
+  UiAndroidAudioCmd sse_decode_ui_android_audio_cmd(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiAndroidAudioEvent sse_decode_ui_android_audio_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   UiArtistDetail sse_decode_ui_artist_detail(SseDeserializer deserializer);
 
   @protected
@@ -618,6 +653,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_ui_android_audio_cmd_Sse(
+    RustStreamSink<UiAndroidAudioCmd> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_ui_event_Sse(
     RustStreamSink<UiEvent> self,
     SseSerializer serializer,
@@ -653,6 +694,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_ui_album_detail(
     UiAlbumDetail self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_ui_android_audio_event(
+    UiAndroidAudioEvent self,
     SseSerializer serializer,
   );
 
@@ -898,6 +945,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_ui_album_row(UiAlbumRow self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_android_audio_cmd(
+    UiAndroidAudioCmd self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_android_audio_event(
+    UiAndroidAudioEvent self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_ui_artist_detail(

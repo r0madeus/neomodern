@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/platform/android_audio_bridge.dart';
 import 'package:neomodern/src/rust/frb_generated.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
@@ -9,6 +10,7 @@ import 'package:neomodern/ui/shell.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
+  AndroidAudioBridge.instance.start();
   runApp(const NeoModernApp());
 }
 

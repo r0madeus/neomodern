@@ -3,13 +3,14 @@
 
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
+import '../android_engine.dart';
 import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'neomodern.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `core`, `generate_provider_id`, `map_source_configs`, `qr_parts`, `source_label`
+// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `core`, `find_process_hwnd`, `generate_provider_id`, `map_source_configs`, `qr_parts`, `source_label`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreEventSink`, `CoreState`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
@@ -23,6 +24,12 @@ Future<UiPlayerSnapshot> initCore({
 
 Stream<UiEvent> subscribeEvents() =>
     RustLib.instance.api.crateApiNeomodernSubscribeEvents();
+
+Stream<UiAndroidAudioCmd> subscribeAndroidAudioCmds() =>
+    RustLib.instance.api.crateApiNeomodernSubscribeAndroidAudioCmds();
+
+Future<void> androidAudioReportEvent({required UiAndroidAudioEvent event}) =>
+    RustLib.instance.api.crateApiNeomodernAndroidAudioReportEvent(event: event);
 
 Future<UiPlayerSnapshot> playerSnapshot() =>
     RustLib.instance.api.crateApiNeomodernPlayerSnapshot();

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 447312296;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1448522127;
 
 // Section: executor
 
@@ -47,6 +47,40 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__neomodern__android_audio_report_event_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "android_audio_report_event",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_event =
+                <crate::android_engine::UiAndroidAudioEvent>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::neomodern::android_audio_report_event(api_event)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__neomodern__favorites_list_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2900,6 +2934,46 @@ fn wire__crate__api__neomodern__source_providers_list_impl(
         },
     )
 }
+fn wire__crate__api__neomodern__subscribe_android_audio_cmds_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "subscribe_android_audio_cmds",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink = <StreamSink<
+                crate::android_engine::UiAndroidAudioCmd,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::neomodern::subscribe_android_audio_cmds(api_sink).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__neomodern__subscribe_events_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3199,6 +3273,19 @@ impl SseDecode for flutter_rust_bridge::for_generated::anyhow::Error {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <String>::sse_decode(deserializer);
         return flutter_rust_bridge::for_generated::anyhow::anyhow!("{}", inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<
+        crate::android_engine::UiAndroidAudioCmd,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
     }
 }
 
@@ -3758,6 +3845,150 @@ impl SseDecode for crate::api::neomodern::UiAlbumRow {
             track_count: var_trackCount,
             cover: var_cover,
         };
+    }
+}
+
+impl SseDecode for crate::android_engine::UiAndroidAudioCmd {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_gain = <f64>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::Load {
+                    path: var_path,
+                    gain: var_gain,
+                };
+            }
+            1 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_gain = <f64>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::SetNext {
+                    path: var_path,
+                    gain: var_gain,
+                };
+            }
+            2 => {
+                return crate::android_engine::UiAndroidAudioCmd::ClearNext;
+            }
+            3 => {
+                return crate::android_engine::UiAndroidAudioCmd::Play;
+            }
+            4 => {
+                return crate::android_engine::UiAndroidAudioCmd::Pause;
+            }
+            5 => {
+                return crate::android_engine::UiAndroidAudioCmd::Stop;
+            }
+            6 => {
+                let mut var_seconds = <f64>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::Seek {
+                    seconds: var_seconds,
+                };
+            }
+            7 => {
+                let mut var_percent = <f64>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::SetVolume {
+                    percent: var_percent,
+                };
+            }
+            8 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_gain = <f64>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::SetReplayGain {
+                    path: var_path,
+                    gain: var_gain,
+                };
+            }
+            9 => {
+                let mut var_enabled = <bool>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::SetGapless {
+                    enabled: var_enabled,
+                };
+            }
+            10 => {
+                let mut var_enabled = <bool>::sse_decode(deserializer);
+                let mut var_preampDb = <f64>::sse_decode(deserializer);
+                let mut var_gainsDb = <Vec<f64>>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::SetEqualizer {
+                    enabled: var_enabled,
+                    preamp_db: var_preampDb,
+                    gains_db: var_gainsDb,
+                };
+            }
+            11 => {
+                let mut var_seconds = <f64>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioCmd::SetCrossfade {
+                    seconds: var_seconds,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::android_engine::UiAndroidAudioEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_seconds = <f64>::sse_decode(deserializer);
+                let mut var_duration = <Option<f64>>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioEvent::Position {
+                    seconds: var_seconds,
+                    duration: var_duration,
+                };
+            }
+            1 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_reason = <String>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioEvent::TrackEnded {
+                    path: var_path,
+                    reason: var_reason,
+                };
+            }
+            2 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_autoAdvanced = <bool>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioEvent::TrackStarted {
+                    path: var_path,
+                    auto_advanced: var_autoAdvanced,
+                };
+            }
+            3 => {
+                let mut var_paused = <bool>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioEvent::Paused { paused: var_paused };
+            }
+            4 => {
+                return crate::android_engine::UiAndroidAudioEvent::Idle;
+            }
+            5 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                return crate::android_engine::UiAndroidAudioEvent::Error(var_field0);
+            }
+            6 => {
+                return crate::android_engine::UiAndroidAudioEvent::MediaPlay;
+            }
+            7 => {
+                return crate::android_engine::UiAndroidAudioEvent::MediaPause;
+            }
+            8 => {
+                return crate::android_engine::UiAndroidAudioEvent::MediaToggle;
+            }
+            9 => {
+                return crate::android_engine::UiAndroidAudioEvent::MediaNext;
+            }
+            10 => {
+                return crate::android_engine::UiAndroidAudioEvent::MediaPrevious;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -4432,279 +4663,291 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__neomodern__favorites_list_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__neomodern__favorites_play_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__neomodern__favorites_toggle_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__neomodern__favorites_toggle_by_path_impl(
+        1 => wire__crate__api__neomodern__android_audio_report_event_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        5 => wire__crate__api__neomodern__favorites_tracks_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__neomodern__init_app_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__neomodern__init_core_impl(port, ptr, rust_vec_len, data_len),
-        8 => {
+        2 => wire__crate__api__neomodern__favorites_list_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__neomodern__favorites_play_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__neomodern__favorites_toggle_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__neomodern__favorites_toggle_by_path_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        6 => wire__crate__api__neomodern__favorites_tracks_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__neomodern__init_app_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__neomodern__init_core_impl(port, ptr, rust_vec_len, data_len),
+        9 => {
             wire__crate__api__neomodern__library_add_folder_impl(port, ptr, rust_vec_len, data_len)
         }
-        9 => {
+        10 => {
             wire__crate__api__neomodern__library_album_count_impl(port, ptr, rust_vec_len, data_len)
         }
-        10 => wire__crate__api__neomodern__library_album_detail_impl(
+        11 => wire__crate__api__neomodern__library_album_detail_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        11 => {
+        12 => {
             wire__crate__api__neomodern__library_albums_page_impl(port, ptr, rust_vec_len, data_len)
         }
-        12 => wire__crate__api__neomodern__library_artist_count_impl(
+        13 => wire__crate__api__neomodern__library_artist_count_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        13 => wire__crate__api__neomodern__library_artist_detail_impl(
+        14 => wire__crate__api__neomodern__library_artist_detail_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        14 => wire__crate__api__neomodern__library_artists_page_impl(
+        15 => wire__crate__api__neomodern__library_artists_page_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        15 => wire__crate__api__neomodern__library_folders_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__neomodern__library_home_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__neomodern__library_home_mix_detail_impl(
+        16 => wire__crate__api__neomodern__library_folders_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__neomodern__library_home_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__neomodern__library_home_mix_detail_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        18 => {
+        19 => {
             wire__crate__api__neomodern__library_is_scanning_impl(port, ptr, rust_vec_len, data_len)
         }
-        19 => {
+        20 => {
             wire__crate__api__neomodern__library_play_album_impl(port, ptr, rust_vec_len, data_len)
         }
-        20 => wire__crate__api__neomodern__library_play_all_impl(port, ptr, rust_vec_len, data_len),
-        21 => {
+        21 => wire__crate__api__neomodern__library_play_all_impl(port, ptr, rust_vec_len, data_len),
+        22 => {
             wire__crate__api__neomodern__library_play_artist_impl(port, ptr, rust_vec_len, data_len)
         }
-        22 => wire__crate__api__neomodern__library_play_artist_from_impl(
+        23 => wire__crate__api__neomodern__library_play_artist_from_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        23 => wire__crate__api__neomodern__library_play_home_mix_impl(
+        24 => wire__crate__api__neomodern__library_play_home_mix_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        24 => wire__crate__api__neomodern__library_play_home_mix_from_impl(
+        25 => wire__crate__api__neomodern__library_play_home_mix_from_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        25 => wire__crate__api__neomodern__library_remove_folder_impl(
+        26 => wire__crate__api__neomodern__library_remove_folder_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        26 => wire__crate__api__neomodern__library_save_home_mix_impl(
+        27 => wire__crate__api__neomodern__library_save_home_mix_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        27 => wire__crate__api__neomodern__library_scan_impl(port, ptr, rust_vec_len, data_len),
-        28 => {
+        28 => wire__crate__api__neomodern__library_scan_impl(port, ptr, rust_vec_len, data_len),
+        29 => {
             wire__crate__api__neomodern__library_track_count_impl(port, ptr, rust_vec_len, data_len)
         }
-        29 => {
+        30 => {
             wire__crate__api__neomodern__library_track_cover_impl(port, ptr, rust_vec_len, data_len)
         }
-        30 => {
+        31 => {
             wire__crate__api__neomodern__library_tracks_page_impl(port, ptr, rust_vec_len, data_len)
         }
-        31 => wire__crate__api__neomodern__listening_stats_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__neomodern__lyrics_for_track_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__neomodern__party_end_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__neomodern__party_new_code_impl(port, ptr, rust_vec_len, data_len),
-        35 => {
+        32 => wire__crate__api__neomodern__listening_stats_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__neomodern__lyrics_for_track_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__neomodern__party_end_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__neomodern__party_new_code_impl(port, ptr, rust_vec_len, data_len),
+        36 => {
             wire__crate__api__neomodern__party_remove_guest_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => {
+        37 => {
             wire__crate__api__neomodern__party_set_enabled_impl(port, ptr, rust_vec_len, data_len)
         }
-        37 => wire__crate__api__neomodern__party_start_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__neomodern__party_status_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__neomodern__player_next_impl(port, ptr, rust_vec_len, data_len),
-        40 => {
+        38 => wire__crate__api__neomodern__party_start_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__neomodern__party_status_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__neomodern__player_next_impl(port, ptr, rust_vec_len, data_len),
+        41 => {
             wire__crate__api__neomodern__player_play_index_impl(port, ptr, rust_vec_len, data_len)
         }
-        41 => {
+        42 => {
             wire__crate__api__neomodern__player_play_tracks_impl(port, ptr, rust_vec_len, data_len)
         }
-        42 => wire__crate__api__neomodern__player_previous_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__neomodern__player_seek_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__neomodern__player_set_crossfade_impl(
+        43 => wire__crate__api__neomodern__player_previous_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__neomodern__player_seek_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__neomodern__player_set_crossfade_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        45 => wire__crate__api__neomodern__player_set_equalizer_impl(
+        46 => wire__crate__api__neomodern__player_set_equalizer_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => {
+        47 => {
             wire__crate__api__neomodern__player_set_gapless_impl(port, ptr, rust_vec_len, data_len)
         }
-        47 => {
+        48 => {
             wire__crate__api__neomodern__player_set_repeat_impl(port, ptr, rust_vec_len, data_len)
         }
-        48 => wire__crate__api__neomodern__player_set_replaygain_impl(
+        49 => wire__crate__api__neomodern__player_set_replaygain_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => {
+        50 => {
             wire__crate__api__neomodern__player_set_shuffle_impl(port, ptr, rust_vec_len, data_len)
         }
-        50 => wire__crate__api__neomodern__player_set_sleep_timer_impl(
+        51 => wire__crate__api__neomodern__player_set_sleep_timer_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => {
+        52 => {
             wire__crate__api__neomodern__player_set_volume_impl(port, ptr, rust_vec_len, data_len)
         }
-        52 => wire__crate__api__neomodern__player_set_wasapi_exclusive_impl(
+        53 => wire__crate__api__neomodern__player_set_wasapi_exclusive_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__api__neomodern__player_snapshot_impl(port, ptr, rust_vec_len, data_len),
-        54 => {
+        54 => wire__crate__api__neomodern__player_snapshot_impl(port, ptr, rust_vec_len, data_len),
+        55 => {
             wire__crate__api__neomodern__player_toggle_pause_impl(port, ptr, rust_vec_len, data_len)
         }
-        55 => wire__crate__api__neomodern__playlists_add_tracks_impl(
+        56 => wire__crate__api__neomodern__playlists_add_tracks_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__api__neomodern__playlists_create_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__neomodern__playlists_delete_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__neomodern__playlists_list_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__neomodern__playlists_play_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__neomodern__playlists_play_shuffled_impl(
+        57 => wire__crate__api__neomodern__playlists_create_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__neomodern__playlists_delete_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__neomodern__playlists_list_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__neomodern__playlists_play_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__neomodern__playlists_play_shuffled_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__api__neomodern__playlists_remove_track_impl(
+        62 => wire__crate__api__neomodern__playlists_remove_track_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__api__neomodern__playlists_rename_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__neomodern__playlists_tracks_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__neomodern__profile_create_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__neomodern__profile_delete_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__neomodern__profile_rename_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__neomodern__profile_set_pin_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__neomodern__profile_switch_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__neomodern__profile_unlock_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__neomodern__profiles_list_impl(port, ptr, rust_vec_len, data_len),
-        71 => {
+        63 => wire__crate__api__neomodern__playlists_rename_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__neomodern__playlists_tracks_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__neomodern__profile_create_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__neomodern__profile_delete_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__neomodern__profile_rename_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__neomodern__profile_set_pin_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__neomodern__profile_switch_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__neomodern__profile_unlock_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__neomodern__profiles_list_impl(port, ptr, rust_vec_len, data_len),
+        72 => {
             wire__crate__api__neomodern__queue_clear_queued_impl(port, ptr, rust_vec_len, data_len)
         }
-        72 => wire__crate__api__neomodern__queue_enqueue_impl(port, ptr, rust_vec_len, data_len),
-        73 => {
+        73 => wire__crate__api__neomodern__queue_enqueue_impl(port, ptr, rust_vec_len, data_len),
+        74 => {
             wire__crate__api__neomodern__queue_insert_next_impl(port, ptr, rust_vec_len, data_len)
         }
-        74 => wire__crate__api__neomodern__queue_page_impl(port, ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__neomodern__queue_remove_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__neomodern__settings_get_offline_impl(
+        75 => wire__crate__api__neomodern__queue_page_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__neomodern__queue_remove_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__neomodern__settings_get_offline_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        77 => wire__crate__api__neomodern__settings_set_offline_impl(
+        78 => wire__crate__api__neomodern__settings_set_offline_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        78 => {
+        79 => {
             wire__crate__api__neomodern__source_provider_add_impl(port, ptr, rust_vec_len, data_len)
         }
-        79 => wire__crate__api__neomodern__source_provider_play_impl(
+        80 => wire__crate__api__neomodern__source_provider_play_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        80 => wire__crate__api__neomodern__source_provider_remove_impl(
+        81 => wire__crate__api__neomodern__source_provider_remove_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        81 => wire__crate__api__neomodern__source_provider_search_impl(
+        82 => wire__crate__api__neomodern__source_provider_search_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        82 => wire__crate__api__neomodern__source_provider_toggle_impl(
+        83 => wire__crate__api__neomodern__source_provider_toggle_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        83 => wire__crate__api__neomodern__source_providers_list_impl(
+        84 => wire__crate__api__neomodern__source_providers_list_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        84 => wire__crate__api__neomodern__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        85 => wire__crate__api__neomodern__sync_now_impl(port, ptr, rust_vec_len, data_len),
-        86 => wire__crate__api__neomodern__sync_pair_close_impl(port, ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__neomodern__sync_pair_open_impl(port, ptr, rust_vec_len, data_len),
-        88 => wire__crate__api__neomodern__sync_remove_peer_impl(port, ptr, rust_vec_len, data_len),
-        89 => wire__crate__api__neomodern__sync_set_allow_phone_connections_impl(
+        85 => wire__crate__api__neomodern__subscribe_android_audio_cmds_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        90 => wire__crate__api__neomodern__sync_set_device_name_impl(
+        86 => wire__crate__api__neomodern__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__neomodern__sync_now_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__neomodern__sync_pair_close_impl(port, ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__neomodern__sync_pair_open_impl(port, ptr, rust_vec_len, data_len),
+        90 => wire__crate__api__neomodern__sync_remove_peer_impl(port, ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__neomodern__sync_set_allow_phone_connections_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        91 => wire__crate__api__neomodern__sync_status_impl(port, ptr, rust_vec_len, data_len),
+        92 => wire__crate__api__neomodern__sync_set_device_name_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        93 => wire__crate__api__neomodern__sync_status_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4766,6 +5009,128 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::neomodern::UiAlbumRow>
     for crate::api::neomodern::UiAlbumRow
 {
     fn into_into_dart(self) -> crate::api::neomodern::UiAlbumRow {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::android_engine::UiAndroidAudioCmd {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::android_engine::UiAndroidAudioCmd::Load { path, gain } => [
+                0.into_dart(),
+                path.into_into_dart().into_dart(),
+                gain.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::SetNext { path, gain } => [
+                1.into_dart(),
+                path.into_into_dart().into_dart(),
+                gain.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::ClearNext => [2.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::Play => [3.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::Pause => [4.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::Stop => [5.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::Seek { seconds } => {
+                [6.into_dart(), seconds.into_into_dart().into_dart()].into_dart()
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetVolume { percent } => {
+                [7.into_dart(), percent.into_into_dart().into_dart()].into_dart()
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetReplayGain { path, gain } => [
+                8.into_dart(),
+                path.into_into_dart().into_dart(),
+                gain.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::SetGapless { enabled } => {
+                [9.into_dart(), enabled.into_into_dart().into_dart()].into_dart()
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetEqualizer {
+                enabled,
+                preamp_db,
+                gains_db,
+            } => [
+                10.into_dart(),
+                enabled.into_into_dart().into_dart(),
+                preamp_db.into_into_dart().into_dart(),
+                gains_db.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::android_engine::UiAndroidAudioCmd::SetCrossfade { seconds } => {
+                [11.into_dart(), seconds.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::android_engine::UiAndroidAudioCmd
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::android_engine::UiAndroidAudioCmd>
+    for crate::android_engine::UiAndroidAudioCmd
+{
+    fn into_into_dart(self) -> crate::android_engine::UiAndroidAudioCmd {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::android_engine::UiAndroidAudioEvent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::android_engine::UiAndroidAudioEvent::Position { seconds, duration } => [
+                0.into_dart(),
+                seconds.into_into_dart().into_dart(),
+                duration.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::TrackEnded { path, reason } => [
+                1.into_dart(),
+                path.into_into_dart().into_dart(),
+                reason.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::TrackStarted {
+                path,
+                auto_advanced,
+            } => [
+                2.into_dart(),
+                path.into_into_dart().into_dart(),
+                auto_advanced.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::Paused { paused } => {
+                [3.into_dart(), paused.into_into_dart().into_dart()].into_dart()
+            }
+            crate::android_engine::UiAndroidAudioEvent::Idle => [4.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::Error(field0) => {
+                [5.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::android_engine::UiAndroidAudioEvent::MediaPlay => [6.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::MediaPause => [7.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::MediaToggle => [8.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::MediaNext => [9.into_dart()].into_dart(),
+            crate::android_engine::UiAndroidAudioEvent::MediaPrevious => {
+                [10.into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::android_engine::UiAndroidAudioEvent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::android_engine::UiAndroidAudioEvent>
+    for crate::android_engine::UiAndroidAudioEvent
+{
+    fn into_into_dart(self) -> crate::android_engine::UiAndroidAudioEvent {
         self
     }
 }
@@ -5544,6 +5909,18 @@ impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
 }
 
 impl SseEncode
+    for StreamSink<
+        crate::android_engine::UiAndroidAudioCmd,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
     for StreamSink<crate::api::neomodern::UiEvent, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -5982,6 +6359,125 @@ impl SseEncode for crate::api::neomodern::UiAlbumRow {
         <Option<i32>>::sse_encode(self.year, serializer);
         <u32>::sse_encode(self.track_count, serializer);
         <Option<String>>::sse_encode(self.cover, serializer);
+    }
+}
+
+impl SseEncode for crate::android_engine::UiAndroidAudioCmd {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::android_engine::UiAndroidAudioCmd::Load { path, gain } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(path, serializer);
+                <f64>::sse_encode(gain, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetNext { path, gain } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(path, serializer);
+                <f64>::sse_encode(gain, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::ClearNext => {
+                <i32>::sse_encode(2, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::Play => {
+                <i32>::sse_encode(3, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::Pause => {
+                <i32>::sse_encode(4, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::Stop => {
+                <i32>::sse_encode(5, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::Seek { seconds } => {
+                <i32>::sse_encode(6, serializer);
+                <f64>::sse_encode(seconds, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetVolume { percent } => {
+                <i32>::sse_encode(7, serializer);
+                <f64>::sse_encode(percent, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetReplayGain { path, gain } => {
+                <i32>::sse_encode(8, serializer);
+                <String>::sse_encode(path, serializer);
+                <f64>::sse_encode(gain, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetGapless { enabled } => {
+                <i32>::sse_encode(9, serializer);
+                <bool>::sse_encode(enabled, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetEqualizer {
+                enabled,
+                preamp_db,
+                gains_db,
+            } => {
+                <i32>::sse_encode(10, serializer);
+                <bool>::sse_encode(enabled, serializer);
+                <f64>::sse_encode(preamp_db, serializer);
+                <Vec<f64>>::sse_encode(gains_db, serializer);
+            }
+            crate::android_engine::UiAndroidAudioCmd::SetCrossfade { seconds } => {
+                <i32>::sse_encode(11, serializer);
+                <f64>::sse_encode(seconds, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::android_engine::UiAndroidAudioEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::android_engine::UiAndroidAudioEvent::Position { seconds, duration } => {
+                <i32>::sse_encode(0, serializer);
+                <f64>::sse_encode(seconds, serializer);
+                <Option<f64>>::sse_encode(duration, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::TrackEnded { path, reason } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(path, serializer);
+                <String>::sse_encode(reason, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::TrackStarted {
+                path,
+                auto_advanced,
+            } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(path, serializer);
+                <bool>::sse_encode(auto_advanced, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::Paused { paused } => {
+                <i32>::sse_encode(3, serializer);
+                <bool>::sse_encode(paused, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::Idle => {
+                <i32>::sse_encode(4, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::Error(field0) => {
+                <i32>::sse_encode(5, serializer);
+                <String>::sse_encode(field0, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::MediaPlay => {
+                <i32>::sse_encode(6, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::MediaPause => {
+                <i32>::sse_encode(7, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::MediaToggle => {
+                <i32>::sse_encode(8, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::MediaNext => {
+                <i32>::sse_encode(9, serializer);
+            }
+            crate::android_engine::UiAndroidAudioEvent::MediaPrevious => {
+                <i32>::sse_encode(10, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 

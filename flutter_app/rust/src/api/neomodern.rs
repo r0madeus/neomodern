@@ -1,7 +1,8 @@
+pub use crate::android_engine::{UiAndroidAudioCmd, UiAndroidAudioEvent};
 use crate::frb_generated::StreamSink;
 #[cfg(not(target_os = "android"))]
 use neomodern_core::audio::mpv::{MpvEngine, MpvOptions};
-use neomodern_core::audio::{Equalizer, NetGuardedEngine, ReplayGain};
+use neomodern_core::audio::{AudioEngine, Equalizer, NetGuardedEngine, ReplayGain};
 use neomodern_core::library::{
     AlbumDetail, AlbumRow, ArtistProfile, ArtistRow, ArtistTopTrack, DynamicMix, FolderInfo,
     HomeFeed, HomeMixDetail, Hooks, Library, ListeningStats, MAX_PROFILES, NewListenEvent,
@@ -55,6 +56,10 @@ struct CoreState {
     source_registry: Arc<ProviderRegistry>,
     #[cfg(not(target_os = "android"))]
     media_keys: Option<MediaKeys>,
+    #[cfg(target_os = "android")]
+    android_engine_tx: std::sync::mpsc::Sender<neomodern_core::audio::EngineEvent>,
+    #[cfg(target_os = "android")]
+    android_slots: crate::android_engine::SharedSlots,
     event_tx: broadcast::Sender<UiEvent>,
 }
 
@@ -850,19 +855,23 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
 
         let (engine_tx, engine_rx) = std::sync::mpsc::channel();
         #[cfg(not(target_os = "android"))]
-        let engine = MpvEngine::new(MpvOptions::default(), engine_tx)
-            .map_err(|e| format!("failed to start audio engine: {e}"))?;
+        let engine: Box<dyn AudioEngine> = Box::new(
+            MpvEngine::new(MpvOptions::default(), engine_tx)
+                .map_err(|e| format!("failed to start audio engine: {e}"))?,
+        );
         #[cfg(target_os = "android")]
-        return Err("Android audio engine is not yet wired in neomodern_bridge".to_string());
+        let (engine, android_slots, android_engine_tx) = {
+            let eng = crate::android_engine::AndroidBridgeEngine::new()
+                .map_err(|e| format!("failed to start android audio bridge: {e}"))?;
+            let slots = eng.slots_handle();
+            (Box::new(eng) as Box<dyn AudioEngine>, slots, engine_tx)
+        };
 
         let observer_session = Arc::clone(&session);
         let observer_feed = remote_feed.clone();
         let observer_tx = event_tx.clone();
         let player = Arc::new(Player::new(
-            Box::new(NetGuardedEngine::new(
-                Box::new(engine),
-                session.net_policy(),
-            )),
+            Box::new(NetGuardedEngine::new(engine, session.net_policy())),
             Box::new(move |event| {
                 observer_feed.on_player_event(&event);
                 match event {
@@ -1029,6 +1038,10 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
             source_registry,
             #[cfg(not(target_os = "android"))]
             media_keys,
+            #[cfg(target_os = "android")]
+            android_engine_tx,
+            #[cfg(target_os = "android")]
+            android_slots,
             event_tx,
         });
         let _ = CORE.set(state);
@@ -1078,6 +1091,67 @@ pub async fn subscribe_events(sink: StreamSink<UiEvent>) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub async fn subscribe_android_audio_cmds(
+    sink: StreamSink<UiAndroidAudioCmd>,
+) -> Result<(), String> {
+    let (sub_id, mut rx) = crate::android_engine::subscribe_cmds();
+    while let Some(cmd) = rx.recv().await {
+        if sink.add(cmd).is_err() {
+            break;
+        }
+    }
+    crate::android_engine::unsubscribe_cmds(sub_id);
+    Ok(())
+}
+
+pub fn android_audio_report_event(event: UiAndroidAudioEvent) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        let state = core()?;
+        match &event {
+            UiAndroidAudioEvent::TrackStarted {
+                path,
+                auto_advanced,
+            } if *auto_advanced => {
+                if let Ok(mut slots) = state.android_slots.lock() {
+                    slots.0 = Some(PathBuf::from(path));
+                }
+            }
+            UiAndroidAudioEvent::Idle => {
+                if let Ok(mut slots) = state.android_slots.lock() {
+                    *slots = (None, None);
+                }
+            }
+            _ => {}
+        }
+        match crate::android_engine::translate_event(event) {
+            crate::android_engine::BridgeAction::Engine(events) => {
+                for ev in events {
+                    state
+                        .android_engine_tx
+                        .send(ev)
+                        .map_err(|_| "audio engine event loop stopped".to_string())?;
+                }
+            }
+            crate::android_engine::BridgeAction::MediaPlay => {
+                state.player.play().map_err(|e| e.to_string())?;
+            }
+            crate::android_engine::BridgeAction::MediaPause => {
+                state.player.pause().map_err(|e| e.to_string())?;
+            }
+            crate::android_engine::BridgeAction::MediaToggle => {
+                state.player.toggle_pause().map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = event;
+        Ok(())
+    }
 }
 
 pub fn player_snapshot() -> Result<UiPlayerSnapshot, String> {

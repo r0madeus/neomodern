@@ -921,7 +921,13 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
         player.restore_session(session.load());
 
         #[cfg(not(target_os = "android"))]
-        let media_keys = media_keys::create(None, &player);
+        let media_keys = {
+            #[cfg(target_os = "windows")]
+            let hwnd = find_process_hwnd();
+            #[cfg(not(target_os = "windows"))]
+            let hwnd = None;
+            media_keys::create(hwnd, &player)
+        };
 
         let progress_tx = event_tx.clone();
         let changed_tx = event_tx.clone();
@@ -2153,4 +2159,51 @@ pub async fn source_provider_play(
         .replace_queue_from(vec![track], 0, Some(format!("source:{provider_id}")))
         .map(Into::into)
         .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn find_process_hwnd() -> Option<*mut std::ffi::c_void> {
+    use std::ffi::c_void;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcessId() -> u32;
+    }
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn EnumWindows(
+            lp_enum_func: unsafe extern "system" fn(*mut c_void, isize) -> i32,
+            l_param: isize,
+        ) -> i32;
+        fn GetWindowThreadProcessId(hwnd: *mut c_void, lpdw_process_id: *mut u32) -> u32;
+        fn IsWindowVisible(hwnd: *mut c_void) -> i32;
+    }
+
+    struct Search {
+        pid: u32,
+        found: *mut c_void,
+    }
+
+    unsafe extern "system" fn callback(hwnd: *mut c_void, l_param: isize) -> i32 {
+        let search = unsafe { &mut *(l_param as *mut Search) };
+        let mut win_pid = 0u32;
+        unsafe {
+            GetWindowThreadProcessId(hwnd, &mut win_pid);
+            if win_pid == search.pid && IsWindowVisible(hwnd) != 0 {
+                search.found = hwnd;
+                return 0;
+            }
+        }
+        1
+    }
+
+    let mut search = Search {
+        pid: unsafe { GetCurrentProcessId() },
+        found: std::ptr::null_mut(),
+    };
+    unsafe {
+        EnumWindows(callback, (&mut search as *mut Search) as isize);
+    }
+    (!search.found.is_null()).then_some(search.found)
 }

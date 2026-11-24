@@ -265,6 +265,11 @@ fn session_bus_available() -> bool {
 
 /// Convenience for `lib.rs`: wraps the shared player.
 pub fn create(hwnd: Option<*mut c_void>, player: &Arc<Player>) -> Option<MediaKeys> {
+    #[cfg(target_os = "windows")]
+    if hwnd.is_none() {
+        log::warn!("media controls unavailable: no window handle");
+        return None;
+    }
     #[cfg(target_os = "linux")]
     if !session_bus_available() {
         log::warn!("media controls unavailable: no D-Bus session bus");

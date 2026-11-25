@@ -2100,8 +2100,26 @@ pub async fn artist_enrich_all(
 ) -> Res<crate::online::ArtistScanProgress> {
     let lib = Arc::clone(&lib);
     let online = Arc::clone(&online);
+    let lib_app = app.clone();
+    let on_library_changed: Arc<dyn Fn(u64) + Send + Sync> = Arc::new(move |version| {
+        if let Err(e) = lib_app.emit("library://changed", version) {
+            log::warn!("failed to emit library change event: {e}");
+        }
+    });
+    let on_artist_scan: Arc<dyn Fn(crate::online::ArtistScanProgress) + Send + Sync> =
+        Arc::new(move |progress| {
+            if let Err(e) = app.emit("artist://scan", &progress) {
+                log::warn!("failed to emit artist scan event: {e}");
+            }
+        });
     tokio::task::spawn_blocking(move || {
-        online.start_artist_scan(app, lib, force, lang.as_deref() == Some("tr"))
+        online.start_artist_scan(
+            lib,
+            force,
+            lang.as_deref() == Some("tr"),
+            on_library_changed,
+            on_artist_scan,
+        )
     })
     .await
     .map_err(|e| e.to_string())?

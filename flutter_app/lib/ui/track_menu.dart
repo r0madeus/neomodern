@@ -5,6 +5,7 @@ import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/tag_editor_dialog.dart';
+import 'package:neomodern/ui/track_metadata_match_dialog.dart';
 
 class StarFavoriteButton extends StatelessWidget {
   const StarFavoriteButton({
@@ -171,6 +172,13 @@ class TrackMenu {
             label: t('Edit Tags...'),
           ),
         ),
+        PopupMenuItem<String>(
+          value: 'match_metadata',
+          child: _MenuRow(
+            icon: Icons.manage_search_rounded,
+            label: t('Match track metadata'),
+          ),
+        ),
         if (track.artist.isNotEmpty && onOpenArtist != null) ...[
           const PopupMenuDivider(),
           PopupMenuItem<String>(
@@ -223,6 +231,10 @@ class TrackMenu {
             controller: controller,
             track: track,
           );
+        }
+      case 'match_metadata':
+        if (context.mounted) {
+          await showTrackMetadataMatchDialog(context, controller, track);
         }
       case 'artist':
         if (track.artist.isNotEmpty) {

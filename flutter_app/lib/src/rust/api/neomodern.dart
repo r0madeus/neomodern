@@ -10,9 +10,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'neomodern.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `cache_album_proposals`, `cached_cover_color_only`, `compute_and_cache_cover_color`, `core`, `find_process_hwnd`, `find_track_id_for_path`, `generate_provider_id`, `genre_row_to_ui`, `load_ui_prefs`, `map_apply_outcome`, `map_field_diff`, `map_source_configs`, `normalize_language`, `parse_pinned_kind`, `playlist_cover_mode_and_value`, `qr_parts`, `refresh_player_meta`, `rgb_to_argb`, `sanitize_width`, `save_ui_prefs`, `source_label`, `stats_to_ui`, `validate_and_normalize_ui_prefs`
+// These functions are ignored because they are not marked as `pub`: `build_net_settings`, `build_profiles_state`, `build_tracks`, `cache_album_proposals`, `cache_track_proposals`, `cached_cover_color_only`, `compute_and_cache_cover_color`, `core`, `current_online_status`, `find_process_hwnd`, `find_track_id_for_path`, `generate_provider_id`, `genre_row_to_ui`, `load_ui_prefs`, `lyrics_for_track_inner`, `map_apply_outcome`, `map_field_diff`, `map_lyrics_result`, `map_share_status`, `map_source_configs`, `normalize_language`, `online_queue_entry`, `parse_pinned_kind`, `playlist_cover_mode_and_value`, `prefer_turkish_bio`, `qr_parts`, `refresh_player_meta`, `rgb_to_argb`, `sanitize_width`, `save_ui_prefs`, `share_block_label`, `source_label`, `stats_to_ui`, `track_candidate_id`, `validate_and_normalize_ui_prefs`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreEventSink`, `CoreState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<UiPlayerSnapshot> initCore({
   required String dataDir,
@@ -362,6 +362,18 @@ Future<UiPlayerSnapshot> libraryPlayArtistFrom({
   shuffle: shuffle,
 );
 
+Future<UiArtistDetail?> artistEnrich({required String name}) =>
+    RustLib.instance.api.crateApiNeomodernArtistEnrich(name: name);
+
+Future<UiArtistScanProgress> artistEnrichAll() =>
+    RustLib.instance.api.crateApiNeomodernArtistEnrichAll();
+
+Future<UiArtistScanProgress> artistEnrichStatus() =>
+    RustLib.instance.api.crateApiNeomodernArtistEnrichStatus();
+
+Future<void> artistEnrichCancel() =>
+    RustLib.instance.api.crateApiNeomodernArtistEnrichCancel();
+
 Future<List<UiGenreInfo>> libraryGenres() =>
     RustLib.instance.api.crateApiNeomodernLibraryGenres();
 
@@ -402,6 +414,20 @@ Future<UiLyrics> lyricsForTrack({
   durationSecs: durationSecs,
 );
 
+Future<UiLyrics> lyricsForTrackRefresh({
+  required String path,
+  required String title,
+  required String artist,
+  required String album,
+  double? durationSecs,
+}) => RustLib.instance.api.crateApiNeomodernLyricsForTrackRefresh(
+  path: path,
+  title: title,
+  artist: artist,
+  album: album,
+  durationSecs: durationSecs,
+);
+
 Future<String> lyricsSaveLrc({
   required String trackPath,
   required String content,
@@ -409,6 +435,45 @@ Future<String> lyricsSaveLrc({
   trackPath: trackPath,
   content: content,
 );
+
+Future<UiBulkSaveOutcome> lyricsSaveCached() =>
+    RustLib.instance.api.crateApiNeomodernLyricsSaveCached();
+
+Future<UiLyrics> lyricsAttachFile({
+  required String audioPath,
+  required String lrcPath,
+}) => RustLib.instance.api.crateApiNeomodernLyricsAttachFile(
+  audioPath: audioPath,
+  lrcPath: lrcPath,
+);
+
+Future<UiLyricsCoverage> lyricsCoverage() =>
+    RustLib.instance.api.crateApiNeomodernLyricsCoverage();
+
+Future<UiLyricsShareStatus> lyricsShareStatusFor({
+  required String path,
+  double? durationSeconds,
+}) => RustLib.instance.api.crateApiNeomodernLyricsShareStatusFor(
+  path: path,
+  durationSeconds: durationSeconds,
+);
+
+Future<UiLyricsShareStatus> lyricsShareStatus() =>
+    RustLib.instance.api.crateApiNeomodernLyricsShareStatus();
+
+Future<UiLyricsShareStatus> lyricsShareFor({
+  required String path,
+  double? durationSeconds,
+}) => RustLib.instance.api.crateApiNeomodernLyricsShareFor(
+  path: path,
+  durationSeconds: durationSeconds,
+);
+
+Future<UiLyricsShareStatus> lyricsShare() =>
+    RustLib.instance.api.crateApiNeomodernLyricsShare();
+
+Future<void> lyricsShareCancel() =>
+    RustLib.instance.api.crateApiNeomodernLyricsShareCancel();
 
 Future<UiStatsSummary> listeningStats({int? days}) =>
     RustLib.instance.api.crateApiNeomodernListeningStats(days: days);
@@ -571,6 +636,88 @@ Future<int> metadataUndoLast() =>
 Future<bool> metadataCanUndo() =>
     RustLib.instance.api.crateApiNeomodernMetadataCanUndo();
 
+Future<List<UiTrackMatchCandidate>> metadataMatchTrack({
+  required PlatformInt64 trackId,
+}) =>
+    RustLib.instance.api.crateApiNeomodernMetadataMatchTrack(trackId: trackId);
+
+Future<int> metadataApplyTrack({
+  required PlatformInt64 trackId,
+  required String candidateId,
+}) => RustLib.instance.api.crateApiNeomodernMetadataApplyTrack(
+  trackId: trackId,
+  candidateId: candidateId,
+);
+
+Future<UiOnlineStatus> onlineStatus() =>
+    RustLib.instance.api.crateApiNeomodernOnlineStatus();
+
+Future<UiOnlineStatus> onlineSetDownloadDir({required String dir}) =>
+    RustLib.instance.api.crateApiNeomodernOnlineSetDownloadDir(dir: dir);
+
+Future<UiOnlineStatus> onlineSetYtdlpPath({String? path}) =>
+    RustLib.instance.api.crateApiNeomodernOnlineSetYtdlpPath(path: path);
+
+Future<UiOnlineStatus> onlineInstallTool({required String tool}) =>
+    RustLib.instance.api.crateApiNeomodernOnlineInstallTool(tool: tool);
+
+Future<UiOnlineSearchResult> onlineSearch({required String query}) =>
+    RustLib.instance.api.crateApiNeomodernOnlineSearch(query: query);
+
+Future<UiOnlineAlbumDetail> onlineAlbumDetail({required UiOnlineAlbum album}) =>
+    RustLib.instance.api.crateApiNeomodernOnlineAlbumDetail(album: album);
+
+Future<UiPlayerSnapshot> onlinePlayTracks({
+  required List<UiOnlineTrack> tracks,
+  required int startIndex,
+}) => RustLib.instance.api.crateApiNeomodernOnlinePlayTracks(
+  tracks: tracks,
+  startIndex: startIndex,
+);
+
+Future<UiDownloadJob> onlineDownloadTrack({required UiOnlineTrack track}) =>
+    RustLib.instance.api.crateApiNeomodernOnlineDownloadTrack(track: track);
+
+Future<UiDownloadJob> onlineDownloadAlbum({
+  required UiOnlineAlbum album,
+  required List<UiOnlineTrack> tracks,
+}) => RustLib.instance.api.crateApiNeomodernOnlineDownloadAlbum(
+  album: album,
+  tracks: tracks,
+);
+
+Future<List<UiDownloadJob>> onlineDownloads() =>
+    RustLib.instance.api.crateApiNeomodernOnlineDownloads();
+
+Future<List<UiDownloadJob>> onlineCancelDownload({required BigInt id}) =>
+    RustLib.instance.api.crateApiNeomodernOnlineCancelDownload(id: id);
+
+Future<List<UiDownloadJob>> onlineClearFinished() =>
+    RustLib.instance.api.crateApiNeomodernOnlineClearFinished();
+
+Future<UiNetSettings> appGetNetSettings() =>
+    RustLib.instance.api.crateApiNeomodernAppGetNetSettings();
+
+Future<UiNetSettings> appSetNetFeature({
+  required String feature,
+  required bool enabled,
+}) => RustLib.instance.api.crateApiNeomodernAppSetNetFeature(
+  feature: feature,
+  enabled: enabled,
+);
+
+Future<UiNetSettings> appSetOfflineMode({required bool enabled}) =>
+    RustLib.instance.api.crateApiNeomodernAppSetOfflineMode(enabled: enabled);
+
+Future<UiNetSettings> appSetLyricsSave({required String mode}) =>
+    RustLib.instance.api.crateApiNeomodernAppSetLyricsSave(mode: mode);
+
+Future<UiNetSettings> appSetLyricsNetease({required bool enabled}) =>
+    RustLib.instance.api.crateApiNeomodernAppSetLyricsNetease(enabled: enabled);
+
+Future<UiUpdateInfo> appCheckUpdate() =>
+    RustLib.instance.api.crateApiNeomodernAppCheckUpdate();
+
 Future<List<UiPinnedItem>> pinnedList() =>
     RustLib.instance.api.crateApiNeomodernPinnedList();
 
@@ -732,11 +879,14 @@ class UiArtistDetail {
   final BigInt playCount;
   final BigInt listenedMs;
   final String? image;
+  final String? cover;
   final String? bio;
+  final PlatformInt64? fetchedAt;
   final String? fallbackCover;
   final List<UiArtistTopTrack> popularTracks;
   final List<UiAlbumRow> albums;
   final List<UiTrackRow> tracks;
+  final List<UiOnlineAlbum> onlineAlbums;
 
   const UiArtistDetail({
     required this.name,
@@ -747,11 +897,14 @@ class UiArtistDetail {
     required this.playCount,
     required this.listenedMs,
     this.image,
+    this.cover,
     this.bio,
+    this.fetchedAt,
     this.fallbackCover,
     required this.popularTracks,
     required this.albums,
     required this.tracks,
+    required this.onlineAlbums,
   });
 
   @override
@@ -764,11 +917,14 @@ class UiArtistDetail {
       playCount.hashCode ^
       listenedMs.hashCode ^
       image.hashCode ^
+      cover.hashCode ^
       bio.hashCode ^
+      fetchedAt.hashCode ^
       fallbackCover.hashCode ^
       popularTracks.hashCode ^
       albums.hashCode ^
-      tracks.hashCode;
+      tracks.hashCode ^
+      onlineAlbums.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -783,11 +939,14 @@ class UiArtistDetail {
           playCount == other.playCount &&
           listenedMs == other.listenedMs &&
           image == other.image &&
+          cover == other.cover &&
           bio == other.bio &&
+          fetchedAt == other.fetchedAt &&
           fallbackCover == other.fallbackCover &&
           popularTracks == other.popularTracks &&
           albums == other.albums &&
-          tracks == other.tracks;
+          tracks == other.tracks &&
+          onlineAlbums == other.onlineAlbums;
 }
 
 class UiArtistRow {
@@ -829,6 +988,49 @@ class UiArtistRow {
           listenedMs == other.listenedMs;
 }
 
+class UiArtistScanProgress {
+  final bool running;
+  final int done;
+  final int total;
+  final int updated;
+  final String? current;
+  final bool cancelled;
+  final String? error;
+
+  const UiArtistScanProgress({
+    required this.running,
+    required this.done,
+    required this.total,
+    required this.updated,
+    this.current,
+    required this.cancelled,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      running.hashCode ^
+      done.hashCode ^
+      total.hashCode ^
+      updated.hashCode ^
+      current.hashCode ^
+      cancelled.hashCode ^
+      error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiArtistScanProgress &&
+          runtimeType == other.runtimeType &&
+          running == other.running &&
+          done == other.done &&
+          total == other.total &&
+          updated == other.updated &&
+          current == other.current &&
+          cancelled == other.cancelled &&
+          error == other.error;
+}
+
 class UiArtistTopTrack {
   final UiTrackRow track;
   final BigInt playCount;
@@ -851,6 +1053,83 @@ class UiArtistTopTrack {
           track == other.track &&
           playCount == other.playCount &&
           listenedMs == other.listenedMs;
+}
+
+class UiBulkSaveOutcome {
+  final BigInt saved;
+  final BigInt skipped;
+
+  const UiBulkSaveOutcome({required this.saved, required this.skipped});
+
+  @override
+  int get hashCode => saved.hashCode ^ skipped.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiBulkSaveOutcome &&
+          runtimeType == other.runtimeType &&
+          saved == other.saved &&
+          skipped == other.skipped;
+}
+
+class UiDownloadJob {
+  final BigInt id;
+  final String kind;
+  final String title;
+  final String artist;
+  final String? cover;
+  final String state;
+  final int doneTracks;
+  final int totalTracks;
+  final String? currentTrack;
+  final String? error;
+  final String? outputDir;
+
+  const UiDownloadJob({
+    required this.id,
+    required this.kind,
+    required this.title,
+    required this.artist,
+    this.cover,
+    required this.state,
+    required this.doneTracks,
+    required this.totalTracks,
+    this.currentTrack,
+    this.error,
+    this.outputDir,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      kind.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      cover.hashCode ^
+      state.hashCode ^
+      doneTracks.hashCode ^
+      totalTracks.hashCode ^
+      currentTrack.hashCode ^
+      error.hashCode ^
+      outputDir.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiDownloadJob &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          kind == other.kind &&
+          title == other.title &&
+          artist == other.artist &&
+          cover == other.cover &&
+          state == other.state &&
+          doneTracks == other.doneTracks &&
+          totalTracks == other.totalTracks &&
+          currentTrack == other.currentTrack &&
+          error == other.error &&
+          outputDir == other.outputDir;
 }
 
 class UiDynamicMix {
@@ -902,6 +1181,20 @@ sealed class UiEvent with _$UiEvent {
     required bool done,
   }) = UiEvent_ScanProgress;
   const factory UiEvent.syncChanged() = UiEvent_SyncChanged;
+  const factory UiEvent.downloadsChanged() = UiEvent_DownloadsChanged;
+  const factory UiEvent.artistScanProgress({
+    required bool running,
+    required int total,
+    required int done,
+    String? current,
+    String? error,
+  }) = UiEvent_ArtistScanProgress;
+  const factory UiEvent.toolInstallProgress({
+    required String tool,
+    required String stage,
+    required BigInt received,
+    BigInt? total,
+  }) = UiEvent_ToolInstallProgress;
   const factory UiEvent.error(String field0) = UiEvent_Error;
 }
 
@@ -1152,6 +1445,55 @@ class UiLyrics {
           source == other.source;
 }
 
+class UiLyricsCoverage {
+  final BigInt withLyrics;
+  final BigInt withoutLyrics;
+  final BigInt unchecked;
+
+  const UiLyricsCoverage({
+    required this.withLyrics,
+    required this.withoutLyrics,
+    required this.unchecked,
+  });
+
+  @override
+  int get hashCode =>
+      withLyrics.hashCode ^ withoutLyrics.hashCode ^ unchecked.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiLyricsCoverage &&
+          runtimeType == other.runtimeType &&
+          withLyrics == other.withLyrics &&
+          withoutLyrics == other.withoutLyrics &&
+          unchecked == other.unchecked;
+}
+
+class UiLyricsShareStatus {
+  final bool available;
+  final String? reason;
+  final String? outcome;
+
+  const UiLyricsShareStatus({
+    required this.available,
+    this.reason,
+    this.outcome,
+  });
+
+  @override
+  int get hashCode => available.hashCode ^ reason.hashCode ^ outcome.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiLyricsShareStatus &&
+          runtimeType == other.runtimeType &&
+          available == other.available &&
+          reason == other.reason &&
+          outcome == other.outcome;
+}
+
 class UiMetadataApplyResult {
   final PlatformInt64 batchId;
   final int updated;
@@ -1261,6 +1603,266 @@ class UiMonthlyStat {
           label == other.label &&
           listenedMs == other.listenedMs &&
           plays == other.plays;
+}
+
+class UiNetSettings {
+  final bool offlineMode;
+  final bool online;
+  final bool lyrics;
+  final bool artistInfo;
+  final bool metadata;
+  final bool updates;
+  final bool allowOnline;
+  final bool allowLyrics;
+  final bool allowArtistInfo;
+  final bool allowMetadata;
+  final bool allowUpdates;
+  final String lyricsSave;
+  final bool lyricsNetease;
+
+  const UiNetSettings({
+    required this.offlineMode,
+    required this.online,
+    required this.lyrics,
+    required this.artistInfo,
+    required this.metadata,
+    required this.updates,
+    required this.allowOnline,
+    required this.allowLyrics,
+    required this.allowArtistInfo,
+    required this.allowMetadata,
+    required this.allowUpdates,
+    required this.lyricsSave,
+    required this.lyricsNetease,
+  });
+
+  @override
+  int get hashCode =>
+      offlineMode.hashCode ^
+      online.hashCode ^
+      lyrics.hashCode ^
+      artistInfo.hashCode ^
+      metadata.hashCode ^
+      updates.hashCode ^
+      allowOnline.hashCode ^
+      allowLyrics.hashCode ^
+      allowArtistInfo.hashCode ^
+      allowMetadata.hashCode ^
+      allowUpdates.hashCode ^
+      lyricsSave.hashCode ^
+      lyricsNetease.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiNetSettings &&
+          runtimeType == other.runtimeType &&
+          offlineMode == other.offlineMode &&
+          online == other.online &&
+          lyrics == other.lyrics &&
+          artistInfo == other.artistInfo &&
+          metadata == other.metadata &&
+          updates == other.updates &&
+          allowOnline == other.allowOnline &&
+          allowLyrics == other.allowLyrics &&
+          allowArtistInfo == other.allowArtistInfo &&
+          allowMetadata == other.allowMetadata &&
+          allowUpdates == other.allowUpdates &&
+          lyricsSave == other.lyricsSave &&
+          lyricsNetease == other.lyricsNetease;
+}
+
+class UiOnlineAlbum {
+  final String id;
+  final String title;
+  final String artist;
+  final int? year;
+  final int trackCount;
+  final String? cover;
+  final String? coverUrl;
+  final String? sourceUrl;
+
+  const UiOnlineAlbum({
+    required this.id,
+    required this.title,
+    required this.artist,
+    this.year,
+    required this.trackCount,
+    this.cover,
+    this.coverUrl,
+    this.sourceUrl,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      year.hashCode ^
+      trackCount.hashCode ^
+      cover.hashCode ^
+      coverUrl.hashCode ^
+      sourceUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiOnlineAlbum &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          artist == other.artist &&
+          year == other.year &&
+          trackCount == other.trackCount &&
+          cover == other.cover &&
+          coverUrl == other.coverUrl &&
+          sourceUrl == other.sourceUrl;
+}
+
+class UiOnlineAlbumDetail {
+  final UiOnlineAlbum album;
+  final List<UiOnlineTrack> tracks;
+
+  const UiOnlineAlbumDetail({required this.album, required this.tracks});
+
+  @override
+  int get hashCode => album.hashCode ^ tracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiOnlineAlbumDetail &&
+          runtimeType == other.runtimeType &&
+          album == other.album &&
+          tracks == other.tracks;
+}
+
+class UiOnlineSearchResult {
+  final List<UiOnlineAlbum> albums;
+  final List<UiOnlineTrack> tracks;
+
+  const UiOnlineSearchResult({required this.albums, required this.tracks});
+
+  @override
+  int get hashCode => albums.hashCode ^ tracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiOnlineSearchResult &&
+          runtimeType == other.runtimeType &&
+          albums == other.albums &&
+          tracks == other.tracks;
+}
+
+class UiOnlineStatus {
+  final bool ytdlpAvailable;
+  final String? ytdlpVersion;
+  final bool ffmpegAvailable;
+  final String downloadDir;
+  final String? ytdlpPath;
+  final bool canInstallTools;
+  final bool managedYtdlp;
+  final bool managedFfmpeg;
+
+  const UiOnlineStatus({
+    required this.ytdlpAvailable,
+    this.ytdlpVersion,
+    required this.ffmpegAvailable,
+    required this.downloadDir,
+    this.ytdlpPath,
+    required this.canInstallTools,
+    required this.managedYtdlp,
+    required this.managedFfmpeg,
+  });
+
+  @override
+  int get hashCode =>
+      ytdlpAvailable.hashCode ^
+      ytdlpVersion.hashCode ^
+      ffmpegAvailable.hashCode ^
+      downloadDir.hashCode ^
+      ytdlpPath.hashCode ^
+      canInstallTools.hashCode ^
+      managedYtdlp.hashCode ^
+      managedFfmpeg.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiOnlineStatus &&
+          runtimeType == other.runtimeType &&
+          ytdlpAvailable == other.ytdlpAvailable &&
+          ytdlpVersion == other.ytdlpVersion &&
+          ffmpegAvailable == other.ffmpegAvailable &&
+          downloadDir == other.downloadDir &&
+          ytdlpPath == other.ytdlpPath &&
+          canInstallTools == other.canInstallTools &&
+          managedYtdlp == other.managedYtdlp &&
+          managedFfmpeg == other.managedFfmpeg;
+}
+
+class UiOnlineTrack {
+  final String id;
+  final String title;
+  final String artist;
+  final String album;
+  final String albumArtist;
+  final int? trackNo;
+  final int? discNo;
+  final int? year;
+  final double? durationSeconds;
+  final String? sourceUrl;
+  final String? cover;
+  final String? coverUrl;
+
+  const UiOnlineTrack({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.albumArtist,
+    this.trackNo,
+    this.discNo,
+    this.year,
+    this.durationSeconds,
+    this.sourceUrl,
+    this.cover,
+    this.coverUrl,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      albumArtist.hashCode ^
+      trackNo.hashCode ^
+      discNo.hashCode ^
+      year.hashCode ^
+      durationSeconds.hashCode ^
+      sourceUrl.hashCode ^
+      cover.hashCode ^
+      coverUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiOnlineTrack &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          albumArtist == other.albumArtist &&
+          trackNo == other.trackNo &&
+          discNo == other.discNo &&
+          year == other.year &&
+          durationSeconds == other.durationSeconds &&
+          sourceUrl == other.sourceUrl &&
+          cover == other.cover &&
+          coverUrl == other.coverUrl;
 }
 
 class UiPairingOpen {
@@ -2230,6 +2832,81 @@ class UiTrackInfo {
           queued == other.queued;
 }
 
+class UiTrackMatchCandidate {
+  final String candidateId;
+  final String recordingId;
+  final String releaseId;
+  final String releaseGroupId;
+  final String title;
+  final String artist;
+  final String album;
+  final int? year;
+  final String? country;
+  final String? format;
+  final String? status;
+  final int score;
+  final String label;
+  final String? coverPreview;
+  final UiMetadataTrackDiff track;
+
+  const UiTrackMatchCandidate({
+    required this.candidateId,
+    required this.recordingId,
+    required this.releaseId,
+    required this.releaseGroupId,
+    required this.title,
+    required this.artist,
+    required this.album,
+    this.year,
+    this.country,
+    this.format,
+    this.status,
+    required this.score,
+    required this.label,
+    this.coverPreview,
+    required this.track,
+  });
+
+  @override
+  int get hashCode =>
+      candidateId.hashCode ^
+      recordingId.hashCode ^
+      releaseId.hashCode ^
+      releaseGroupId.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      year.hashCode ^
+      country.hashCode ^
+      format.hashCode ^
+      status.hashCode ^
+      score.hashCode ^
+      label.hashCode ^
+      coverPreview.hashCode ^
+      track.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiTrackMatchCandidate &&
+          runtimeType == other.runtimeType &&
+          candidateId == other.candidateId &&
+          recordingId == other.recordingId &&
+          releaseId == other.releaseId &&
+          releaseGroupId == other.releaseGroupId &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          year == other.year &&
+          country == other.country &&
+          format == other.format &&
+          status == other.status &&
+          score == other.score &&
+          label == other.label &&
+          coverPreview == other.coverPreview &&
+          track == other.track;
+}
+
 class UiTrackRow {
   final PlatformInt64 id;
   final String title;
@@ -2338,4 +3015,39 @@ class UiTrackTags {
           discNumber == other.discNumber &&
           year == other.year &&
           genre == other.genre;
+}
+
+class UiUpdateInfo {
+  final String currentVersion;
+  final bool updateAvailable;
+  final String? version;
+  final String? url;
+  final bool installable;
+
+  const UiUpdateInfo({
+    required this.currentVersion,
+    required this.updateAvailable,
+    this.version,
+    this.url,
+    required this.installable,
+  });
+
+  @override
+  int get hashCode =>
+      currentVersion.hashCode ^
+      updateAvailable.hashCode ^
+      version.hashCode ^
+      url.hashCode ^
+      installable.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiUpdateInfo &&
+          runtimeType == other.runtimeType &&
+          currentVersion == other.currentVersion &&
+          updateAvailable == other.updateAvailable &&
+          version == other.version &&
+          url == other.url &&
+          installable == other.installable;
 }

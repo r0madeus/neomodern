@@ -56,7 +56,7 @@ extension UiEventPatterns on UiEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UiEvent_State value)?  state,TResult Function( UiEvent_Position value)?  position,TResult Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult Function( UiEvent_ScanProgress value)?  scanProgress,TResult Function( UiEvent_SyncChanged value)?  syncChanged,TResult Function( UiEvent_Error value)?  error,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UiEvent_State value)?  state,TResult Function( UiEvent_Position value)?  position,TResult Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult Function( UiEvent_ScanProgress value)?  scanProgress,TResult Function( UiEvent_SyncChanged value)?  syncChanged,TResult Function( UiEvent_DownloadsChanged value)?  downloadsChanged,TResult Function( UiEvent_ArtistScanProgress value)?  artistScanProgress,TResult Function( UiEvent_ToolInstallProgress value)?  toolInstallProgress,TResult Function( UiEvent_Error value)?  error,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
@@ -64,7 +64,10 @@ return state(_that);case UiEvent_Position() when position != null:
 return position(_that);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged(_that);case UiEvent_ScanProgress() when scanProgress != null:
 return scanProgress(_that);case UiEvent_SyncChanged() when syncChanged != null:
-return syncChanged(_that);case UiEvent_Error() when error != null:
+return syncChanged(_that);case UiEvent_DownloadsChanged() when downloadsChanged != null:
+return downloadsChanged(_that);case UiEvent_ArtistScanProgress() when artistScanProgress != null:
+return artistScanProgress(_that);case UiEvent_ToolInstallProgress() when toolInstallProgress != null:
+return toolInstallProgress(_that);case UiEvent_Error() when error != null:
 return error(_that);case _:
   return orElse();
 
@@ -83,7 +86,7 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UiEvent_State value)  state,required TResult Function( UiEvent_Position value)  position,required TResult Function( UiEvent_LibraryChanged value)  libraryChanged,required TResult Function( UiEvent_ScanProgress value)  scanProgress,required TResult Function( UiEvent_SyncChanged value)  syncChanged,required TResult Function( UiEvent_Error value)  error,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UiEvent_State value)  state,required TResult Function( UiEvent_Position value)  position,required TResult Function( UiEvent_LibraryChanged value)  libraryChanged,required TResult Function( UiEvent_ScanProgress value)  scanProgress,required TResult Function( UiEvent_SyncChanged value)  syncChanged,required TResult Function( UiEvent_DownloadsChanged value)  downloadsChanged,required TResult Function( UiEvent_ArtistScanProgress value)  artistScanProgress,required TResult Function( UiEvent_ToolInstallProgress value)  toolInstallProgress,required TResult Function( UiEvent_Error value)  error,}){
 final _that = this;
 switch (_that) {
 case UiEvent_State():
@@ -91,7 +94,10 @@ return state(_that);case UiEvent_Position():
 return position(_that);case UiEvent_LibraryChanged():
 return libraryChanged(_that);case UiEvent_ScanProgress():
 return scanProgress(_that);case UiEvent_SyncChanged():
-return syncChanged(_that);case UiEvent_Error():
+return syncChanged(_that);case UiEvent_DownloadsChanged():
+return downloadsChanged(_that);case UiEvent_ArtistScanProgress():
+return artistScanProgress(_that);case UiEvent_ToolInstallProgress():
+return toolInstallProgress(_that);case UiEvent_Error():
 return error(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -106,7 +112,7 @@ return error(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UiEvent_State value)?  state,TResult? Function( UiEvent_Position value)?  position,TResult? Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult? Function( UiEvent_ScanProgress value)?  scanProgress,TResult? Function( UiEvent_SyncChanged value)?  syncChanged,TResult? Function( UiEvent_Error value)?  error,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UiEvent_State value)?  state,TResult? Function( UiEvent_Position value)?  position,TResult? Function( UiEvent_LibraryChanged value)?  libraryChanged,TResult? Function( UiEvent_ScanProgress value)?  scanProgress,TResult? Function( UiEvent_SyncChanged value)?  syncChanged,TResult? Function( UiEvent_DownloadsChanged value)?  downloadsChanged,TResult? Function( UiEvent_ArtistScanProgress value)?  artistScanProgress,TResult? Function( UiEvent_ToolInstallProgress value)?  toolInstallProgress,TResult? Function( UiEvent_Error value)?  error,}){
 final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
@@ -114,7 +120,10 @@ return state(_that);case UiEvent_Position() when position != null:
 return position(_that);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged(_that);case UiEvent_ScanProgress() when scanProgress != null:
 return scanProgress(_that);case UiEvent_SyncChanged() when syncChanged != null:
-return syncChanged(_that);case UiEvent_Error() when error != null:
+return syncChanged(_that);case UiEvent_DownloadsChanged() when downloadsChanged != null:
+return downloadsChanged(_that);case UiEvent_ArtistScanProgress() when artistScanProgress != null:
+return artistScanProgress(_that);case UiEvent_ToolInstallProgress() when toolInstallProgress != null:
+return toolInstallProgress(_that);case UiEvent_Error() when error != null:
 return error(_that);case _:
   return null;
 
@@ -132,14 +141,17 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( UiPlayerSnapshot field0)?  state,TResult Function( double seconds,  double? duration)?  position,TResult Function()?  libraryChanged,TResult Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult Function()?  syncChanged,TResult Function( String field0)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( UiPlayerSnapshot field0)?  state,TResult Function( double seconds,  double? duration)?  position,TResult Function()?  libraryChanged,TResult Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult Function()?  syncChanged,TResult Function()?  downloadsChanged,TResult Function( bool running,  int total,  int done,  String? current,  String? error)?  artistScanProgress,TResult Function( String tool,  String stage,  BigInt received,  BigInt? total)?  toolInstallProgress,TResult Function( String field0)?  error,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
 return state(_that.field0);case UiEvent_Position() when position != null:
 return position(_that.seconds,_that.duration);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged();case UiEvent_ScanProgress() when scanProgress != null:
 return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_SyncChanged() when syncChanged != null:
-return syncChanged();case UiEvent_Error() when error != null:
+return syncChanged();case UiEvent_DownloadsChanged() when downloadsChanged != null:
+return downloadsChanged();case UiEvent_ArtistScanProgress() when artistScanProgress != null:
+return artistScanProgress(_that.running,_that.total,_that.done,_that.current,_that.error);case UiEvent_ToolInstallProgress() when toolInstallProgress != null:
+return toolInstallProgress(_that.tool,_that.stage,_that.received,_that.total);case UiEvent_Error() when error != null:
 return error(_that.field0);case _:
   return orElse();
 
@@ -158,14 +170,17 @@ return error(_that.field0);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( UiPlayerSnapshot field0)  state,required TResult Function( double seconds,  double? duration)  position,required TResult Function()  libraryChanged,required TResult Function( BigInt scanned,  BigInt total,  bool done)  scanProgress,required TResult Function()  syncChanged,required TResult Function( String field0)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( UiPlayerSnapshot field0)  state,required TResult Function( double seconds,  double? duration)  position,required TResult Function()  libraryChanged,required TResult Function( BigInt scanned,  BigInt total,  bool done)  scanProgress,required TResult Function()  syncChanged,required TResult Function()  downloadsChanged,required TResult Function( bool running,  int total,  int done,  String? current,  String? error)  artistScanProgress,required TResult Function( String tool,  String stage,  BigInt received,  BigInt? total)  toolInstallProgress,required TResult Function( String field0)  error,}) {final _that = this;
 switch (_that) {
 case UiEvent_State():
 return state(_that.field0);case UiEvent_Position():
 return position(_that.seconds,_that.duration);case UiEvent_LibraryChanged():
 return libraryChanged();case UiEvent_ScanProgress():
 return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_SyncChanged():
-return syncChanged();case UiEvent_Error():
+return syncChanged();case UiEvent_DownloadsChanged():
+return downloadsChanged();case UiEvent_ArtistScanProgress():
+return artistScanProgress(_that.running,_that.total,_that.done,_that.current,_that.error);case UiEvent_ToolInstallProgress():
+return toolInstallProgress(_that.tool,_that.stage,_that.received,_that.total);case UiEvent_Error():
 return error(_that.field0);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -180,14 +195,17 @@ return error(_that.field0);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( UiPlayerSnapshot field0)?  state,TResult? Function( double seconds,  double? duration)?  position,TResult? Function()?  libraryChanged,TResult? Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult? Function()?  syncChanged,TResult? Function( String field0)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( UiPlayerSnapshot field0)?  state,TResult? Function( double seconds,  double? duration)?  position,TResult? Function()?  libraryChanged,TResult? Function( BigInt scanned,  BigInt total,  bool done)?  scanProgress,TResult? Function()?  syncChanged,TResult? Function()?  downloadsChanged,TResult? Function( bool running,  int total,  int done,  String? current,  String? error)?  artistScanProgress,TResult? Function( String tool,  String stage,  BigInt received,  BigInt? total)?  toolInstallProgress,TResult? Function( String field0)?  error,}) {final _that = this;
 switch (_that) {
 case UiEvent_State() when state != null:
 return state(_that.field0);case UiEvent_Position() when position != null:
 return position(_that.seconds,_that.duration);case UiEvent_LibraryChanged() when libraryChanged != null:
 return libraryChanged();case UiEvent_ScanProgress() when scanProgress != null:
 return scanProgress(_that.scanned,_that.total,_that.done);case UiEvent_SyncChanged() when syncChanged != null:
-return syncChanged();case UiEvent_Error() when error != null:
+return syncChanged();case UiEvent_DownloadsChanged() when downloadsChanged != null:
+return downloadsChanged();case UiEvent_ArtistScanProgress() when artistScanProgress != null:
+return artistScanProgress(_that.running,_that.total,_that.done,_that.current,_that.error);case UiEvent_ToolInstallProgress() when toolInstallProgress != null:
+return toolInstallProgress(_that.tool,_that.stage,_that.received,_that.total);case UiEvent_Error() when error != null:
 return error(_that.field0);case _:
   return null;
 
@@ -469,6 +487,188 @@ String toString() {
 
 
 
+
+/// @nodoc
+
+
+class UiEvent_DownloadsChanged extends UiEvent {
+  const UiEvent_DownloadsChanged(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UiEvent_DownloadsChanged);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UiEvent.downloadsChanged()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UiEvent_ArtistScanProgress extends UiEvent {
+  const UiEvent_ArtistScanProgress({required this.running, required this.total, required this.done, this.current, this.error}): super._();
+  
+
+ final  bool running;
+ final  int total;
+ final  int done;
+ final  String? current;
+ final  String? error;
+
+/// Create a copy of UiEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$UiEvent_ArtistScanProgressCopyWith<UiEvent_ArtistScanProgress> get copyWith => _$UiEvent_ArtistScanProgressCopyWithImpl<UiEvent_ArtistScanProgress>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UiEvent_ArtistScanProgress&&(identical(other.running, running) || other.running == running)&&(identical(other.total, total) || other.total == total)&&(identical(other.done, done) || other.done == done)&&(identical(other.current, current) || other.current == current)&&(identical(other.error, error) || other.error == error));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,running,total,done,current,error);
+}
+
+@override
+String toString() {
+    return 'UiEvent.artistScanProgress(running: $running, total: $total, done: $done, current: $current, error: $error)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $UiEvent_ArtistScanProgressCopyWith<$Res> implements $UiEventCopyWith<$Res> {
+  factory $UiEvent_ArtistScanProgressCopyWith(UiEvent_ArtistScanProgress value, $Res Function(UiEvent_ArtistScanProgress) _then) = _$UiEvent_ArtistScanProgressCopyWithImpl;
+@useResult
+$Res call({
+ bool running, int total, int done, String? current, String? error
+});
+
+
+
+
+}
+/// @nodoc
+class _$UiEvent_ArtistScanProgressCopyWithImpl<$Res>
+    implements $UiEvent_ArtistScanProgressCopyWith<$Res> {
+  _$UiEvent_ArtistScanProgressCopyWithImpl(this._self, this._then);
+
+  final UiEvent_ArtistScanProgress _self;
+  final $Res Function(UiEvent_ArtistScanProgress) _then;
+
+/// Create a copy of UiEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? running = null,Object? total = null,Object? done = null,Object? current = freezed,Object? error = freezed,}) {
+  return _then(UiEvent_ArtistScanProgress(
+running: null == running ? _self.running : running // ignore: cast_nullable_to_non_nullable
+as bool,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
+as int,done: null == done ? _self.done : done // ignore: cast_nullable_to_non_nullable
+as int,current: freezed == current ? _self.current : current // ignore: cast_nullable_to_non_nullable
+as String?,error: freezed == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class UiEvent_ToolInstallProgress extends UiEvent {
+  const UiEvent_ToolInstallProgress({required this.tool, required this.stage, required this.received, this.total}): super._();
+  
+
+ final  String tool;
+ final  String stage;
+ final  BigInt received;
+ final  BigInt? total;
+
+/// Create a copy of UiEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$UiEvent_ToolInstallProgressCopyWith<UiEvent_ToolInstallProgress> get copyWith => _$UiEvent_ToolInstallProgressCopyWithImpl<UiEvent_ToolInstallProgress>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UiEvent_ToolInstallProgress&&(identical(other.tool, tool) || other.tool == tool)&&(identical(other.stage, stage) || other.stage == stage)&&(identical(other.received, received) || other.received == received)&&(identical(other.total, total) || other.total == total));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,tool,stage,received,total);
+}
+
+@override
+String toString() {
+    return 'UiEvent.toolInstallProgress(tool: $tool, stage: $stage, received: $received, total: $total)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $UiEvent_ToolInstallProgressCopyWith<$Res> implements $UiEventCopyWith<$Res> {
+  factory $UiEvent_ToolInstallProgressCopyWith(UiEvent_ToolInstallProgress value, $Res Function(UiEvent_ToolInstallProgress) _then) = _$UiEvent_ToolInstallProgressCopyWithImpl;
+@useResult
+$Res call({
+ String tool, String stage, BigInt received, BigInt? total
+});
+
+
+
+
+}
+/// @nodoc
+class _$UiEvent_ToolInstallProgressCopyWithImpl<$Res>
+    implements $UiEvent_ToolInstallProgressCopyWith<$Res> {
+  _$UiEvent_ToolInstallProgressCopyWithImpl(this._self, this._then);
+
+  final UiEvent_ToolInstallProgress _self;
+  final $Res Function(UiEvent_ToolInstallProgress) _then;
+
+/// Create a copy of UiEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? tool = null,Object? stage = null,Object? received = null,Object? total = freezed,}) {
+  return _then(UiEvent_ToolInstallProgress(
+tool: null == tool ? _self.tool : tool // ignore: cast_nullable_to_non_nullable
+as String,stage: null == stage ? _self.stage : stage // ignore: cast_nullable_to_non_nullable
+as String,received: null == received ? _self.received : received // ignore: cast_nullable_to_non_nullable
+as BigInt,total: freezed == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
+as BigInt?,
+  ));
+}
+
+
+}
 
 /// @nodoc
 

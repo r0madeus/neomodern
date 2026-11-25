@@ -9,6 +9,7 @@ import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/genre_view.dart';
+import 'package:neomodern/ui/online_album_dialog.dart';
 import 'package:neomodern/ui/widgets/motion_primitives.dart';
 import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 import 'package:neomodern/ui/widgets/track_row.dart';
@@ -61,6 +62,14 @@ class _SearchViewState extends State<SearchView> {
   List<UiExternalTrack> _externalTracks = const [];
   bool _searchingExternal = false;
   int _searchEpoch = 0;
+
+  String _onlineQuery = '';
+  List<UiOnlineAlbum> _onlineAlbums = const [];
+  List<UiOnlineTrack> _onlineTracks = const [];
+  bool _searchingOnline = false;
+  String? _onlineError;
+  int _onlineSearchEpoch = 0;
+  final Set<String> _downloadingTrackIds = <String>{};
 
   @override
   void initState() {
@@ -119,6 +128,7 @@ class _SearchViewState extends State<SearchView> {
     _debounce?.cancel();
     if (trimmed.isEmpty) {
       _searchEpoch++;
+      _onlineSearchEpoch++;
       setState(() {
         _debouncedQuery = '';
         _loadedQuery = '';
@@ -127,6 +137,11 @@ class _SearchViewState extends State<SearchView> {
         _tracks = const [];
         _externalTracks = const [];
         _searchingExternal = false;
+        _onlineQuery = '';
+        _onlineAlbums = const [];
+        _onlineTracks = const [];
+        _searchingOnline = false;
+        _onlineError = null;
       });
       return;
     }
@@ -141,6 +156,48 @@ class _SearchViewState extends State<SearchView> {
     _queryCtrl.clear();
     _onQueryChanged('');
     _focusNode.requestFocus();
+  }
+
+  Future<void> _runOnlineSearch([String? explicitQuery]) async {
+    final query = (explicitQuery ?? _queryCtrl.text).trim();
+    if (query.isEmpty) return;
+    final epoch = ++_onlineSearchEpoch;
+    setState(() {
+      _onlineQuery = query;
+      _searchingOnline = true;
+      _onlineError = null;
+    });
+    try {
+      final result = await widget.controller.searchOnline(query);
+      if (!mounted || epoch != _onlineSearchEpoch) return;
+      setState(() {
+        _onlineAlbums = result.albums;
+        _onlineTracks = result.tracks;
+        _searchingOnline = false;
+      });
+    } catch (e) {
+      if (!mounted || epoch != _onlineSearchEpoch) return;
+      setState(() {
+        _onlineAlbums = const [];
+        _onlineTracks = const [];
+        _onlineError = e.toString();
+        _searchingOnline = false;
+      });
+    }
+  }
+
+  Future<void> _downloadOnlineTrack(UiOnlineTrack track) async {
+    if (_downloadingTrackIds.contains(track.id)) return;
+    setState(() => _downloadingTrackIds.add(track.id));
+    final job = await widget.controller.downloadOnlineTrack(track);
+    if (!mounted) return;
+    setState(() => _downloadingTrackIds.remove(track.id));
+    showOnlineDownloadSnackBar(
+      context,
+      queued: job != null,
+      label: track.title,
+      error: widget.controller.lastError,
+    );
   }
 
   Future<void> _runSearch(String query) async {
@@ -252,81 +309,137 @@ class _SearchViewState extends State<SearchView> {
 
   Widget _buildSearchHeader() {
     final hasText = _queryCtrl.text.isNotEmpty;
+    final trimmed = _queryCtrl.text.trim();
+    final canSearchOnline = trimmed.isNotEmpty && !_searchingOnline;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 14),
-      child: Container(
-        height: 40,
-        decoration: BoxDecoration(
-          color: AppTheme.zinc900,
-          borderRadius: BorderRadius.circular(9999),
-          border: Border.all(
-            color: _focusNode.hasFocus ? AppTheme.accent500 : AppTheme.zinc800,
-          ),
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 14),
-            const Icon(
-              Icons.search_rounded,
-              size: 18,
-              color: AppTheme.zinc400,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: _queryCtrl,
-                focusNode: _focusNode,
-                onChanged: _onQueryChanged,
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  color: AppTheme.zinc100,
-                ),
-                decoration: InputDecoration(
-                  hintText: t('Search songs, artists, albums...'),
-                  hintStyle: const TextStyle(
-                    fontSize: 13.5,
-                    color: AppTheme.zinc500,
-                  ),
-                  filled: false,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppTheme.zinc900,
+                borderRadius: BorderRadius.circular(9999),
+                border: Border.all(
+                  color: _focusNode.hasFocus
+                      ? AppTheme.accent500
+                      : AppTheme.zinc800,
                 ),
               ),
-            ),
-            if (hasText)
-              IconButton(
-                tooltip: t('Clear search'),
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(
-                  Icons.close_rounded,
-                  size: 16,
-                  color: AppTheme.zinc400,
-                ),
-                onPressed: _clearSearch,
-              )
-            else
-              Container(
-                margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppTheme.zinc800.withValues(alpha: 0.70),
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(color: AppTheme.zinc700),
-                ),
-                child: const Text(
-                  'Ctrl K',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
+              child: Row(
+                children: [
+                  const SizedBox(width: 14),
+                  const Icon(
+                    Icons.search_rounded,
+                    size: 18,
                     color: AppTheme.zinc400,
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _queryCtrl,
+                      focusNode: _focusNode,
+                      onChanged: _onQueryChanged,
+                      onSubmitted: (_) => unawaited(_runOnlineSearch()),
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        color: AppTheme.zinc100,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: t('Search songs, artists, albums...'),
+                        hintStyle: const TextStyle(
+                          fontSize: 13.5,
+                          color: AppTheme.zinc500,
+                        ),
+                        filled: false,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                        ),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                  if (hasText)
+                    IconButton(
+                      tooltip: t('Clear search'),
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: AppTheme.zinc400,
+                      ),
+                      onPressed: _clearSearch,
+                    )
+                  else
+                    Container(
+                      margin: const EdgeInsets.only(right: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.zinc800.withValues(alpha: 0.70),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(color: AppTheme.zinc700),
+                      ),
+                      child: const Text(
+                        'Ctrl K',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.zinc400,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 40,
+            child: FilledButton.icon(
+              onPressed: canSearchOnline
+                  ? () => unawaited(_runOnlineSearch(trimmed))
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.accent500,
+                foregroundColor: AppTheme.zinc950,
+                disabledBackgroundColor: AppTheme.zinc900,
+                disabledForegroundColor: AppTheme.zinc600,
+                shape: const StadiumBorder(),
+                side: BorderSide(
+                  color: canSearchOnline
+                      ? Colors.transparent
+                      : AppTheme.zinc800,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              icon: _searchingOnline
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppTheme.zinc400,
+                      ),
+                    )
+                  : const Icon(Icons.travel_explore_rounded, size: 17),
+              label: Text(
+                _searchingOnline ? t('Searching...') : t('Search online'),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -650,8 +763,122 @@ class _SearchViewState extends State<SearchView> {
                   onTap: () => ctrl.playExternalTrack(tr),
                 ),
           ],
+          if (_searchingOnline ||
+              _onlineError != null ||
+              _onlineQuery.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            _buildOnlineSection(ctrl),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildOnlineSection(PlayerController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          t('Online').toUpperCase(),
+          style: const TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.9,
+            color: AppTheme.zinc400,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_searchingOnline)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  t('Searching...'),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    color: AppTheme.zinc400,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else if (_onlineError != null)
+          OnlineErrorBanner(
+            message: _onlineError!,
+            onRetry: _onlineQuery.isNotEmpty
+                ? () => unawaited(_runOnlineSearch(_onlineQuery))
+                : null,
+          )
+        else if (_onlineAlbums.isEmpty && _onlineTracks.isEmpty)
+          Text(
+            t('No matching tracks found.'),
+            style: const TextStyle(fontSize: 13.5, color: AppTheme.zinc400),
+          )
+        else ...[
+          if (_onlineAlbums.isNotEmpty) ...[
+            Text(
+              t('Online Albums'),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.zinc300,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 212,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _onlineAlbums.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final album = _onlineAlbums[index];
+                  return _OnlineAlbumCard(
+                    album: album,
+                    onTap: () => unawaited(
+                      showOnlineAlbumModal(
+                        context,
+                        controller: ctrl,
+                        album: album,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 22),
+          ],
+          if (_onlineTracks.isNotEmpty) ...[
+            Text(
+              t('Online Songs'),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.zinc300,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < _onlineTracks.length; i++)
+              _OnlineTrackRow(
+                track: _onlineTracks[i],
+                downloading:
+                    _downloadingTrackIds.contains(_onlineTracks[i].id),
+                onPlay: () => unawaited(
+                  ctrl.playOnlineTracks(_onlineTracks, startIndex: i),
+                ),
+                onDownload: () =>
+                    unawaited(_downloadOnlineTrack(_onlineTracks[i])),
+              ),
+          ],
+        ],
+      ],
     );
   }
 }
@@ -949,6 +1176,205 @@ class _SearchAlbumCardState extends State<_SearchAlbumCard> {
                     fontSize: 12,
                     color: AppTheme.zinc400,
                   ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlineAlbumCard extends StatefulWidget {
+  const _OnlineAlbumCard({
+    required this.album,
+    required this.onTap,
+  });
+
+  final UiOnlineAlbum album;
+  final VoidCallback onTap;
+
+  @override
+  State<_OnlineAlbumCard> createState() => _OnlineAlbumCardState();
+}
+
+class _OnlineAlbumCardState extends State<_OnlineAlbumCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final album = widget.album;
+    final artist =
+        album.artist.isNotEmpty ? album.artist : t('Unknown Artist');
+    final subtitle = album.year != null ? '$artist · ${album.year}' : artist;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        color: _hovered
+            ? AppTheme.zinc800.withValues(alpha: 0.70)
+            : AppTheme.zinc900.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 156,
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: OnlineCoverArt(
+                    coverUrl: album.coverUrl,
+                    coverPath: album.cover,
+                    borderRadius: 8,
+                    iconSize: 36,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  album.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.zinc100,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.zinc400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlineTrackRow extends StatefulWidget {
+  const _OnlineTrackRow({
+    required this.track,
+    required this.downloading,
+    required this.onPlay,
+    required this.onDownload,
+  });
+
+  final UiOnlineTrack track;
+  final bool downloading;
+  final VoidCallback onPlay;
+  final VoidCallback onDownload;
+
+  @override
+  State<_OnlineTrackRow> createState() => _OnlineTrackRowState();
+}
+
+class _OnlineTrackRowState extends State<_OnlineTrackRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tr = widget.track;
+    final artist = tr.artist.isNotEmpty ? tr.artist : t('Unknown Artist');
+    final subtitle = tr.album.isNotEmpty ? '$artist · ${tr.album}' : artist;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        color: _hovered
+            ? AppTheme.zinc800.withValues(alpha: 0.45)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: widget.onPlay,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Row(
+              children: [
+                OnlineCoverArt(
+                  coverUrl: tr.coverUrl,
+                  coverPath: tr.cover,
+                  size: 42,
+                  borderRadius: 6,
+                  iconSize: 20,
+                  fallbackIcon: Icons.music_note_rounded,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        tr.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.zinc100,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.zinc400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  formatDuration(tr.durationSeconds),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.zinc400,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  tooltip: t('Play'),
+                  icon: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: AppTheme.accent400,
+                  ),
+                  onPressed: widget.onPlay,
+                ),
+                IconButton(
+                  tooltip: t('Download Track'),
+                  icon: widget.downloading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(
+                          Icons.download_rounded,
+                          size: 19,
+                          color: AppTheme.zinc300,
+                        ),
+                  onPressed: widget.downloading ? null : widget.onDownload,
                 ),
               ],
             ),

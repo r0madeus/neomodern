@@ -1,13 +1,12 @@
 #[cfg(not(target_os = "android"))]
 pub use neomodern_core::media_keys;
 pub use neomodern_core::{
-    audio, autoplay, diagnostics, library, lyrics, metadata, net, player, queue, session,
+    audio, autoplay, diagnostics, library, lyrics, metadata, net, online, player, queue, session,
     source_provider, update,
 };
 
 mod android_audio;
 mod commands;
-pub mod online;
 mod profiles;
 pub mod sync_commands;
 // PC <-> phone sync and remote control (docs/SYNC.md).
@@ -605,12 +604,7 @@ mod tests {
         rust_sources(&root, &mut files);
         let count = |text: &str, needle: &str| text.matches(needle).count();
 
-        let allowed: &[(&str, &str, usize)] = &[
-            ("online/mod.rs", "client_builder()", 1),
-            ("online/mod.rs", "reqwest::Client::new()", 1),
-            ("online/mod.rs", "Command::new(", 3),
-            ("online/tools.rs", "client_builder()", 1),
-        ];
+        let allowed: &[(&str, &str, usize)] = &[];
         let mut seen = std::collections::HashMap::new();
         for f in &files {
             let rel = f
@@ -646,16 +640,5 @@ mod tests {
             .map(|(f, n, c)| ((f.to_string(), *n), *c))
             .collect();
         assert_eq!(seen, want);
-
-        let text = std::fs::read_to_string(root.join("online/mod.rs")).unwrap();
-        let text = text.split("#[cfg(test)]").next().unwrap();
-        let raw = text
-            .match_indices("self.client")
-            .filter(|(i, _)| !text[i + "self.client".len()..].starts_with("()"))
-            .count();
-        assert_eq!(
-            raw, 1,
-            "online/mod.rs: `self.client` used outside its gate method"
-        );
     }
 }

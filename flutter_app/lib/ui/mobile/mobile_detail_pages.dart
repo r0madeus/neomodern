@@ -9,6 +9,7 @@ import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/genre_view.dart';
 import 'package:neomodern/ui/mobile/sticky_play.dart';
+import 'package:neomodern/ui/online_album_dialog.dart';
 import 'package:neomodern/ui/recap_view.dart';
 import 'package:neomodern/ui/settings_view.dart';
 import 'package:neomodern/ui/sources_view.dart';
@@ -546,6 +547,8 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
   final ScrollController _scrollCtrl = ScrollController();
   UiArtistDetail? _detail;
   bool _loading = true;
+  bool _enriching = false;
+  bool _bioExpanded = false;
   bool _docked = false;
 
   @override
@@ -582,6 +585,126 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
     }
   }
 
+  Future<void> _enrichArtist() async {
+    final current = _detail;
+    if (current == null || _enriching) return;
+    setState(() => _enriching = true);
+    try {
+      final enriched = await widget.controller.enrichArtist(current.name);
+      if (!mounted) return;
+      setState(() {
+        if (enriched != null) {
+          _detail = enriched;
+        }
+        _enriching = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _enriching = false);
+      }
+    }
+  }
+
+  Widget _buildArtistAvatar(String? path) {
+    final p = path?.trim();
+    if (p != null && (p.startsWith('http://') || p.startsWith('https://'))) {
+      return Image.network(
+        p,
+        width: 164,
+        height: 164,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const CoverArt(
+          path: null,
+          size: 164,
+          borderRadius: 0,
+          iconSize: 56,
+          fallbackIcon: Icons.person_rounded,
+        ),
+      );
+    }
+    return CoverArt(
+      path: p,
+      size: 164,
+      borderRadius: 0,
+      iconSize: 56,
+      fallbackIcon: Icons.person_rounded,
+    );
+  }
+
+  Widget _buildAboutSection(String bio) {
+    final trimmed = bio.trim();
+    const bioStyle = TextStyle(
+      fontSize: 13.5,
+      height: 1.55,
+      color: AppTheme.zinc300,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
+          child: Text(
+            t('About'),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppTheme.zinc900,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.zinc800),
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final painter = TextPainter(
+                  text: TextSpan(text: trimmed, style: bioStyle),
+                  maxLines: 5,
+                  textDirection: Directionality.of(context),
+                )..layout(maxWidth: constraints.maxWidth);
+                final overflows = painter.didExceedMaxLines;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      trimmed,
+                      maxLines: _bioExpanded ? null : 5,
+                      overflow: _bioExpanded
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
+                      style: bioStyle,
+                    ),
+                    if (overflows) ...[
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () =>
+                            setState(() => _bioExpanded = !_bioExpanded),
+                        child: Text(
+                          _bioExpanded ? t('Show less') : t('Show more'),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.accent400,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = widget.controller;
@@ -611,12 +734,8 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
               children: [
                 Center(
                   child: ClipOval(
-                    child: CoverArt(
-                      path: detail.image ?? detail.fallbackCover,
-                      size: 164,
-                      borderRadius: 0,
-                      iconSize: 56,
-                      fallbackIcon: Icons.person_rounded,
+                    child: _buildArtistAvatar(
+                      detail.image ?? detail.cover ?? detail.fallbackCover,
                     ),
                   ),
                 ),
@@ -635,7 +754,10 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                   child: Text(
-                    '${detail.albumCount} albums · ${detail.trackCount} tracks',
+                    t('{albums} albums · {tracks} tracks', {
+                      'albums': detail.albumCount,
+                      'tracks': detail.trackCount,
+                    }),
                     style: const TextStyle(
                       fontSize: 13,
                       color: AppTheme.zinc400,
@@ -655,6 +777,42 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
                         onPressed: detail.tracks.isEmpty
                             ? null
                             : () => ctrl.playArtist(detail.name, shuffle: true),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: OutlinedButton.icon(
+                          onPressed: _enriching ? null : _enrichArtist,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.zinc200,
+                            disabledForegroundColor: AppTheme.zinc500,
+                            side: const BorderSide(color: AppTheme.zinc700),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            shape: const StadiumBorder(),
+                          ),
+                          icon: _enriching
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppTheme.zinc300,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded, size: 16),
+                          label: Text(
+                            t('Fetch artist info'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
                       ),
                       const Spacer(),
                       if (!_docked)
@@ -729,6 +887,72 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
                     ),
                   ),
                 ],
+                if (detail.onlineAlbums.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                    child: Text(
+                      t('Online Albums'),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 186,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: detail.onlineAlbums.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
+                      itemBuilder: (context, idx) {
+                        final album = detail.onlineAlbums[idx];
+                        return GestureDetector(
+                          onTap: () => showOnlineAlbumModal(
+                            context,
+                            controller: ctrl,
+                            album: album,
+                          ),
+                          child: SizedBox(
+                            width: 132,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _MobileOnlineAlbumCover(
+                                  cover: album.cover,
+                                  coverUrl: album.coverUrl,
+                                  size: 132,
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  album.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.zinc50,
+                                  ),
+                                ),
+                                if (album.year != null)
+                                  Text(
+                                    '${album.year}',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: AppTheme.zinc400,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                if (detail.bio != null && detail.bio!.trim().isNotEmpty)
+                  _buildAboutSection(detail.bio!),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
                   child: Text(
@@ -767,6 +991,72 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MobileOnlineAlbumCover extends StatelessWidget {
+  const _MobileOnlineAlbumCover({
+    required this.cover,
+    required this.coverUrl,
+    required this.size,
+  });
+
+  final String? cover;
+  final String? coverUrl;
+  final double size;
+
+  Widget _placeholder() {
+    return Container(
+      width: size,
+      height: size,
+      color: AppTheme.zinc900,
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.album_rounded,
+        size: 34,
+        color: AppTheme.zinc500,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final localOrPath = cover?.trim();
+    final remote = coverUrl?.trim();
+    if (localOrPath != null &&
+        localOrPath.isNotEmpty &&
+        !localOrPath.startsWith('http://') &&
+        !localOrPath.startsWith('https://')) {
+      return CoverArt(
+        path: localOrPath,
+        size: size,
+        borderRadius: 8,
+        iconSize: 34,
+      );
+    }
+
+    final url = (localOrPath != null &&
+            (localOrPath.startsWith('http://') ||
+                localOrPath.startsWith('https://')))
+        ? localOrPath
+        : remote;
+    if (url != null && url.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          url,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _placeholder(),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: _placeholder(),
     );
   }
 }

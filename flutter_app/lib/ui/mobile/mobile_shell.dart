@@ -15,6 +15,7 @@ import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/mobile/mini_player.dart';
 import 'package:neomodern/ui/mobile/mobile_detail_pages.dart';
 import 'package:neomodern/ui/mobile/mobile_sheet.dart';
+import 'package:neomodern/ui/online_album_dialog.dart';
 import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/track_menu.dart';
@@ -1463,6 +1464,14 @@ class _SearchTabState extends State<_SearchTab> {
   bool _searchingExternal = false;
   int _searchEpoch = 0;
 
+  String _onlineQuery = '';
+  List<UiOnlineAlbum> _onlineAlbums = const [];
+  List<UiOnlineTrack> _onlineTracks = const [];
+  bool _searchingOnline = false;
+  String? _onlineError;
+  int _onlineSearchEpoch = 0;
+  final Set<String> _downloadingTrackIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -1504,6 +1513,7 @@ class _SearchTabState extends State<_SearchTab> {
     _debounce?.cancel();
     if (trimmed.isEmpty) {
       _searchEpoch++;
+      _onlineSearchEpoch++;
       setState(() {
         _loadedQuery = '';
         _artists = const [];
@@ -1511,6 +1521,11 @@ class _SearchTabState extends State<_SearchTab> {
         _tracks = const [];
         _externalTracks = const [];
         _searchingExternal = false;
+        _onlineQuery = '';
+        _onlineAlbums = const [];
+        _onlineTracks = const [];
+        _searchingOnline = false;
+        _onlineError = null;
       });
       return;
     }
@@ -1582,6 +1597,48 @@ class _SearchTabState extends State<_SearchTab> {
     _debounce?.cancel();
     _searchCtrl.clear();
     _onChanged('');
+  }
+
+  Future<void> _runOnlineSearch([String? explicitQuery]) async {
+    final query = (explicitQuery ?? _searchCtrl.text).trim();
+    if (query.isEmpty) return;
+    final epoch = ++_onlineSearchEpoch;
+    setState(() {
+      _onlineQuery = query;
+      _searchingOnline = true;
+      _onlineError = null;
+    });
+    try {
+      final result = await widget.controller.searchOnline(query);
+      if (!mounted || epoch != _onlineSearchEpoch) return;
+      setState(() {
+        _onlineAlbums = result.albums;
+        _onlineTracks = result.tracks;
+        _searchingOnline = false;
+      });
+    } catch (e) {
+      if (!mounted || epoch != _onlineSearchEpoch) return;
+      setState(() {
+        _onlineAlbums = const [];
+        _onlineTracks = const [];
+        _onlineError = e.toString();
+        _searchingOnline = false;
+      });
+    }
+  }
+
+  Future<void> _downloadOnlineTrack(UiOnlineTrack track) async {
+    if (_downloadingTrackIds.contains(track.id)) return;
+    setState(() => _downloadingTrackIds.add(track.id));
+    final job = await widget.controller.downloadOnlineTrack(track);
+    if (!mounted) return;
+    setState(() => _downloadingTrackIds.remove(track.id));
+    showOnlineDownloadSnackBar(
+      context,
+      queued: job != null,
+      label: track.title,
+      error: widget.controller.lastError,
+    );
   }
 
   List<_BrowseCategory> _buildCategories(PlayerController ctrl) {
@@ -1668,6 +1725,7 @@ class _SearchTabState extends State<_SearchTab> {
                   child: TextField(
                     controller: _searchCtrl,
                     onChanged: _onChanged,
+                    onSubmitted: (_) => unawaited(_runOnlineSearch()),
                     style: const TextStyle(
                       fontSize: 15,
                       color: AppTheme.zinc900,
@@ -1707,6 +1765,47 @@ class _SearchTabState extends State<_SearchTab> {
             ),
           ),
         ),
+        if (query.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _searchingOnline
+                    ? null
+                    : () => unawaited(_runOnlineSearch(query)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.accent500,
+                  foregroundColor: AppTheme.zinc950,
+                  disabledBackgroundColor: AppTheme.zinc800,
+                  disabledForegroundColor: AppTheme.zinc400,
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  minimumSize: const Size(0, 36),
+                ),
+                icon: _searchingOnline
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppTheme.zinc400,
+                        ),
+                      )
+                    : const Icon(Icons.travel_explore_rounded, size: 17),
+                label: Text(
+                  _searchingOnline ? t('Searching...') : t('Search online'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
         Expanded(
           child: query.isEmpty
               ? _buildBrowseAll(context, ctrl)
@@ -1770,8 +1869,13 @@ class _SearchTabState extends State<_SearchTab> {
     final hasExternalSection = ctrl.hasEnabledSourceProviders ||
         _externalTracks.isNotEmpty ||
         _searchingExternal;
+    final hasOnlineSection =
+        _searchingOnline || _onlineError != null || _onlineQuery.isNotEmpty;
 
-    if (!hasAnyLocal && !hasExternalSection && _loadedQuery == query) {
+    if (!hasAnyLocal &&
+        !hasExternalSection &&
+        !hasOnlineSection &&
+        _loadedQuery == query) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -2024,6 +2128,216 @@ class _SearchTabState extends State<_SearchTab> {
                 ),
                 onTap: () => ctrl.playExternalTrack(tr),
               ),
+        ],
+        if (hasOnlineSection) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              t('Online'),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.zinc50,
+              ),
+            ),
+          ),
+          if (_searchingOnline)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    t('Searching...'),
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      color: AppTheme.zinc400,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_onlineError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: OnlineErrorBanner(
+                message: _onlineError!,
+                onRetry: _onlineQuery.isNotEmpty
+                    ? () => unawaited(_runOnlineSearch(_onlineQuery))
+                    : null,
+              ),
+            )
+          else if (_onlineAlbums.isEmpty && _onlineTracks.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                t('No matching tracks found.'),
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  color: AppTheme.zinc400,
+                ),
+              ),
+            )
+          else ...[
+            if (_onlineAlbums.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  t('Online Albums'),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.zinc200,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 164,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _onlineAlbums.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, i) {
+                    final album = _onlineAlbums[i];
+                    return GestureDetector(
+                      onTap: () => unawaited(
+                        showOnlineAlbumModal(
+                          context,
+                          controller: ctrl,
+                          album: album,
+                        ),
+                      ),
+                      child: SizedBox(
+                        width: 112,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            OnlineCoverArt(
+                              coverUrl: album.coverUrl,
+                              coverPath: album.cover,
+                              size: 112,
+                              borderRadius: 6,
+                              iconSize: 32,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              album.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.zinc50,
+                              ),
+                            ),
+                            Text(
+                              album.artist.isNotEmpty
+                                  ? album.artist
+                                  : t('Unknown Artist'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: AppTheme.zinc400,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            if (_onlineTracks.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Text(
+                  t('Online Songs'),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.zinc200,
+                  ),
+                ),
+              ),
+              for (var i = 0; i < _onlineTracks.length; i++)
+                Builder(
+                  builder: (context) {
+                    final track = _onlineTracks[i];
+                    final downloading = _downloadingTrackIds.contains(track.id);
+                    final artist = track.artist.isNotEmpty
+                        ? track.artist
+                        : t('Unknown Artist');
+                    final duration = track.durationSeconds != null
+                        ? ' · ${formatDuration(track.durationSeconds)}'
+                        : '';
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 2,
+                      ),
+                      leading: OnlineCoverArt(
+                        coverUrl: track.coverUrl,
+                        coverPath: track.cover,
+                        size: 44,
+                        borderRadius: 6,
+                        iconSize: 20,
+                        fallbackIcon: Icons.music_note_rounded,
+                      ),
+                      title: Text(
+                        track.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.zinc100,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '$artist$duration',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.zinc400,
+                        ),
+                      ),
+                      trailing: IconButton(
+                        tooltip: t('Download Track'),
+                        icon: downloading
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.download_rounded,
+                                size: 20,
+                                color: AppTheme.zinc300,
+                              ),
+                        onPressed: downloading
+                            ? null
+                            : () => unawaited(_downloadOnlineTrack(track)),
+                      ),
+                      onTap: () => unawaited(
+                        ctrl.playOnlineTracks(_onlineTracks, startIndex: i),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ],
         ],
       ],
     );

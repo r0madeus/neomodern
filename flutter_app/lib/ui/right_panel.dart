@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
@@ -618,6 +619,7 @@ class _LyricsSideState extends State<_LyricsSide> {
   int _lastKeyCount = 0;
   int _lastActiveIdx = -1;
   bool _follow = true;
+  bool _sharingLyrics = false;
 
   @override
   void dispose() {
@@ -716,6 +718,65 @@ class _LyricsSideState extends State<_LyricsSide> {
     }
   }
 
+  Future<void> _attachLrcFile(
+    BuildContext context,
+    PlayerController ctrl,
+    String audioPath,
+  ) async {
+    final files = await FilePicker.pickFiles(
+      dialogTitle: t('Attach .lrc file'),
+      type: FileType.custom,
+      allowedExtensions: const ['lrc', 'txt'],
+    );
+    if (files.isEmpty) return;
+    final lrcPath = files.first.path;
+    if (lrcPath == null || lrcPath.isEmpty) return;
+    await ctrl.attachLyricsFile(audioPath, lrcPath);
+    if (!context.mounted) return;
+    final err = ctrl.lastError;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          err ?? t('Attached .lrc file'),
+        ),
+        behavior: SnackBarBehavior.floating,
+        width: 340,
+      ),
+    );
+  }
+
+  Future<void> _shareLyrics(
+    BuildContext context,
+    PlayerController ctrl,
+  ) async {
+    if (_sharingLyrics) return;
+    setState(() => _sharingLyrics = true);
+    try {
+      await ctrl.shareLyrics();
+      if (!context.mounted) return;
+      final status = ctrl.lyricsShareStatus;
+      final msg = switch (status?.outcome) {
+        'published' => t('Shared lyrics to LRCLIB'),
+        'cancelled' => t('Lyrics sharing cancelled'),
+        _ => ctrl.lastError ??
+            (status?.reason != null
+                ? t('Cannot share lyrics: {reason}', {'reason': status!.reason!})
+                : t('Lyrics share finished')),
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+          width: 340,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sharingLyrics = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = widget.controller;
@@ -772,15 +833,16 @@ class _LyricsSideState extends State<_LyricsSide> {
     }
 
     final tint = tintFromColor(ctrl.currentCoverColor);
+    final isLocalTrack = !current.path.startsWith('http://') &&
+        !current.path.startsWith('https://');
     final lyrics = ctrl.currentLyrics;
-    final canSaveLrc = lyrics != null &&
+    final canSaveLrc = isLocalTrack &&
+        lyrics != null &&
         lyrics.found &&
         !lyrics.isInstrumental &&
         lyrics.source != 'Local .lrc' &&
         (lyrics.syncedLines.isNotEmpty ||
-            (lyrics.plainText?.trim().isNotEmpty ?? false)) &&
-        !current.path.startsWith('http://') &&
-        !current.path.startsWith('https://');
+            (lyrics.plainText?.trim().isNotEmpty ?? false));
 
     return TintedBackdrop.solid(
       color: tint.surface,
@@ -848,8 +910,48 @@ class _LyricsSideState extends State<_LyricsSide> {
                     onPressed: () =>
                         _saveLrc(context, ctrl, current.path, lyrics),
                   ),
+                if (isLocalTrack)
+                  IconButton(
+                    tooltip: t('Attach .lrc file'),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    icon: Icon(
+                      Icons.attach_file_rounded,
+                      size: 17,
+                      color: Colors.white.withValues(alpha: 0.80),
+                    ),
+                    onPressed: () =>
+                        _attachLrcFile(context, ctrl, current.path),
+                  ),
+                if (isLocalTrack)
+                  IconButton(
+                    tooltip: t('Share lyrics to LRCLIB'),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    icon: _sharingLyrics
+                        ? SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white.withValues(alpha: 0.80),
+                            ),
+                          )
+                        : Icon(
+                            Icons.cloud_upload_outlined,
+                            size: 17,
+                            color: Colors.white.withValues(alpha: 0.80),
+                          ),
+                    onPressed: _sharingLyrics
+                        ? null
+                        : () => _shareLyrics(context, ctrl),
+                  ),
                 IconButton(
-                  tooltip: t('Reload lyrics'),
+                  tooltip: t('Refresh lyrics'),
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints:
@@ -859,7 +961,8 @@ class _LyricsSideState extends State<_LyricsSide> {
                     size: 17,
                     color: Colors.white.withValues(alpha: 0.80),
                   ),
-                  onPressed: ctrl.lyricsLoading ? null : ctrl.refreshLyrics,
+                  onPressed:
+                      ctrl.lyricsLoading ? null : ctrl.refreshLyricsForCurrent,
                 ),
                 IconButton(
                   tooltip: t('Close panel'),

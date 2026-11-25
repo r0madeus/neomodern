@@ -20,7 +20,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
 
 #[cfg(not(target_os = "android"))]
 use std::process::Command;
@@ -728,7 +727,15 @@ impl OnlineService {
         let track = track.clone();
         let stream_url = tokio::task::spawn_blocking(move || {
             let target = pick_source(&bin, &track);
-            let args = ["--no-playlist", "-f", "bestaudio/best", "-g", "--", &target];
+            let args = [
+                "-4",
+                "--no-playlist",
+                "-f",
+                "bestaudio/best",
+                "-g",
+                "--",
+                &target,
+            ];
             let out = run_ytdlp_lines(&bin, &args, YTDLP_RESOLVE_TIMEOUT, &|| false)?;
             out.into_iter()
                 .find(|l| !l.trim().is_empty())
@@ -978,10 +985,11 @@ impl OnlineService {
     /// skipped unless their cached cover file is missing from disk.
     pub fn start_artist_scan(
         self: &Arc<Self>,
-        app: AppHandle,
         lib: Arc<Library>,
         force: bool,
         prefer_tr: bool,
+        on_library_changed: Arc<dyn Fn(u64) + Send + Sync>,
+        on_artist_scan: Arc<dyn Fn(ArtistScanProgress) + Send + Sync>,
     ) -> Result<ArtistScanProgress, String> {
         self.net
             .require(Feature::ArtistInfo)
@@ -1006,7 +1014,7 @@ impl OnlineService {
         // function or the spawned task ends, including a panic.
         let guard = ScanGuard {
             status: Arc::clone(&self.artist_scan_status),
-            app: app.clone(),
+            on_artist_scan: Arc::clone(&on_artist_scan),
         };
 
         let names = lib.all_artist_names().map_err(|e| e.to_string())?;
@@ -1040,7 +1048,7 @@ impl OnlineService {
 
         if targets.is_empty() {
             let done = ArtistScanProgress::default();
-            self.publish_artist_scan(&app, done.clone());
+            self.publish_artist_scan(&on_artist_scan, done.clone());
             return Ok(done);
         }
 
@@ -1053,12 +1061,20 @@ impl OnlineService {
             cancelled: false,
             error: None,
         };
-        self.publish_artist_scan(&app, initial.clone());
+        self.publish_artist_scan(&on_artist_scan, initial.clone());
 
         let service = Arc::clone(self);
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             let _guard = guard;
-            service.run_artist_scan(app, lib, targets, prefer_tr).await;
+            service
+                .run_artist_scan(
+                    lib,
+                    targets,
+                    prefer_tr,
+                    on_library_changed,
+                    on_artist_scan,
+                )
+                .await;
         });
 
         Ok(initial)
@@ -1066,10 +1082,11 @@ impl OnlineService {
 
     async fn run_artist_scan(
         &self,
-        app: AppHandle,
         lib: Arc<Library>,
         targets: Vec<ScanTarget>,
         prefer_tr: bool,
+        on_library_changed: Arc<dyn Fn(u64) + Send + Sync>,
+        on_artist_scan: Arc<dyn Fn(ArtistScanProgress) + Send + Sync>,
     ) {
         let total = targets.len() as u32;
         let mut done: u32 = 0;
@@ -1094,7 +1111,7 @@ impl OnlineService {
                 break;
             };
             self.publish_artist_scan(
-                &app,
+                &on_artist_scan,
                 ArtistScanProgress {
                     scanning: true,
                     done,
@@ -1123,7 +1140,7 @@ impl OnlineService {
                 updated += 1;
             }
             self.publish_artist_scan(
-                &app,
+                &on_artist_scan,
                 ArtistScanProgress {
                     scanning: true,
                     done,
@@ -1149,18 +1166,22 @@ impl OnlineService {
             cancelled,
             error,
         };
-        self.publish_artist_scan(&app, finished);
+        self.publish_artist_scan(&on_artist_scan, finished);
         if updated > 0 {
             let version = lib.bump();
-            let _ = app.emit("library://changed", version);
+            on_library_changed(version);
         }
     }
 
-    fn publish_artist_scan(&self, app: &AppHandle, progress: ArtistScanProgress) {
+    fn publish_artist_scan(
+        &self,
+        on_artist_scan: &Arc<dyn Fn(ArtistScanProgress) + Send + Sync>,
+        progress: ArtistScanProgress,
+    ) {
         if let Ok(mut guard) = self.artist_scan_status.lock() {
             *guard = progress.clone();
         }
-        let _ = app.emit("artist://scan", &progress);
+        on_artist_scan(progress);
     }
 }
 
@@ -1177,7 +1198,7 @@ struct ScanTarget {
 /// return or panic), it is reset and a final `artist://scan` event goes out.
 struct ScanGuard {
     status: Arc<Mutex<ArtistScanProgress>>,
-    app: AppHandle,
+    on_artist_scan: Arc<dyn Fn(ArtistScanProgress) + Send + Sync>,
 }
 
 impl Drop for ScanGuard {
@@ -1191,7 +1212,7 @@ impl Drop for ScanGuard {
             status.current_artist = None;
             status.clone()
         };
-        let _ = self.app.emit("artist://scan", &final_state);
+        (self.on_artist_scan)(final_state);
     }
 }
 
@@ -1822,7 +1843,17 @@ fn no_window_cmd(bin: &str) -> Command {
     }
     #[cfg(not(windows))]
     {
-        Command::new(bin)
+        let mut cmd = Command::new(bin);
+        #[cfg(target_os = "linux")]
+        match std::env::var_os("APPIMAGE_ORIG_LD_LIBRARY_PATH") {
+            Some(orig) if !orig.is_empty() => {
+                cmd.env("LD_LIBRARY_PATH", orig);
+            }
+            _ => {
+                cmd.env_remove("LD_LIBRARY_PATH");
+            }
+        }
+        cmd
     }
 }
 

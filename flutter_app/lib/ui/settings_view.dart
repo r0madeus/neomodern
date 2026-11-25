@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
+import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/sources_view.dart';
@@ -35,6 +38,25 @@ class _SettingsViewState extends State<SettingsView> {
   double? _crossfadeDraft;
   double? _preampDraft;
   List<double>? _gainsDraft;
+  bool _installingTools = false;
+  bool _savingCachedLyrics = false;
+  bool _sharingLyrics = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctrl = widget.controller;
+      if (!ctrl.initialized) return;
+      if (ctrl.lyricsCoverage == null) {
+        unawaited(ctrl.refreshLyricsCoverage());
+      }
+      if (ctrl.lyricsShareStatus == null) {
+        unawaited(ctrl.refreshLyricsShareStatus());
+      }
+    });
+  }
 
   Future<void> _pickAndAddFolder() async {
     final uri = await FilePicker.pickDirectory(
@@ -72,6 +94,101 @@ class _SettingsViewState extends State<SettingsView> {
     }
   }
 
+  Future<void> _pickDownloadDir() async {
+    final uri = await FilePicker.pickDirectory(
+      dialogTitle: t('Select download folder'),
+    );
+    if (uri != null) {
+      final path = uri.isScheme('file') ? uri.toFilePath() : uri.toString();
+      if (path.isNotEmpty) {
+        await widget.controller.setOnlineDownloadDir(path);
+      }
+    }
+  }
+
+  Future<void> _pickYtdlpPath() async {
+    final files = await FilePicker.pickFiles(
+      dialogTitle: t('Select yt-dlp executable'),
+    );
+    if (files.isEmpty) return;
+    final path = files.first.path;
+    if (path != null && path.isNotEmpty) {
+      await widget.controller.setOnlineYtdlpPath(path);
+    }
+  }
+
+  Future<void> _installMissingTools() async {
+    if (_installingTools) return;
+    final ctrl = widget.controller;
+    final status = ctrl.onlineStatus;
+    if (status == null || !status.canInstallTools) return;
+    setState(() => _installingTools = true);
+    try {
+      if (!status.ytdlpAvailable) {
+        await ctrl.installOnlineTool('ytdlp');
+      }
+      final afterYtdlp = ctrl.onlineStatus;
+      if (afterYtdlp == null || !afterYtdlp.ffmpegAvailable) {
+        await ctrl.installOnlineTool('ffmpeg');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _installingTools = false);
+      }
+    }
+  }
+
+  Future<void> _saveCachedLyrics() async {
+    if (_savingCachedLyrics) return;
+    setState(() => _savingCachedLyrics = true);
+    try {
+      final outcome = await widget.controller.saveCachedLyrics();
+      if (!mounted || outcome == null) return;
+      await widget.controller.refreshLyricsCoverage();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            t('Saved {saved} lyrics files ({skipped} skipped)', {
+              'saved': outcome.saved,
+              'skipped': outcome.skipped,
+            }),
+          ),
+          behavior: SnackBarBehavior.floating,
+          width: 340,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingCachedLyrics = false);
+      }
+    }
+  }
+
+  Future<void> _shareLyrics() async {
+    if (_sharingLyrics) return;
+    setState(() => _sharingLyrics = true);
+    try {
+      await widget.controller.shareLyrics();
+    } finally {
+      if (mounted) {
+        setState(() => _sharingLyrics = false);
+      }
+    }
+  }
+
+  Future<void> _copyToClipboard(String text, String feedback) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(feedback),
+        behavior: SnackBarBehavior.floating,
+        width: 280,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = widget.controller;
@@ -100,6 +217,7 @@ class _SettingsViewState extends State<SettingsView> {
             _SettingRow(
               title: t('Language'),
               subtitle: t('Choose the interface language'),
+              stackOnNarrow: true,
               trailing: SegmentedButton<String>(
                 showSelectedIcon: false,
                 segments: [
@@ -290,6 +408,7 @@ class _SettingsViewState extends State<SettingsView> {
             _SettingRow(
               title: t('ReplayGain'),
               subtitle: t('Normalize loudness using embedded ReplayGain tags'),
+              stackOnNarrow: true,
               trailing: SegmentedButton<String>(
                 segments: [
                   ButtonSegment(value: 'off', label: Text(t('Off'))),
@@ -605,21 +724,23 @@ class _SettingsViewState extends State<SettingsView> {
 
         const SizedBox(height: 20),
 
-        // Network Section
-        _SettingsSection(
-          title: t('Network'),
-          children: [
-            _SettingRow(
-              title: t('Offline Mode'),
-              subtitle: t(
-                  'Block all network requests (online lyrics lookups remain disabled)'),
-              trailing: Switch(
-                value: ctrl.offlineMode,
-                onChanged: ctrl.setOfflineMode,
-              ),
-            ),
-          ],
-        ),
+        _buildNetworkAndPrivacySection(ctrl),
+
+        const SizedBox(height: 20),
+
+        _buildOnlineAndDownloadsSection(ctrl),
+
+        const SizedBox(height: 20),
+
+        _buildArtistInfoSection(ctrl),
+
+        const SizedBox(height: 20),
+
+        _buildLyricsSection(ctrl),
+
+        const SizedBox(height: 20),
+
+        _buildUpdatesSection(ctrl),
 
         const SizedBox(height: 20),
 
@@ -629,6 +750,618 @@ class _SettingsViewState extends State<SettingsView> {
 
         ExternalSourcesSettingsSection(controller: ctrl),
       ],
+      ),
+    );
+  }
+
+  Widget _buildNetworkAndPrivacySection(PlayerController ctrl) {
+    final net = ctrl.netSettings;
+    final offline = net?.offlineMode ?? ctrl.offlineMode;
+    final rawSaveMode = net?.lyricsSave ?? 'off';
+    final saveMode = const {'off', 'sidecar', 'embed'}.contains(rawSaveMode)
+        ? rawSaveMode
+        : 'off';
+
+    return _SettingsSection(
+      title: t('Network & Privacy'),
+      subtitle: offline
+          ? t('Offline mode active — all external requests blocked')
+          : t('Control individual network features and lyrics storage'),
+      children: [
+        _SettingRow(
+          title: t('Offline Mode'),
+          subtitle: t(
+              'Block all network requests (online search, lyrics, metadata, and updates)'),
+          trailing: Switch(
+            value: offline,
+            onChanged: ctrl.setOfflineMode,
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('Online Search & Downloads'),
+          subtitle: t('Allow searching and downloading tracks via yt-dlp'),
+          trailing: Switch(
+            value: net?.online ?? true,
+            onChanged: (v) => ctrl.setNetFeature('online', v),
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('Lyrics Lookups & Sharing'),
+          subtitle: t('Fetch synced lyrics online and share local .lrc files'),
+          trailing: Switch(
+            value: net?.lyrics ?? true,
+            onChanged: (v) => ctrl.setNetFeature('lyrics', v),
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('Metadata Matching'),
+          subtitle: t('Look up album and track tags from MusicBrainz'),
+          trailing: Switch(
+            value: net?.metadata ?? true,
+            onChanged: (v) => ctrl.setNetFeature('metadata', v),
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('Update Checks'),
+          subtitle: t('Allow checking for new NeoModern releases'),
+          trailing: Switch(
+            value: net?.updates ?? true,
+            onChanged: (v) => ctrl.setNetFeature('updates', v),
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('Auto-Save Fetched Lyrics'),
+          subtitle: t('Store online lyrics alongside audio files or in tags'),
+          stackOnNarrow: true,
+          trailing: SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(value: 'off', label: Text(t('Off'))),
+              ButtonSegment(value: 'sidecar', label: Text(t('Sidecar'))),
+              ButtonSegment(value: 'embed', label: Text(t('Embedded'))),
+            ],
+            selected: {saveMode},
+            onSelectionChanged: (sel) => ctrl.setLyricsSaveMode(sel.first),
+            style: _segmentedButtonStyle(),
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('NetEase Lyrics Provider'),
+          subtitle: t('Include NetEase Cloud Music as a fallback lyrics source'),
+          trailing: Switch(
+            value: net?.lyricsNetease ?? false,
+            onChanged: ctrl.setLyricsNetease,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOnlineAndDownloadsSection(PlayerController ctrl) {
+    final status = ctrl.onlineStatus;
+    final installProgress = ctrl.toolInstallProgress;
+    final installing = _installingTools || installProgress != null;
+    final hasMissingTool =
+        status != null && (!status.ytdlpAvailable || !status.ffmpegAvailable);
+    final downloads = ctrl.downloads;
+    final hasFinishedDownloads = downloads.any(
+      (j) =>
+          j.state == 'done' || j.state == 'failed' || j.state == 'cancelled',
+    );
+
+    return _SettingsSection(
+      title: t('Online Search & Downloads'),
+      subtitle: t('Manage yt-dlp, ffmpeg, download folder, and active transfers'),
+      trailing: (status?.canInstallTools == true && hasMissingTool) || installing
+          ? FilledButton.icon(
+              onPressed: installing ? null : _installMissingTools,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.canvas,
+              ),
+              icon: installing
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.canvas,
+                      ),
+                    )
+                  : const Icon(Icons.download_for_offline_rounded, size: 17),
+              label: Text(
+                installing ? t('Installing...') : t('Auto-install'),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            )
+          : null,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _ToolBadge(
+              label: status?.ytdlpVersion != null &&
+                      status!.ytdlpVersion!.isNotEmpty
+                  ? 'yt-dlp (${status.ytdlpVersion})'
+                  : 'yt-dlp',
+              available: status?.ytdlpAvailable ?? false,
+              managed: status?.managedYtdlp ?? false,
+            ),
+            _ToolBadge(
+              label: 'ffmpeg',
+              available: status?.ffmpegAvailable ?? false,
+              managed: status?.managedFfmpeg ?? false,
+            ),
+          ],
+        ),
+        if (installProgress != null) ...[
+          const SizedBox(height: 12),
+          _ToolInstallProgressBanner(progress: installProgress),
+        ],
+        const Divider(height: 22, color: AppColors.border),
+        _SettingRow(
+          title: t('Download Folder'),
+          subtitle: status?.downloadDir.isNotEmpty == true
+              ? status!.downloadDir
+              : t('Default music downloads folder'),
+          stackOnNarrow: true,
+          trailing: OutlinedButton.icon(
+            onPressed: _pickDownloadDir,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.textPrimary,
+              side: const BorderSide(color: AppColors.border),
+            ),
+            icon: const Icon(Icons.folder_open_rounded, size: 16),
+            label: Text(t('Choose...')),
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('Custom yt-dlp Path'),
+          subtitle: status?.ytdlpPath?.isNotEmpty == true
+              ? status!.ytdlpPath!
+              : t('Automatic (system PATH or managed tool)'),
+          stackOnNarrow: true,
+          trailing: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (status?.ytdlpPath?.isNotEmpty == true)
+                TextButton(
+                  onPressed: () => ctrl.setOnlineYtdlpPath(null),
+                  child: Text(t('Clear')),
+                ),
+              OutlinedButton.icon(
+                onPressed: _pickYtdlpPath,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textPrimary,
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                icon: const Icon(Icons.terminal_rounded, size: 16),
+                label: Text(t('Browse...')),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 22, color: AppColors.border),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            Text(
+              t('Downloads ({n})', {'n': downloads.length}),
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            if (hasFinishedDownloads)
+              TextButton.icon(
+                onPressed: ctrl.clearFinishedDownloads,
+                icon: const Icon(Icons.clear_all_rounded, size: 16),
+                label: Text(t('Clear finished')),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (downloads.isEmpty)
+          Text(
+            t('No active or recent downloads.'),
+            style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+          )
+        else
+          for (var i = 0; i < downloads.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _DownloadJobCard(
+              job: downloads[i],
+              onCancel: () => ctrl.cancelDownload(downloads[i].id),
+            ),
+          ],
+      ],
+    );
+  }
+
+  Widget _buildArtistInfoSection(PlayerController ctrl) {
+    final progress = ctrl.artistScanProgress;
+    final running = progress?.running ?? false;
+    final done = progress?.done ?? 0;
+    final total = progress?.total ?? 0;
+    final fraction =
+        running && total > 0 ? (done / total).clamp(0.0, 1.0) : null;
+
+    return _SettingsSection(
+      title: t('Artist Info'),
+      subtitle: t('Fetch biographies and artist artwork for your library'),
+      trailing: running
+          ? OutlinedButton.icon(
+              onPressed: ctrl.cancelArtistEnrich,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.danger,
+                side: const BorderSide(color: AppColors.border),
+              ),
+              icon: const Icon(Icons.close_rounded, size: 16),
+              label: Text(t('Cancel')),
+            )
+          : OutlinedButton.icon(
+              onPressed: ctrl.enrichAllArtists,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textPrimary,
+                side: const BorderSide(color: AppColors.border),
+              ),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+              label: Text(t('Enrich all artists')),
+            ),
+      children: [
+        if (running) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  progress?.current?.isNotEmpty == true
+                      ? t('Enriching {artist}...', {'artist': progress!.current!})
+                      : t('Enriching artists...'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '$done / $total',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.accent,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: fraction,
+            backgroundColor: AppColors.canvas,
+            color: AppColors.accent,
+          ),
+        ] else if (progress != null &&
+            (progress.error != null ||
+                progress.cancelled ||
+                progress.updated > 0)) ...[
+          Text(
+            progress.error != null
+                ? progress.error!
+                : progress.cancelled
+                    ? t('Artist enrichment cancelled ({done}/{total}).', {
+                        'done': progress.done,
+                        'total': progress.total,
+                      })
+                    : t('Updated {n} artists.', {'n': progress.updated}),
+            style: TextStyle(
+              fontSize: 12.5,
+              color: progress.error != null
+                  ? AppColors.danger
+                  : AppColors.textSecondary,
+            ),
+          ),
+        ] else
+          Text(
+            t('Scan all library artists to populate missing biographies and images.'),
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textSecondary,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLyricsSection(PlayerController ctrl) {
+    final coverage = ctrl.lyricsCoverage;
+    final shareStatus = ctrl.lyricsShareStatus;
+    final currentTrack = ctrl.snapshot.current;
+    final sharingBusy = _sharingLyrics || shareStatus?.reason == 'busy';
+
+    return _SettingsSection(
+      title: t('Lyrics'),
+      subtitle: t('Library lyrics coverage, offline export, and LRCLIB sharing'),
+      trailing: IconButton(
+        tooltip: t('Refresh'),
+        visualDensity: VisualDensity.compact,
+        icon: const Icon(
+          Icons.refresh_rounded,
+          size: 18,
+          color: AppColors.textSecondary,
+        ),
+        onPressed: () {
+          unawaited(ctrl.refreshLyricsCoverage());
+          unawaited(ctrl.refreshLyricsShareStatus());
+        },
+      ),
+      children: [
+        if (coverage == null)
+          Text(
+            t('Loading lyrics coverage...'),
+            style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+          )
+        else
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              _CoverageChip(
+                label: t('With lyrics'),
+                count: coverage.withLyrics.toString(),
+                accent: true,
+              ),
+              _CoverageChip(
+                label: t('Without lyrics'),
+                count: coverage.withoutLyrics.toString(),
+              ),
+              _CoverageChip(
+                label: t('Unchecked'),
+                count: coverage.unchecked.toString(),
+              ),
+            ],
+          ),
+        const Divider(height: 22, color: AppColors.border),
+        _SettingRow(
+          title: t('Save Cached Lyrics to Files'),
+          subtitle: t(
+              'Write cached lyrics to sidecar .lrc files or audio tags according to your save mode'),
+          stackOnNarrow: true,
+          trailing: OutlinedButton.icon(
+            onPressed: _savingCachedLyrics ? null : _saveCachedLyrics,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.textPrimary,
+              side: const BorderSide(color: AppColors.border),
+            ),
+            icon: _savingCachedLyrics
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_alt_rounded, size: 16),
+            label: Text(
+              _savingCachedLyrics
+                  ? t('Saving...')
+                  : t('Save cached lyrics to files'),
+            ),
+          ),
+        ),
+        const Divider(height: 20, color: AppColors.border),
+        _SettingRow(
+          title: t('Share Lyrics to LRCLIB'),
+          subtitle: _describeShareStatus(currentTrack, shareStatus),
+          stackOnNarrow: true,
+          trailing: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (sharingBusy)
+                OutlinedButton(
+                  onPressed: ctrl.cancelLyricsShare,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                  child: Text(t('Cancel')),
+                ),
+              FilledButton.icon(
+                onPressed: sharingBusy || shareStatus?.available != true
+                    ? null
+                    : _shareLyrics,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  foregroundColor: AppColors.canvas,
+                ),
+                icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                label: Text(
+                  sharingBusy
+                      ? t('Sharing...')
+                      : t('Share lyrics to LRCLIB'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _describeShareStatus(
+    UiTrackInfo? currentTrack,
+    UiLyricsShareStatus? status,
+  ) {
+    if (status?.outcome == 'published') {
+      return t('Published current track lyrics to LRCLIB.');
+    }
+    if (status?.outcome == 'cancelled') {
+      return t('Sharing cancelled.');
+    }
+    if (currentTrack == null) {
+      return t('Play a local track with local lyrics to share it with LRCLIB.');
+    }
+    if (status == null) {
+      return currentTrack.title;
+    }
+    if (status.available) {
+      return t('Ready to share "{title}" to LRCLIB.', {
+        'title': currentTrack.title,
+      });
+    }
+    return switch (status.reason) {
+      'noLocalLyrics' => t('No local lyrics found for "{title}".', {
+          'title': currentTrack.title,
+        }),
+      'needsMetadata' =>
+        t('Track needs title, artist, album, and duration metadata to share.'),
+      'onLrclib' => t('Lyrics for "{title}" are already on LRCLIB.', {
+          'title': currentTrack.title,
+        }),
+      'otherSource' => t('Only local .lrc or embedded lyrics can be shared.'),
+      'offline' => t('Network access for lyrics is currently disabled.'),
+      'busy' => t('Sharing lyrics to LRCLIB...'),
+      _ => currentTrack.title,
+    };
+  }
+
+  Widget _buildUpdatesSection(PlayerController ctrl) {
+    final info = ctrl.updateInfo;
+    final checking = ctrl.checkingUpdate;
+
+    return _SettingsSection(
+      title: t('Updates'),
+      subtitle: info != null
+          ? t('Current version: {v}', {'v': info.currentVersion})
+          : t('Check GitHub releases for a newer version of NeoModern'),
+      trailing: OutlinedButton.icon(
+        onPressed: checking ? null : ctrl.checkForUpdate,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.textPrimary,
+          side: const BorderSide(color: AppColors.border),
+        ),
+        icon: checking
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.system_update_alt_rounded, size: 16),
+        label: Text(checking ? t('Checking...') : t('Check for updates')),
+      ),
+      children: [
+        if (info == null)
+          Text(
+            t('Click "Check for updates" to verify whether a new version is available.'),
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textSecondary,
+            ),
+          )
+        else ...[
+          Row(
+            children: [
+              Icon(
+                info.updateAvailable
+                    ? Icons.new_releases_rounded
+                    : Icons.check_circle_outline_rounded,
+                size: 18,
+                color: info.updateAvailable
+                    ? AppColors.accent
+                    : const Color(0xFF30A46C),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  info.updateAvailable
+                      ? t('Update available: {latest} (current {current})', {
+                          'latest': info.version ?? t('new version'),
+                          'current': info.currentVersion,
+                        })
+                      : t('You are up to date ({v}).', {
+                          'v': info.currentVersion,
+                        }),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (info.url != null && info.url!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.canvas,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      info.url!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: t('Copy URL'),
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.copy_rounded,
+                      size: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: () =>
+                        _copyToClipboard(info.url!, t('Release URL copied')),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  ButtonStyle _segmentedButtonStyle() {
+    return ButtonStyle(
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return AppColors.accentMuted;
+        }
+        return AppColors.canvas;
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return AppColors.accent;
+        }
+        return AppColors.textSecondary;
+      }),
+      side: WidgetStateProperty.all(
+        const BorderSide(color: AppColors.border),
       ),
     );
   }
@@ -669,9 +1402,9 @@ class _SettingsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Column(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final titleColumn = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -691,10 +1424,29 @@ class _SettingsSection extends StatelessWidget {
                       ),
                     ),
                 ],
-              ),
-              const Spacer(),
-              ?trailing,
-            ],
+              );
+
+              if (trailing == null) {
+                return titleColumn;
+              }
+              if (constraints.maxWidth < 460) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleColumn,
+                    const SizedBox(height: 10),
+                    trailing!,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: titleColumn),
+                  const SizedBox(width: 12),
+                  trailing!,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
           ...children,
@@ -709,42 +1461,352 @@ class _SettingRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.trailing,
+    this.stackOnNarrow = false,
   });
 
   final String title;
   final String subtitle;
   final Widget trailing;
+  final bool stackOnNarrow;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final labelColumn = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        );
+
+        if (stackOnNarrow && constraints.maxWidth < 460) {
+          return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textPrimary,
+              labelColumn,
+              const SizedBox(height: 10),
+              trailing,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: labelColumn),
+            const SizedBox(width: 16),
+            trailing,
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ToolBadge extends StatelessWidget {
+  const _ToolBadge({
+    required this.label,
+    required this.available,
+    required this.managed,
+  });
+
+  final String label;
+  final bool available;
+  final bool managed;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = available ? const Color(0xFF30A46C) : AppColors.textMuted;
+    final suffix = available
+        ? (managed ? ' · ${t('managed')}' : ' · ${t('ready')}')
+        : ' · ${t('missing')}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: available
+              ? const Color(0xFF30A46C).withAlpha(110)
+              : AppColors.border,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            available
+                ? Icons.check_circle_rounded
+                : Icons.error_outline_rounded,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$label$suffix',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: available ? AppColors.textPrimary : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolInstallProgressBanner extends StatelessWidget {
+  const _ToolInstallProgressBanner({required this.progress});
+
+  final ToolInstallState progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = progress.total;
+    final hasTotal = total != null && total > BigInt.zero;
+    final fraction = hasTotal
+        ? (progress.received.toDouble() / total.toDouble()).clamp(0.0, 1.0)
+        : null;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${progress.tool}: ${progress.stage}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
-              const SizedBox(height: 2),
+              if (hasTotal)
+                Text(
+                  '${(fraction! * 100).round()}%',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.accent,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          LinearProgressIndicator(
+            value: fraction,
+            backgroundColor: AppColors.surface,
+            color: AppColors.accent,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DownloadJobCard extends StatelessWidget {
+  const _DownloadJobCard({
+    required this.job,
+    required this.onCancel,
+  });
+
+  final UiDownloadJob job;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = job.state == 'queued' || job.state == 'downloading';
+    final total = job.totalTracks;
+    final fraction =
+        total > 0 ? (job.doneTracks / total).clamp(0.0, 1.0) : null;
+    final stateColor = switch (job.state) {
+      'done' => const Color(0xFF30A46C),
+      'failed' => AppColors.danger,
+      'cancelled' => AppColors.textMuted,
+      _ => AppColors.accent,
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      job.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (job.artist.isNotEmpty)
+                      Text(
+                        job.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  total > 1
+                      ? '${job.state} (${job.doneTracks}/$total)'
+                      : job.state,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: stateColor,
+                  ),
+                ),
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: t('Cancel'),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: AppColors.textSecondary,
+                  ),
+                  onPressed: onCancel,
+                ),
+              ],
+            ],
+          ),
+          if (isActive) ...[
+            if (job.currentTrack != null && job.currentTrack!.isNotEmpty) ...[
+              const SizedBox(height: 4),
               Text(
-                subtitle,
+                job.currentTrack!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
+                  fontSize: 11.5,
+                  color: AppColors.textMuted,
                 ),
               ),
             ],
-          ),
+            const SizedBox(height: 6),
+            LinearProgressIndicator(
+              value: job.state == 'downloading' && total > 1 ? fraction : null,
+              backgroundColor: AppColors.surface,
+              color: AppColors.accent,
+            ),
+          ] else if (job.state == 'failed' &&
+              job.error != null &&
+              job.error!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              job.error!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11.5, color: AppColors.danger),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CoverageChip extends StatelessWidget {
+  const _CoverageChip({
+    required this.label,
+    required this.count,
+    this.accent = false,
+  });
+
+  final String label;
+  final String count;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: accent ? AppColors.accent.withAlpha(90) : AppColors.border,
         ),
-        const SizedBox(width: 16),
-        trailing,
-      ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            count,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: accent ? AppColors.accent : AppColors.textPrimary,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

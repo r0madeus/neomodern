@@ -448,6 +448,91 @@ class AppStrings {
     'Choose Folder': 'Klasör Seç',
     'No default Music folder was detected automatically.':
         'Varsayılan Müzik klasörü otomatik olarak algılanamadı.',
+
+    // Online search, tools & downloads
+    'Online Search': 'Çevrimiçi Ara',
+    'Online Albums': 'Çevrimiçi Albümler',
+    'Online Songs': 'Çevrimiçi Şarkılar',
+    'Search online music...': 'Çevrimiçi müzik ara...',
+    'Search online albums and songs...': 'Çevrimiçi albüm ve şarkı ara...',
+    'Auto-install': 'Otomatik kur',
+    'Installing...': 'Kuruluyor...',
+    'Installing {tool}...': '{tool} kuruluyor...',
+    'Downloads': 'İndirilenler',
+    'Download': 'İndir',
+    'Download Track': 'Parçayı İndir',
+    'Download Album': 'Albümü İndir',
+    'Download Folder': 'İndirme Klasörü',
+    'Select download folder': 'İndirme klasörü seç',
+    'No active downloads.': 'Etkin indirme yok.',
+    'Clear Finished': 'Tamamlananları Temizle',
+    'Queued': 'Sırada',
+    'Downloading': 'İndiriliyor',
+    'Failed': 'Başarısız',
+    'Cancelled': 'İptal edildi',
+    'yt-dlp path': 'yt-dlp yolu',
+    'yt-dlp & FFmpeg': 'yt-dlp ve FFmpeg',
+    'Available': 'Kullanılabilir',
+    'Not installed': 'Kurulu değil',
+
+    // Artist enrichment
+    'Fetch artist info': 'Sanatçı bilgisini getir',
+    'Fetch Artist Info': 'Sanatçı Bilgisini Getir',
+    'Enrich all artists': 'Tüm sanatçıları zenginleştir',
+    'Enrich All Artists': 'Tüm Sanatçıları Zenginleştir',
+    'Enriching artists...': 'Sanatçılar zenginleştiriliyor...',
+    'Enriching artists ({done}/{total})':
+        'Sanatçılar zenginleştiriliyor ({done}/{total})',
+    'Artist Enrichment': 'Sanatçı Zenginleştirme',
+    'About Artist': 'Sanatçı Hakkında',
+    'Biography': 'Biyografi',
+    'Discography': 'Diskografi',
+
+    // Network & Privacy
+    'Network & Privacy': 'Ağ ve Gizlilik',
+    'Offline mode': 'Çevrimdışı mod',
+    'Online search & streaming': 'Çevrimiçi arama ve dinleme',
+    'Lyrics lookup': 'Şarkı sözü arama',
+    'Artist info & bio': 'Sanatçı bilgisi ve biyografi',
+    'Metadata matching': 'Meta veri eşleştirme',
+    'Update checks': 'Güncelleme denetimleri',
+    'Save fetched lyrics': 'Bulunan sözleri kaydet',
+    'Sidecar (.lrc)': 'Yan dosya (.lrc)',
+    'Embed in audio file': 'Ses dosyasına göm',
+    'Do not save': 'Kaydetme',
+    'NetEase lyrics fallback': 'NetEase şarkı sözü yedeği',
+
+    // Lyrics coverage & sharing
+    'Lyrics Coverage': 'Şarkı Sözü Kapsamı',
+    'With lyrics': 'Sözlü',
+    'Without lyrics': 'Sözsüz',
+    'Unchecked': 'Denetlenmemiş',
+    'Save Cached Lyrics': 'Önbellekteki Sözleri Kaydet',
+    'Saved {saved} · Skipped {skipped}': '{saved} kaydedildi · {skipped} atlandı',
+    'Attach .lrc File...': '.lrc Dosyası Ekle...',
+    'Select .lrc file': '.lrc dosyası seç',
+    'Share lyrics to LRCLIB': 'Sözleri LRCLIB ile paylaş',
+    'Share Lyrics to LRCLIB': 'Sözleri LRCLIB ile Paylaş',
+    'Cancel Sharing': 'Paylaşımı İptal Et',
+    'Published to LRCLIB': 'LRCLIB\'de yayınlandı',
+    'Already on LRCLIB': 'Zaten LRCLIB\'de mevcut',
+
+    // Single-track metadata match
+    'Match track metadata': 'Parça meta verisini eşleştir',
+    'Match Track Metadata': 'Parça Meta Verisini Eşleştir',
+    'No matching tracks found on MusicBrainz.':
+        'MusicBrainz\'te eşleşen parça bulunamadı.',
+    'Track Candidates': 'Parça Adayları',
+
+    // About & Updates
+    'About': 'Hakkında',
+    'Version': 'Sürüm',
+    'Check for updates': 'Güncellemeleri denetle',
+    'Check for Updates': 'Güncellemeleri Denetle',
+    'Checking for updates...': 'Güncellemeler denetleniyor...',
+    'You are up to date': 'Uygulama güncel',
+    'Update available: {version}': 'Güncelleme mevcut: {version}',
+    'View Release': 'Sürümü Görüntüle',
   };
 }
 

@@ -9,6 +9,34 @@ import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart' as rust_api;
 import 'package:path_provider/path_provider.dart';
 
+/// Progress state for installing managed online tools (`ytdlp`, `ffmpeg`).
+class ToolInstallState {
+  final String tool;
+  final String stage;
+  final BigInt received;
+  final BigInt? total;
+
+  const ToolInstallState({
+    required this.tool,
+    required this.stage,
+    required this.received,
+    this.total,
+  });
+
+  @override
+  int get hashCode => Object.hash(tool, stage, received, total);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ToolInstallState &&
+          runtimeType == other.runtimeType &&
+          tool == other.tool &&
+          stage == other.stage &&
+          received == other.received &&
+          total == other.total;
+}
+
 class PlayerController extends ChangeNotifier {
   static const int _pageSize = 100;
   static const int _albumPageSize = 60;
@@ -98,6 +126,17 @@ class PlayerController extends ChangeNotifier {
   UiLyrics? _currentLyrics;
   String? _lyricsTrackPath;
   bool _lyricsLoading = false;
+  UiLyricsCoverage? _lyricsCoverage;
+  UiLyricsShareStatus? _lyricsShareStatus;
+
+  // Online, Downloads, Artist Enrichment, Network Settings, and Updates
+  UiOnlineStatus? _onlineStatus;
+  List<UiDownloadJob> _downloads = const [];
+  UiNetSettings? _netSettings;
+  UiArtistScanProgress? _artistScanProgress;
+  ToolInstallState? _toolInstallProgress;
+  UiUpdateInfo? _updateInfo;
+  bool _checkingUpdate = false;
 
   // Profiles, Sync, Party Queue, and External Sources
   UiProfilesState? _profilesState;
@@ -153,6 +192,16 @@ class PlayerController extends ChangeNotifier {
   List<UiPlaylistInfo> get playlists => _playlists;
   UiLyrics? get currentLyrics => _currentLyrics;
   bool get lyricsLoading => _lyricsLoading;
+  UiLyricsCoverage? get lyricsCoverage => _lyricsCoverage;
+  UiLyricsShareStatus? get lyricsShareStatus => _lyricsShareStatus;
+
+  UiOnlineStatus? get onlineStatus => _onlineStatus;
+  List<UiDownloadJob> get downloads => _downloads;
+  UiNetSettings? get netSettings => _netSettings;
+  UiArtistScanProgress? get artistScanProgress => _artistScanProgress;
+  ToolInstallState? get toolInstallProgress => _toolInstallProgress;
+  UiUpdateInfo? get updateInfo => _updateInfo;
+  bool get checkingUpdate => _checkingUpdate;
 
   UiProfilesState? get profilesState => _profilesState;
   bool get isProfileLocked => _profilesState?.locked ?? false;
@@ -219,6 +268,11 @@ class PlayerController extends ChangeNotifier {
       _initialized = true;
       _initError = null;
       notifyListeners();
+
+      unawaited(refreshOnlineStatus());
+      unawaited(refreshDownloads());
+      unawaited(refreshNetSettings());
+      unawaited(refreshArtistEnrichStatus());
     } catch (e) {
       _initError = e.toString();
       notifyListeners();
@@ -269,6 +323,45 @@ class PlayerController extends ChangeNotifier {
         notifyListeners();
       case UiEvent_SyncChanged():
         unawaited(_onSyncChanged());
+      case UiEvent_DownloadsChanged():
+        unawaited(_onDownloadsChanged());
+      case UiEvent_ArtistScanProgress(
+          :final running,
+          :final total,
+          :final done,
+          :final current,
+          :final error,
+        ):
+        _artistScanProgress = UiArtistScanProgress(
+          running: running,
+          done: done,
+          total: total,
+          updated: _artistScanProgress?.updated ?? 0,
+          current: current,
+          cancelled: _artistScanProgress?.cancelled ?? false,
+          error: error,
+        );
+        notifyListeners();
+        if (!running) {
+          unawaited(refreshArtistEnrichStatus());
+        }
+      case UiEvent_ToolInstallProgress(
+          :final tool,
+          :final stage,
+          :final received,
+          :final total,
+        ):
+        if (stage == 'done') {
+          _toolInstallProgress = null;
+        } else {
+          _toolInstallProgress = ToolInstallState(
+            tool: tool,
+            stage: stage,
+            received: received,
+            total: total,
+          );
+        }
+        notifyListeners();
       case UiEvent_Error(:final field0):
         _lastError = field0;
         notifyListeners();
@@ -363,6 +456,7 @@ class PlayerController extends ChangeNotifier {
     if (snap.current?.path != prevPath) {
       _refreshCurrentCover(snap.current?.path);
       _currentLyrics = null;
+      _lyricsShareStatus = null;
       _lyricsTrackPath = snap.current?.path;
       unawaited(refreshLyrics());
       unawaited(_refreshHome());
@@ -616,12 +710,15 @@ class PlayerController extends ChangeNotifier {
     );
   }
 
-  Future<void> setOfflineMode(bool offline) async {
+  Future<void> setOfflineMode(bool enabled) async {
+    if (!_initialized) return;
     try {
-      await settingsSetOffline(offline: offline);
-      _offlineMode = offline;
+      final settings = await appSetOfflineMode(enabled: enabled);
+      _applyNetSettings(settings);
       notifyListeners();
-      if (!offline && _snapshot.current != null && _currentLyrics?.found != true) {
+      if (!enabled &&
+          _snapshot.current != null &&
+          _currentLyrics?.found != true) {
         unawaited(refreshLyrics());
       }
     } catch (e) {
@@ -967,7 +1064,12 @@ class PlayerController extends ChangeNotifier {
   }
 
   // Lyrics
-  Future<void> refreshLyrics() async {
+  Future<void> refreshLyrics() => _loadLyrics(force: false);
+
+  Future<void> refreshLyricsForCurrent() => _loadLyrics(force: true);
+
+  Future<void> _loadLyrics({required bool force}) async {
+    if (!_initialized) return;
     final current = _snapshot.current;
     if (current == null) {
       _currentLyrics = null;
@@ -981,13 +1083,21 @@ class PlayerController extends ChangeNotifier {
     _lyricsLoading = true;
     notifyListeners();
     try {
-      final res = await lyricsForTrack(
-        path: current.path,
-        title: current.title,
-        artist: current.artist,
-        album: '',
-        durationSecs: _snapshot.durationSeconds,
-      );
+      final res = await (force
+          ? lyricsForTrackRefresh(
+              path: current.path,
+              title: current.title,
+              artist: current.artist,
+              album: '',
+              durationSecs: _snapshot.durationSeconds,
+            )
+          : lyricsForTrack(
+              path: current.path,
+              title: current.title,
+              artist: current.artist,
+              album: '',
+              durationSecs: _snapshot.durationSeconds,
+            ));
       if (_lyricsTrackPath != targetPath) return;
       _currentLyrics = res;
     } catch (e) {
@@ -999,6 +1109,80 @@ class PlayerController extends ChangeNotifier {
         _lyricsLoading = false;
         notifyListeners();
       }
+    }
+  }
+
+  Future<UiBulkSaveOutcome?> saveCachedLyrics() async {
+    if (!_initialized) return null;
+    try {
+      return await lyricsSaveCached();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> attachLyricsFile(String audioPath, String lrcPath) async {
+    if (!_initialized) return;
+    try {
+      final res = await lyricsAttachFile(
+        audioPath: audioPath,
+        lrcPath: lrcPath,
+      );
+      if (_snapshot.current?.path == audioPath) {
+        _currentLyrics = res;
+        _lyricsTrackPath = audioPath;
+      }
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshLyricsCoverage() async {
+    if (!_initialized) return;
+    try {
+      _lyricsCoverage = await rust_api.lyricsCoverage();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshLyricsShareStatus() async {
+    if (!_initialized) return;
+    try {
+      _lyricsShareStatus = await rust_api.lyricsShareStatus();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> shareLyrics() async {
+    if (!_initialized) return;
+    try {
+      _lyricsShareStatus = await rust_api.lyricsShare();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> cancelLyricsShare() async {
+    if (!_initialized) return;
+    try {
+      await lyricsShareCancel();
+      _lyricsShareStatus = await rust_api.lyricsShareStatus();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
     }
   }
 
@@ -1742,6 +1926,239 @@ class PlayerController extends ChangeNotifier {
 
   Future<bool> canUndoMetadata() {
     return metadataCanUndo();
+  }
+
+  Future<List<UiTrackMatchCandidate>> matchTrackMetadata(
+    PlatformInt64 trackId,
+  ) {
+    if (!_initialized) return Future.value(const []);
+    return metadataMatchTrack(trackId: trackId);
+  }
+
+  Future<int> applyTrackMetadata(
+    PlatformInt64 trackId,
+    String candidateId,
+  ) async {
+    if (!_initialized) return 0;
+    final updated = await metadataApplyTrack(
+      trackId: trackId,
+      candidateId: candidateId,
+    );
+    await _onLibraryChanged();
+    return updated;
+  }
+
+  // Artist Enrichment
+  Future<UiArtistDetail?> enrichArtist(String name) async {
+    if (!_initialized) return null;
+    try {
+      return await artistEnrich(name: name);
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> enrichAllArtists() async {
+    if (!_initialized) return;
+    try {
+      _artistScanProgress = await artistEnrichAll();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshArtistEnrichStatus() async {
+    if (!_initialized) return;
+    try {
+      _artistScanProgress = await artistEnrichStatus();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> cancelArtistEnrich() async {
+    if (!_initialized) return;
+    try {
+      await artistEnrichCancel();
+      _artistScanProgress = await artistEnrichStatus();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  // Online Search, Playback, Tools & Downloads
+  Future<void> _runOnlineStatusCmd(
+    Future<UiOnlineStatus> Function() fn, {
+    bool clearInstallProgress = false,
+  }) async {
+    if (!_initialized) return;
+    try {
+      _onlineStatus = await fn();
+    } catch (e) {
+      _lastError = e.toString();
+    } finally {
+      if (clearInstallProgress) {
+        _toolInstallProgress = null;
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshOnlineStatus() =>
+      _runOnlineStatusCmd(() => rust_api.onlineStatus());
+
+  Future<void> setOnlineDownloadDir(String dir) =>
+      _runOnlineStatusCmd(() => onlineSetDownloadDir(dir: dir));
+
+  Future<void> setOnlineYtdlpPath(String? path) =>
+      _runOnlineStatusCmd(() => onlineSetYtdlpPath(path: path));
+
+  Future<void> installOnlineTool(String tool) => _runOnlineStatusCmd(
+        () => onlineInstallTool(tool: tool),
+        clearInstallProgress: true,
+      );
+
+  Future<UiOnlineSearchResult> searchOnline(String query) {
+    if (!_initialized) {
+      return Future.value(
+        const UiOnlineSearchResult(albums: [], tracks: []),
+      );
+    }
+    return onlineSearch(query: query);
+  }
+
+  Future<UiOnlineAlbumDetail> fetchOnlineAlbumDetail(UiOnlineAlbum album) {
+    if (!_initialized) {
+      return Future.value(UiOnlineAlbumDetail(album: album, tracks: const []));
+    }
+    return onlineAlbumDetail(album: album);
+  }
+
+  Future<void> playOnlineTracks(
+    List<UiOnlineTrack> tracks, {
+    int startIndex = 0,
+  }) async {
+    if (!_initialized || tracks.isEmpty) return;
+    await _runPlayerCmd(
+      () => onlinePlayTracks(tracks: tracks, startIndex: startIndex),
+    );
+  }
+
+  Future<UiDownloadJob?> downloadOnlineTrack(UiOnlineTrack track) async {
+    if (!_initialized) return null;
+    try {
+      final job = await onlineDownloadTrack(track: track);
+      _downloads = await onlineDownloads();
+      notifyListeners();
+      return job;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<UiDownloadJob?> downloadOnlineAlbum(
+    UiOnlineAlbum album,
+    List<UiOnlineTrack> tracks,
+  ) async {
+    if (!_initialized) return null;
+    try {
+      final job = await onlineDownloadAlbum(album: album, tracks: tracks);
+      _downloads = await onlineDownloads();
+      notifyListeners();
+      return job;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> _runDownloadsCmd(
+    Future<List<UiDownloadJob>> Function() fn,
+  ) async {
+    if (!_initialized) return;
+    try {
+      _downloads = await fn();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> _onDownloadsChanged() async {
+    if (!_initialized) return;
+    try {
+      _downloads = await onlineDownloads();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> refreshDownloads() => _runDownloadsCmd(onlineDownloads);
+
+  Future<void> cancelDownload(BigInt id) =>
+      _runDownloadsCmd(() => onlineCancelDownload(id: id));
+
+  Future<void> clearFinishedDownloads() =>
+      _runDownloadsCmd(onlineClearFinished);
+
+  // Network & Privacy Settings
+  void _applyNetSettings(UiNetSettings settings) {
+    _netSettings = settings;
+    _offlineMode = settings.offlineMode;
+  }
+
+  Future<void> _runNetSettingsCmd(Future<UiNetSettings> Function() fn) async {
+    if (!_initialized) return;
+    try {
+      final settings = await fn();
+      _applyNetSettings(settings);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshNetSettings() => _runNetSettingsCmd(appGetNetSettings);
+
+  Future<void> setNetFeature(String feature, bool enabled) =>
+      _runNetSettingsCmd(
+        () => appSetNetFeature(feature: feature, enabled: enabled),
+      );
+
+  Future<void> setLyricsSaveMode(String mode) =>
+      _runNetSettingsCmd(() => appSetLyricsSave(mode: mode));
+
+  Future<void> setLyricsNetease(bool enabled) =>
+      _runNetSettingsCmd(() => appSetLyricsNetease(enabled: enabled));
+
+  // Updates
+  Future<UiUpdateInfo?> checkForUpdate() async {
+    if (!_initialized) return null;
+    _checkingUpdate = true;
+    notifyListeners();
+    try {
+      final info = await appCheckUpdate();
+      _updateInfo = info;
+      return info;
+    } catch (e) {
+      _lastError = e.toString();
+      return null;
+    } finally {
+      _checkingUpdate = false;
+      notifyListeners();
+    }
   }
 
   @override

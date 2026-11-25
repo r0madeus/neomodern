@@ -11,11 +11,20 @@ use neomodern_core::library::{
     scan, tags,
 };
 use neomodern_core::lyrics::save::{self as lyrics_save, SaveMode};
-use neomodern_core::lyrics::{LyricsOptions, LyricsResult, LyricsService, LyricsSource};
+use neomodern_core::lyrics::{
+    BulkSaveOutcome, Coverage, LyricsOptions, LyricsResult, LyricsService, LyricsSource,
+    ShareBlock, ShareOutcome, ShareStatus, attach_local_lrc,
+};
 #[cfg(not(target_os = "android"))]
 use neomodern_core::media_keys::{self, Extra as MediaKeysExtra, MediaKeys};
-use neomodern_core::metadata::{ApplyOutcome, MetadataService, Proposal};
+use neomodern_core::metadata::{ApplyOutcome, MetadataService, Proposal, TrackCandidate};
 use neomodern_core::net::Feature;
+#[cfg(not(target_os = "android"))]
+use neomodern_core::online::tools::Tool;
+use neomodern_core::online::{
+    ArtistScanProgress, DownloadJob, DownloadKind, DownloadRequest, DownloadState, OnlineAlbum,
+    OnlineAlbumDetail, OnlineService, OnlineStatus, OnlineTrack, SearchResults,
+};
 use neomodern_core::player::{Player, PlayerEvent, PlayerSnapshot, Status, TrackInfo};
 use neomodern_core::queue::{RepeatMode, Track};
 use neomodern_core::session::{PinnedKind, PinnedRef, SessionStore, is_stream_url};
@@ -29,6 +38,7 @@ use neomodern_core::sync::service::{PairingOpen, SyncStatus};
 use neomodern_core::sync::{
     EventSink, RemoteFeed, SyncConfig, SyncService, default_device_name, link,
 };
+use neomodern_core::update;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -54,6 +64,7 @@ struct CoreState {
     session: Arc<SessionStore>,
     lyrics: Arc<LyricsService>,
     metadata: Arc<MetadataService>,
+    online: Arc<OnlineService>,
     sync: SyncService,
     profile_lock: AtomicBool,
     source_config_path: PathBuf,
@@ -61,6 +72,7 @@ struct CoreState {
     source_registry: Arc<ProviderRegistry>,
     cover_colors: Mutex<HashMap<String, Option<u32>>>,
     metadata_proposals: Mutex<HashMap<(i64, String), Proposal>>,
+    track_metadata_proposals: Mutex<HashMap<(i64, String), Proposal>>,
     ui_prefs_path: PathBuf,
     ui_prefs: Mutex<UiPrefs>,
     #[cfg(not(target_os = "android"))]
@@ -433,15 +445,19 @@ pub struct UiArtistDetail {
     pub play_count: u64,
     pub listened_ms: u64,
     pub image: Option<String>,
+    pub cover: Option<String>,
     pub bio: Option<String>,
+    pub fetched_at: Option<i64>,
     pub fallback_cover: Option<String>,
     pub popular_tracks: Vec<UiArtistTopTrack>,
     pub albums: Vec<UiAlbumRow>,
     pub tracks: Vec<UiTrackRow>,
+    pub online_albums: Vec<UiOnlineAlbum>,
 }
 
 impl From<ArtistProfile> for UiArtistDetail {
     fn from(a: ArtistProfile) -> Self {
+        let cover = a.image.clone().or_else(|| a.fallback_cover.clone());
         Self {
             name: a.name,
             track_count: a.track_count,
@@ -451,11 +467,14 @@ impl From<ArtistProfile> for UiArtistDetail {
             play_count: a.play_count,
             listened_ms: a.listened_ms,
             image: a.image,
+            cover,
             bio: a.bio,
+            fetched_at: a.fetched_at,
             fallback_cover: a.fallback_cover,
             popular_tracks: a.popular_tracks.into_iter().map(Into::into).collect(),
             albums: a.albums.into_iter().map(Into::into).collect(),
             tracks: a.tracks.into_iter().map(Into::into).collect(),
+            online_albums: Vec::new(),
         }
     }
 }
@@ -1051,6 +1070,314 @@ impl From<ExternalTrack> for UiExternalTrack {
 }
 
 #[derive(Debug, Clone)]
+pub struct UiTrackMatchCandidate {
+    pub candidate_id: String,
+    pub recording_id: String,
+    pub release_id: String,
+    pub release_group_id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub year: Option<i32>,
+    pub country: Option<String>,
+    pub format: Option<String>,
+    pub status: Option<String>,
+    pub score: u8,
+    pub label: String,
+    pub cover_preview: Option<String>,
+    pub track: UiMetadataTrackDiff,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiOnlineStatus {
+    pub ytdlp_available: bool,
+    pub ytdlp_version: Option<String>,
+    pub ffmpeg_available: bool,
+    pub download_dir: String,
+    pub ytdlp_path: Option<String>,
+    pub can_install_tools: bool,
+    pub managed_ytdlp: bool,
+    pub managed_ffmpeg: bool,
+}
+
+impl From<OnlineStatus> for UiOnlineStatus {
+    fn from(s: OnlineStatus) -> Self {
+        Self {
+            ytdlp_available: s.ytdlp_available,
+            ytdlp_version: s.ytdlp_version,
+            ffmpeg_available: s.ffmpeg_available,
+            download_dir: s.download_dir,
+            ytdlp_path: s.ytdlp_path,
+            can_install_tools: s.can_install_tools,
+            managed_ytdlp: s.managed_ytdlp,
+            managed_ffmpeg: s.managed_ffmpeg,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiOnlineAlbum {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub year: Option<i32>,
+    pub track_count: u32,
+    pub cover: Option<String>,
+    pub cover_url: Option<String>,
+    pub source_url: Option<String>,
+}
+
+impl From<OnlineAlbum> for UiOnlineAlbum {
+    fn from(a: OnlineAlbum) -> Self {
+        Self {
+            id: a.id,
+            title: a.title,
+            artist: a.artist,
+            year: a.year,
+            track_count: a.track_count,
+            cover: a.cover,
+            cover_url: a.cover_url,
+            source_url: a.source_url,
+        }
+    }
+}
+
+impl From<UiOnlineAlbum> for OnlineAlbum {
+    fn from(a: UiOnlineAlbum) -> Self {
+        Self {
+            id: a.id,
+            title: a.title,
+            artist: a.artist,
+            year: a.year,
+            track_count: a.track_count,
+            cover: a.cover,
+            cover_url: a.cover_url,
+            source_url: a.source_url,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiOnlineTrack {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub track_no: Option<u32>,
+    pub disc_no: Option<u32>,
+    pub year: Option<i32>,
+    pub duration_seconds: Option<f64>,
+    pub source_url: Option<String>,
+    pub cover: Option<String>,
+    pub cover_url: Option<String>,
+}
+
+impl From<OnlineTrack> for UiOnlineTrack {
+    fn from(t: OnlineTrack) -> Self {
+        Self {
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            album_artist: t.album_artist,
+            track_no: t.track_no,
+            disc_no: t.disc_no,
+            year: t.year,
+            duration_seconds: t.duration_seconds,
+            source_url: t.source_url,
+            cover: t.cover,
+            cover_url: t.cover_url,
+        }
+    }
+}
+
+impl From<UiOnlineTrack> for OnlineTrack {
+    fn from(t: UiOnlineTrack) -> Self {
+        Self {
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            album_artist: t.album_artist,
+            track_no: t.track_no,
+            disc_no: t.disc_no,
+            year: t.year,
+            duration_seconds: t.duration_seconds,
+            source_url: t.source_url,
+            cover: t.cover,
+            cover_url: t.cover_url,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiOnlineSearchResult {
+    pub albums: Vec<UiOnlineAlbum>,
+    pub tracks: Vec<UiOnlineTrack>,
+}
+
+impl From<SearchResults> for UiOnlineSearchResult {
+    fn from(r: SearchResults) -> Self {
+        Self {
+            albums: r.albums.into_iter().map(Into::into).collect(),
+            tracks: r.tracks.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiOnlineAlbumDetail {
+    pub album: UiOnlineAlbum,
+    pub tracks: Vec<UiOnlineTrack>,
+}
+
+impl From<OnlineAlbumDetail> for UiOnlineAlbumDetail {
+    fn from(d: OnlineAlbumDetail) -> Self {
+        Self {
+            album: d.album.into(),
+            tracks: d.tracks.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiDownloadJob {
+    pub id: u64,
+    pub kind: String,
+    pub title: String,
+    pub artist: String,
+    pub cover: Option<String>,
+    pub state: String,
+    pub done_tracks: u32,
+    pub total_tracks: u32,
+    pub current_track: Option<String>,
+    pub error: Option<String>,
+    pub output_dir: Option<String>,
+}
+
+impl From<DownloadJob> for UiDownloadJob {
+    fn from(j: DownloadJob) -> Self {
+        let kind = match j.kind {
+            DownloadKind::Track => "track",
+            DownloadKind::Album => "album",
+        }
+        .to_string();
+        let state = match j.state {
+            DownloadState::Queued => "queued",
+            DownloadState::Downloading => "downloading",
+            DownloadState::Done => "done",
+            DownloadState::Failed => "failed",
+            DownloadState::Cancelled => "cancelled",
+        }
+        .to_string();
+        Self {
+            id: j.id,
+            kind,
+            title: j.title,
+            artist: j.artist,
+            cover: j.cover,
+            state,
+            done_tracks: u32::try_from(j.done_tracks).unwrap_or(u32::MAX),
+            total_tracks: u32::try_from(j.total_tracks).unwrap_or(u32::MAX),
+            current_track: j.current_track,
+            error: j.error,
+            output_dir: j.output_dir,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiArtistScanProgress {
+    pub running: bool,
+    pub done: u32,
+    pub total: u32,
+    pub updated: u32,
+    pub current: Option<String>,
+    pub cancelled: bool,
+    pub error: Option<String>,
+}
+
+impl From<ArtistScanProgress> for UiArtistScanProgress {
+    fn from(p: ArtistScanProgress) -> Self {
+        Self {
+            running: p.scanning,
+            done: p.done,
+            total: p.total,
+            updated: p.updated,
+            current: p.current_artist,
+            cancelled: p.cancelled,
+            error: p.error,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiNetSettings {
+    pub offline_mode: bool,
+    pub online: bool,
+    pub lyrics: bool,
+    pub artist_info: bool,
+    pub metadata: bool,
+    pub updates: bool,
+    pub allow_online: bool,
+    pub allow_lyrics: bool,
+    pub allow_artist_info: bool,
+    pub allow_metadata: bool,
+    pub allow_updates: bool,
+    pub lyrics_save: String,
+    pub lyrics_netease: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiLyricsCoverage {
+    pub with_lyrics: u64,
+    pub without_lyrics: u64,
+    pub unchecked: u64,
+}
+
+impl From<Coverage> for UiLyricsCoverage {
+    fn from(c: Coverage) -> Self {
+        Self {
+            with_lyrics: c.with_lyrics,
+            without_lyrics: c.without_lyrics,
+            unchecked: c.unchecked,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiBulkSaveOutcome {
+    pub saved: u64,
+    pub skipped: u64,
+}
+
+impl From<BulkSaveOutcome> for UiBulkSaveOutcome {
+    fn from(o: BulkSaveOutcome) -> Self {
+        Self {
+            saved: o.saved,
+            skipped: o.skipped,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiLyricsShareStatus {
+    pub available: bool,
+    pub reason: Option<String>,
+    pub outcome: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiUpdateInfo {
+    pub current_version: String,
+    pub update_available: bool,
+    pub version: Option<String>,
+    pub url: Option<String>,
+    pub installable: bool,
+}
+
+#[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum UiEvent {
     State(UiPlayerSnapshot),
@@ -1065,6 +1392,20 @@ pub enum UiEvent {
         done: bool,
     },
     SyncChanged,
+    DownloadsChanged,
+    ArtistScanProgress {
+        running: bool,
+        total: u32,
+        done: u32,
+        current: Option<String>,
+        error: Option<String>,
+    },
+    ToolInstallProgress {
+        tool: String,
+        stage: String,
+        received: u64,
+        total: Option<u64>,
+    },
     Error(String),
 }
 
@@ -1312,7 +1653,12 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
                                         .ok()
                                         .flatten()
                                         .map(|m| m.album),
-                                    cover: state.library.track_cover(path).ok().flatten(),
+                                    cover: state
+                                        .library
+                                        .track_cover(path)
+                                        .ok()
+                                        .flatten()
+                                        .or_else(|| state.online.stream_cover(path)),
                                 });
                             }
                         }
@@ -1421,6 +1767,24 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
                 .with_net_policy(session.net_policy()),
         );
 
+        let default_download_dir = default_music_dir()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| data_path.join("Downloads"))
+            .join("NeoModern");
+        let downloads_tx = event_tx.clone();
+        let online = OnlineService::new(
+            cache_path.join("online-covers"),
+            default_download_dir,
+            Arc::new(move |_jobs| {
+                let _ = downloads_tx.send(UiEvent::DownloadsChanged);
+            }),
+            session.net_policy(),
+        )
+        .with_artist_images_dir(library.artist_images_dir());
+        #[cfg(not(target_os = "android"))]
+        let online = online.with_tools_dir(data_path.join("tools"));
+        let online = Arc::new(online);
+
         let sync = SyncService::new(
             Arc::clone(&library),
             Some(Arc::clone(&player)),
@@ -1465,6 +1829,7 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
             session,
             lyrics,
             metadata,
+            online,
             sync,
             profile_lock,
             source_config_path,
@@ -1472,6 +1837,7 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
             source_registry,
             cover_colors: Mutex::new(HashMap::new()),
             metadata_proposals: Mutex::new(HashMap::new()),
+            track_metadata_proposals: Mutex::new(HashMap::new()),
             ui_prefs_path,
             ui_prefs: Mutex::new(loaded_ui_prefs),
             #[cfg(not(target_os = "android"))]
@@ -1936,10 +2302,15 @@ pub fn library_track_count(search: Option<String>) -> Result<u32, String> {
 }
 
 pub fn library_track_cover(path: String) -> Result<Option<String>, String> {
-    core()?
+    let state = core()?;
+    let local = state
         .library
         .track_cover(&path)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if local.is_some() {
+        return Ok(local);
+    }
+    Ok(state.online.stream_cover(&path))
 }
 
 pub fn library_play_all(
@@ -2345,6 +2716,86 @@ pub fn library_play_artist_from(
         .map_err(|e| e.to_string())
 }
 
+fn prefer_turkish_bio(state: &CoreState) -> bool {
+    state
+        .ui_prefs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .language
+        == "tr"
+}
+
+pub async fn artist_enrich(name: String) -> Result<Option<UiArtistDetail>, String> {
+    let state = core()?;
+    let prefer_tr = prefer_turkish_bio(state);
+    let info = state
+        .online
+        .artist_info(&state.library, &name, prefer_tr)
+        .await?;
+    let profile = state
+        .library
+        .artist_profile(&name)
+        .map_err(|e| e.to_string())?;
+    if profile.track_count == 0
+        && profile.album_count == 0
+        && info.image.is_none()
+        && info.bio.is_none()
+        && info.albums.is_empty()
+    {
+        return Ok(None);
+    }
+    let mut detail: UiArtistDetail = profile.into();
+    if detail.image.is_none() {
+        detail.image = info.image;
+    }
+    if detail.bio.is_none() {
+        detail.bio = info.bio;
+    }
+    detail.cover = detail.image.clone().or_else(|| detail.fallback_cover.clone());
+    detail.online_albums = info.albums.into_iter().map(Into::into).collect();
+    Ok(Some(detail))
+}
+
+pub async fn artist_enrich_all() -> Result<UiArtistScanProgress, String> {
+    let state = core()?;
+    let lib = Arc::clone(&state.library);
+    let online = Arc::clone(&state.online);
+    let prefer_tr = prefer_turkish_bio(state);
+    let lib_tx = state.event_tx.clone();
+    let on_library_changed: Arc<dyn Fn(u64) + Send + Sync> = Arc::new(move |_version| {
+        if let Some(s) = CORE.get() {
+            s.sync.library_changed();
+        }
+        let _ = lib_tx.send(UiEvent::LibraryChanged);
+    });
+    let scan_tx = state.event_tx.clone();
+    let on_artist_scan: Arc<dyn Fn(ArtistScanProgress) + Send + Sync> =
+        Arc::new(move |progress| {
+            let _ = scan_tx.send(UiEvent::ArtistScanProgress {
+                running: progress.scanning,
+                total: progress.total,
+                done: progress.done,
+                current: progress.current_artist,
+                error: progress.error,
+            });
+        });
+    let progress = tokio::task::spawn_blocking(move || {
+        online.start_artist_scan(lib, false, prefer_tr, on_library_changed, on_artist_scan)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(progress.into())
+}
+
+pub fn artist_enrich_status() -> Result<UiArtistScanProgress, String> {
+    Ok(core()?.online.artist_scan_status().into())
+}
+
+pub fn artist_enrich_cancel() -> Result<(), String> {
+    core()?.online.cancel_artist_scan();
+    Ok(())
+}
+
 // ---------------------------------------------------------------------
 // Genres
 // ---------------------------------------------------------------------
@@ -2424,29 +2875,8 @@ pub fn library_play_genre(
 // Lyrics
 // ---------------------------------------------------------------------
 
-pub async fn lyrics_for_track(
-    path: String,
-    title: String,
-    artist: String,
-    _album: String,
-    duration_secs: Option<f64>,
-) -> Result<UiLyrics, String> {
-    let state = core()?;
-    let lib = Arc::clone(&state.library);
-    let lyrics = Arc::clone(&state.lyrics);
-    let opts = LyricsOptions::new(
-        state.session.lyrics_save(),
-        state.session.lyrics_netease() && state.session.net_allowed(Feature::Lyrics),
-        state.player.current_path(),
-    )
-    .with_queue_meta(Some((title, artist)));
-
-    let result = lyrics
-        .for_track_with(lib, path, duration_secs, false, &opts)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(match result {
+fn map_lyrics_result(result: LyricsResult) -> UiLyrics {
+    match result {
         LyricsResult::Synced { source, lines } => UiLyrics {
             found: true,
             is_instrumental: false,
@@ -2481,7 +2911,52 @@ pub async fn lyrics_for_track(
             plain_text: None,
             source: None,
         },
-    })
+    }
+}
+
+async fn lyrics_for_track_inner(
+    path: String,
+    title: String,
+    artist: String,
+    duration_secs: Option<f64>,
+    force: bool,
+) -> Result<UiLyrics, String> {
+    let state = core()?;
+    let lib = Arc::clone(&state.library);
+    let lyrics = Arc::clone(&state.lyrics);
+    let opts = LyricsOptions::new(
+        state.session.lyrics_save(),
+        state.session.lyrics_netease() && state.session.net_allowed(Feature::Lyrics),
+        state.player.current_path(),
+    )
+    .with_queue_meta(Some((title, artist)));
+
+    let result = lyrics
+        .for_track_with(lib, path, duration_secs, force, &opts)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(map_lyrics_result(result))
+}
+
+pub async fn lyrics_for_track(
+    path: String,
+    title: String,
+    artist: String,
+    _album: String,
+    duration_secs: Option<f64>,
+) -> Result<UiLyrics, String> {
+    lyrics_for_track_inner(path, title, artist, duration_secs, false).await
+}
+
+pub async fn lyrics_for_track_refresh(
+    path: String,
+    title: String,
+    artist: String,
+    _album: String,
+    duration_secs: Option<f64>,
+) -> Result<UiLyrics, String> {
+    lyrics_for_track_inner(path, title, artist, duration_secs, true).await
 }
 
 pub fn lyrics_save_lrc(track_path: String, content: String) -> Result<String, String> {
@@ -2501,6 +2976,130 @@ pub fn lyrics_save_lrc(track_path: String, content: String) -> Result<String, St
         upper
     };
     Ok(scan::display_path(&dest))
+}
+
+pub async fn lyrics_save_cached() -> Result<UiBulkSaveOutcome, String> {
+    let state = core()?;
+    let lib = Arc::clone(&state.library);
+    let lyrics = Arc::clone(&state.lyrics);
+    let mode = state.session.lyrics_save();
+    let current = state.player.current_path();
+    let outcome = tokio::task::spawn_blocking(move || {
+        lyrics.save_cached_blocking(&lib, mode, current.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(outcome.into())
+}
+
+pub async fn lyrics_attach_file(audio_path: String, lrc_path: String) -> Result<UiLyrics, String> {
+    let state = core()?;
+    let lib = Arc::clone(&state.library);
+    let result = tokio::task::spawn_blocking(move || {
+        if find_track_id_for_path(&lib, &audio_path)?.is_none() {
+            return Err("track is not in library".to_string());
+        }
+        attach_local_lrc(Path::new(&audio_path), Path::new(&lrc_path)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(map_lyrics_result(result))
+}
+
+pub async fn lyrics_coverage() -> Result<UiLyricsCoverage, String> {
+    let state = core()?;
+    let lib = Arc::clone(&state.library);
+    let lyrics = Arc::clone(&state.lyrics);
+    let coverage = tokio::task::spawn_blocking(move || lyrics.coverage_blocking(&lib))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(coverage.into())
+}
+
+fn share_block_label(reason: ShareBlock) -> String {
+    match reason {
+        ShareBlock::NoLocalLyrics => "noLocalLyrics",
+        ShareBlock::NeedsMetadata => "needsMetadata",
+        ShareBlock::OnLrclib => "onLrclib",
+        ShareBlock::OtherSource => "otherSource",
+        ShareBlock::Offline => "offline",
+        ShareBlock::Busy => "busy",
+    }
+    .to_string()
+}
+
+fn map_share_status(status: ShareStatus) -> UiLyricsShareStatus {
+    UiLyricsShareStatus {
+        available: status.available,
+        reason: status.reason.map(share_block_label),
+        outcome: None,
+    }
+}
+
+pub async fn lyrics_share_status_for(
+    path: String,
+    duration_seconds: Option<f64>,
+) -> Result<UiLyricsShareStatus, String> {
+    let state = core()?;
+    let lib = Arc::clone(&state.library);
+    let lyrics = Arc::clone(&state.lyrics);
+    let status = lyrics
+        .share_status(lib, path, duration_seconds)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(map_share_status(status))
+}
+
+pub async fn lyrics_share_status() -> Result<UiLyricsShareStatus, String> {
+    let state = core()?;
+    let snap = state.player.snapshot();
+    let Some(current) = snap.current else {
+        return Ok(UiLyricsShareStatus {
+            available: false,
+            reason: Some("noTrack".to_string()),
+            outcome: None,
+        });
+    };
+    lyrics_share_status_for(current.path, snap.duration_seconds).await
+}
+
+pub async fn lyrics_share_for(
+    path: String,
+    duration_seconds: Option<f64>,
+) -> Result<UiLyricsShareStatus, String> {
+    let state = core()?;
+    let lib = Arc::clone(&state.library);
+    let lyrics = Arc::clone(&state.lyrics);
+    let outcome = lyrics
+        .share(lib, path, duration_seconds)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(match outcome {
+        ShareOutcome::Published => UiLyricsShareStatus {
+            available: false,
+            reason: Some("onLrclib".to_string()),
+            outcome: Some("published".to_string()),
+        },
+        ShareOutcome::Cancelled => UiLyricsShareStatus {
+            available: true,
+            reason: None,
+            outcome: Some("cancelled".to_string()),
+        },
+    })
+}
+
+pub async fn lyrics_share() -> Result<UiLyricsShareStatus, String> {
+    let state = core()?;
+    let snap = state.player.snapshot();
+    let current = snap
+        .current
+        .ok_or_else(|| "no track is currently playing".to_string())?;
+    lyrics_share_for(current.path, snap.duration_seconds).await
+}
+
+pub fn lyrics_share_cancel() -> Result<(), String> {
+    core()?.lyrics.cancel_share();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -3141,6 +3740,449 @@ pub fn metadata_can_undo() -> Result<bool, String> {
         .tag_history_batch(latest)
         .map_err(|e| e.to_string())?;
     Ok(!rows.is_empty())
+}
+
+fn track_candidate_id(recording_id: &str, release_id: &str) -> String {
+    format!("{recording_id}:{release_id}")
+}
+
+fn cache_track_proposals(state: &CoreState, track_id: i64, candidates: &[TrackCandidate]) {
+    let mut cache = state
+        .track_metadata_proposals
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if cache.len() > 128 {
+        cache.clear();
+    }
+    for cand in candidates {
+        let id = track_candidate_id(&cand.recording_id, &cand.release_id);
+        cache.insert((track_id, id), cand.proposal.clone());
+    }
+}
+
+pub async fn metadata_match_track(track_id: i64) -> Result<Vec<UiTrackMatchCandidate>, String> {
+    let state = core()?;
+    let candidates = state
+        .metadata
+        .match_track(&state.library, track_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    cache_track_proposals(state, track_id, &candidates);
+    Ok(candidates
+        .into_iter()
+        .map(|c| UiTrackMatchCandidate {
+            candidate_id: track_candidate_id(&c.recording_id, &c.release_id),
+            recording_id: c.recording_id,
+            release_id: c.release_id,
+            release_group_id: c.release_group_id,
+            title: c.title,
+            artist: c.artist,
+            album: c.album,
+            year: c.year,
+            country: c.country,
+            format: c.format,
+            status: c.status,
+            score: c.score,
+            label: c.label.to_string(),
+            cover_preview: c.cover_preview,
+            track: UiMetadataTrackDiff {
+                track_id: c.track.track_id,
+                path: c.track.path,
+                title: c.track.title,
+                matched: c.track.matched,
+                fields: c.track.fields.into_iter().map(map_field_diff).collect(),
+            },
+        })
+        .collect())
+}
+
+pub async fn metadata_apply_track(track_id: i64, candidate_id: String) -> Result<u32, String> {
+    let state = core()?;
+    let cached = {
+        let cache = state
+            .track_metadata_proposals
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        cache.get(&(track_id, candidate_id.clone())).cloned().or_else(|| {
+            cache
+                .iter()
+                .find(|((tid, key), _)| {
+                    *tid == track_id
+                        && key
+                            .split_once(':')
+                            .is_some_and(|(rec, rel)| rec == candidate_id || rel == candidate_id)
+                })
+                .map(|(_, p)| p.clone())
+        })
+    };
+    let proposal = match cached {
+        Some(p) => p,
+        None => {
+            let candidates = state
+                .metadata
+                .match_track(&state.library, track_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            cache_track_proposals(state, track_id, &candidates);
+            candidates
+                .into_iter()
+                .find(|c| {
+                    track_candidate_id(&c.recording_id, &c.release_id) == candidate_id
+                        || c.recording_id == candidate_id
+                        || c.release_id == candidate_id
+                })
+                .map(|c| c.proposal)
+                .ok_or_else(|| {
+                    format!("matching candidate {candidate_id} not found for track {track_id}")
+                })?
+        }
+    };
+    let outcome = state
+        .metadata
+        .apply(&state.library, proposal, state.player.current_path())
+        .await
+        .map_err(|e| e.to_string())?;
+    refresh_player_meta(&state.library, &state.player, &outcome.updated_paths);
+    if outcome.cover.is_some() {
+        state
+            .cover_colors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
+    if outcome.updated == 0 && !outcome.failed.is_empty() {
+        let msg = outcome
+            .failed
+            .into_iter()
+            .map(|(p, e)| format!("{p}: {e}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(msg);
+    }
+    Ok(u32::try_from(outcome.updated).unwrap_or(u32::MAX))
+}
+
+// ---------------------------------------------------------------------
+// Online Search, Playback, Downloads & Tools
+// ---------------------------------------------------------------------
+
+async fn current_online_status(state: &CoreState) -> Result<UiOnlineStatus, String> {
+    let store = Arc::clone(&state.session);
+    let lib = Arc::clone(&state.library);
+    let online = Arc::clone(&state.online);
+    let status = tokio::task::spawn_blocking(move || online.status(&store, &lib))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(status.into())
+}
+
+pub async fn online_status() -> Result<UiOnlineStatus, String> {
+    current_online_status(core()?).await
+}
+
+pub async fn online_set_download_dir(dir: String) -> Result<UiOnlineStatus, String> {
+    let state = core()?;
+    let trimmed = dir.trim();
+    let next = (!trimmed.is_empty()).then(|| PathBuf::from(trimmed));
+    state.session.set_download_dir(next);
+    state.session.save_now(&state.player.export_session());
+    current_online_status(state).await
+}
+
+pub async fn online_set_ytdlp_path(path: Option<String>) -> Result<UiOnlineStatus, String> {
+    let state = core()?;
+    let trimmed = path.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if let Some(p) = trimmed
+        && !neomodern_core::online::is_valid_ytdlp_binary_path(Path::new(p))
+    {
+        return Err("invalid yt-dlp executable".into());
+    }
+    state.session.set_ytdlp_path(trimmed.map(PathBuf::from));
+    state.session.save_now(&state.player.export_session());
+    current_online_status(state).await
+}
+
+pub async fn online_install_tool(tool: String) -> Result<UiOnlineStatus, String> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = tool;
+        Err("not available on Android".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let state = core()?;
+        let which = Tool::parse(&tool).ok_or_else(|| format!("unknown tool: {tool}"))?;
+        let tx = state.event_tx.clone();
+        let emit = move |p: neomodern_core::online::tools::InstallProgress| {
+            let tool_name = match p.tool {
+                Tool::Ytdlp => "ytdlp",
+                Tool::Ffmpeg => "ffmpeg",
+            }
+            .to_string();
+            let _ = tx.send(UiEvent::ToolInstallProgress {
+                tool: tool_name,
+                stage: p.stage.to_string(),
+                received: p.received,
+                total: p.total,
+            });
+        };
+        state
+            .online
+            .install_tool(which, &emit)
+            .await
+            .map_err(|e| e.to_string())?;
+        current_online_status(state).await
+    }
+}
+
+pub async fn online_search(query: String) -> Result<UiOnlineSearchResult, String> {
+    let state = core()?;
+    let bin = state.online.resolve_ytdlp_bin(&state.session);
+    state
+        .online
+        .search(&query, &bin)
+        .await
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+pub async fn online_album_detail(album: UiOnlineAlbum) -> Result<UiOnlineAlbumDetail, String> {
+    let state = core()?;
+    let bin = state.online.resolve_ytdlp_bin(&state.session);
+    let core_album: OnlineAlbum = album.into();
+    state
+        .online
+        .album_detail(&core_album, &bin)
+        .await
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+fn online_queue_entry(track: OnlineTrack, stream_url: String) -> Track {
+    Track {
+        path: PathBuf::from(stream_url),
+        title: (!track.title.is_empty()).then_some(track.title),
+        artist: (!track.artist.is_empty()).then_some(track.artist),
+    }
+}
+
+pub async fn online_play_tracks(
+    tracks: Vec<UiOnlineTrack>,
+    start_index: u32,
+) -> Result<UiPlayerSnapshot, String> {
+    let state = core()?;
+    let mut rest = tracks
+        .into_iter()
+        .map(OnlineTrack::from)
+        .skip(start_index as usize);
+    let first = rest.next().ok_or("no track to play")?;
+    let bin = state.online.resolve_ytdlp_bin(&state.session);
+    let (stream_url, _) = state
+        .online
+        .resolve_stream(&first, &bin)
+        .await
+        .map_err(|e| e.to_string())?;
+    let snap = state
+        .player
+        .replace_queue(vec![online_queue_entry(first, stream_url)], 0)
+        .map_err(|e| e.to_string())?;
+    let Some(mut anchor) = snap.current.as_ref().map(|c| c.id) else {
+        return Ok(snap.into());
+    };
+    let rest: Vec<OnlineTrack> = rest.collect();
+    if !rest.is_empty() {
+        let online = Arc::clone(&state.online);
+        let player = Arc::clone(&state.player);
+        tokio::spawn(async move {
+            for track in rest {
+                let title = track.title.clone();
+                let stream_url = match online.resolve_stream(&track, &bin).await {
+                    Ok((url, _)) => url,
+                    Err(e) => {
+                        log::warn!("skipping '{title}': {e}");
+                        continue;
+                    }
+                };
+                match player.insert_after(anchor, online_queue_entry(track, stream_url)) {
+                    Ok(Some(id)) => anchor = id,
+                    Ok(None) => break,
+                    Err(e) => {
+                        log::warn!("could not queue '{title}': {e}");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+    Ok(snap.into())
+}
+
+pub fn online_download_track(track: UiOnlineTrack) -> Result<UiDownloadJob, String> {
+    let state = core()?;
+    let core_track: OnlineTrack = track.into();
+    let title = core_track.title.clone();
+    let artist = core_track.artist.clone();
+    let cover = core_track
+        .cover
+        .clone()
+        .or_else(|| core_track.cover_url.clone());
+    let req = DownloadRequest {
+        kind: DownloadKind::Track,
+        title,
+        artist,
+        cover,
+        tracks: vec![core_track],
+    };
+    state
+        .online
+        .enqueue_download(req, &state.session, &state.library)
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+pub fn online_download_album(
+    album: UiOnlineAlbum,
+    tracks: Vec<UiOnlineTrack>,
+) -> Result<UiDownloadJob, String> {
+    let state = core()?;
+    let cover = album.cover.or(album.cover_url);
+    let req = DownloadRequest {
+        kind: DownloadKind::Album,
+        title: album.title,
+        artist: album.artist,
+        cover,
+        tracks: tracks.into_iter().map(Into::into).collect(),
+    };
+    state
+        .online
+        .enqueue_download(req, &state.session, &state.library)
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+pub fn online_downloads() -> Result<Vec<UiDownloadJob>, String> {
+    Ok(core()?
+        .online
+        .downloads()
+        .into_iter()
+        .map(Into::into)
+        .collect())
+}
+
+pub fn online_cancel_download(id: u64) -> Result<Vec<UiDownloadJob>, String> {
+    let online = &core()?.online;
+    Ok(online
+        .cancel_download(id)
+        .unwrap_or_else(|| online.downloads())
+        .into_iter()
+        .map(Into::into)
+        .collect())
+}
+
+pub fn online_clear_finished() -> Result<Vec<UiDownloadJob>, String> {
+    Ok(core()?
+        .online
+        .clear_finished()
+        .into_iter()
+        .map(Into::into)
+        .collect())
+}
+
+// ---------------------------------------------------------------------
+// Network, Privacy & Update Check
+// ---------------------------------------------------------------------
+
+fn build_net_settings(session: &SessionStore) -> UiNetSettings {
+    let lyrics_save = match session.lyrics_save() {
+        SaveMode::Sidecar => "sidecar",
+        SaveMode::Embed => "embed",
+        SaveMode::Off => "off",
+    }
+    .to_string();
+    UiNetSettings {
+        offline_mode: session.offline_mode(),
+        online: session.net_feature(Feature::Online),
+        lyrics: session.net_feature(Feature::Lyrics),
+        artist_info: session.net_feature(Feature::ArtistInfo),
+        metadata: session.net_feature(Feature::Metadata),
+        updates: session.net_feature(Feature::Updates),
+        allow_online: session.net_allowed(Feature::Online),
+        allow_lyrics: session.net_allowed(Feature::Lyrics),
+        allow_artist_info: session.net_allowed(Feature::ArtistInfo),
+        allow_metadata: session.net_allowed(Feature::Metadata),
+        allow_updates: session.net_allowed(Feature::Updates),
+        lyrics_save,
+        lyrics_netease: session.lyrics_netease(),
+    }
+}
+
+pub fn app_get_net_settings() -> Result<UiNetSettings, String> {
+    Ok(build_net_settings(&core()?.session))
+}
+
+pub fn app_set_net_feature(feature: String, enabled: bool) -> Result<UiNetSettings, String> {
+    let state = core()?;
+    let feat = match feature.trim() {
+        "lyrics" => Feature::Lyrics,
+        "online" => Feature::Online,
+        "artistInfo" | "artist_info" => Feature::ArtistInfo,
+        "metadata" => Feature::Metadata,
+        "updates" => Feature::Updates,
+        other => return Err(format!("unknown network feature: {other}")),
+    };
+    state.session.set_net_feature(feat, enabled);
+    state.session.save_now(&state.player.export_session());
+    Ok(build_net_settings(&state.session))
+}
+
+pub fn app_set_offline_mode(enabled: bool) -> Result<UiNetSettings, String> {
+    let state = core()?;
+    state.session.set_offline_mode(enabled);
+    state.session.save_now(&state.player.export_session());
+    Ok(build_net_settings(&state.session))
+}
+
+pub fn app_set_lyrics_save(mode: String) -> Result<UiNetSettings, String> {
+    let state = core()?;
+    let save_mode = match mode.trim() {
+        "sidecar" => SaveMode::Sidecar,
+        "embed" => SaveMode::Embed,
+        "off" => SaveMode::Off,
+        other => return Err(format!("invalid lyrics save mode: {other}")),
+    };
+    state.session.set_lyrics_save(save_mode);
+    state.session.save_now(&state.player.export_session());
+    Ok(build_net_settings(&state.session))
+}
+
+pub fn app_set_lyrics_netease(enabled: bool) -> Result<UiNetSettings, String> {
+    let state = core()?;
+    state.session.set_lyrics_netease(enabled);
+    state.session.save_now(&state.player.export_session());
+    Ok(build_net_settings(&state.session))
+}
+
+pub async fn app_check_update() -> Result<UiUpdateInfo, String> {
+    let state = core()?;
+    let current = neomodern_core::VERSION.to_string();
+    let policy = state.session.net_policy();
+    let found = update::check(&current, &policy).await?;
+    Ok(match found {
+        Some(info) => UiUpdateInfo {
+            current_version: current,
+            update_available: true,
+            version: Some(info.version),
+            url: Some(info.url),
+            installable: info.installable,
+        },
+        None => UiUpdateInfo {
+            current_version: current,
+            update_available: false,
+            version: None,
+            url: None,
+            installable: false,
+        },
+    })
 }
 
 // ---------------------------------------------------------------------

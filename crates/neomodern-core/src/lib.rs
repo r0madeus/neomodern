@@ -1,3 +1,5 @@
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod audio;
 pub mod autoplay;
 pub mod diagnostics;
@@ -7,6 +9,7 @@ pub mod lyrics;
 pub mod media_keys;
 pub mod metadata;
 pub mod net;
+pub mod online;
 pub mod player;
 pub mod queue;
 pub mod session;

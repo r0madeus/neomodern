@@ -2791,6 +2791,7 @@ dependencies = [
  "hound",
  "image",
  "libmpv2",
+ "libmpv2-sys",
  "lofty",
  "log",
  "qrcode",

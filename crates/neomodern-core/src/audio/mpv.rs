@@ -223,11 +223,128 @@ fn path_str(path: &Path) -> EngineResult<&str> {
         .ok_or_else(|| EngineError::Command(format!("path is not valid UTF-8: {}", path.display())))
 }
 
+#[cfg(target_os = "linux")]
+fn system_ca_bundle() -> Option<&'static str> {
+    const CANDIDATES: &[&str] = &[
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/ca-bundle.pem",
+        "/etc/ssl/cert.pem",
+    ];
+    CANDIDATES.iter().copied().find(|p| Path::new(p).is_file())
+}
+
+fn request_log_messages(mpv: &Mpv, min_level: &str) -> EngineResult<()> {
+    let level = std::ffi::CString::new(min_level)
+        .map_err(|e| EngineError::Init(format!("log level {min_level}: {e}")))?;
+    // SAFETY: `mpv.ctx` is a valid, initialized `mpv_handle` owned by `mpv`,
+    // and `level` is a NUL-terminated C string valid for the call.
+    let rc = unsafe { libmpv2_sys::mpv_request_log_messages(mpv.ctx.as_ptr(), level.as_ptr()) };
+    if rc < 0 {
+        return Err(EngineError::Init(format!(
+            "request_log_messages({min_level}): mpv error {rc}"
+        )));
+    }
+    Ok(())
+}
+
+/// Short, query-free display name for error messages so signed stream URLs
+/// never leak long query tokens into the UI.
+pub(crate) fn display_target_name(path: &Path) -> String {
+    let raw = path.to_string_lossy();
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        let without_query = raw
+            .split(['?', '#'])
+            .next()
+            .unwrap_or(&raw)
+            .trim_end_matches('/');
+        if without_query.is_empty() {
+            return "stream".into();
+        }
+        if without_query.chars().count() <= 80 {
+            return without_query.to_owned();
+        }
+        if let Some((scheme, rest)) = without_query.split_once("://") {
+            let host = rest.split('/').next().unwrap_or("");
+            if !host.is_empty() {
+                return format!("{scheme}://{host}");
+            }
+        }
+        return "stream".into();
+    }
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| raw.into_owned())
+}
+
+fn strip_url_queries(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    loop {
+        let next = match (rest.find("http://"), rest.find("https://")) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) | (None, Some(a)) => Some(a),
+            (None, None) => None,
+        };
+        let Some(pos) = next else {
+            out.push_str(rest);
+            return out;
+        };
+        out.push_str(&rest[..pos]);
+        let after_scheme = &rest[pos..];
+        let end = after_scheme
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '>' | ')'))
+            .unwrap_or(after_scheme.len());
+        let url = &after_scheme[..end];
+        let clean_url = url.split(['?', '#']).next().unwrap_or(url);
+        out.push_str(clean_url);
+        rest = &after_scheme[end..];
+    }
+}
+
+fn is_generic_mpv_error(prefix: &str, msg: &str) -> bool {
+    (prefix == "cplayer" && msg.eq_ignore_ascii_case("Opening failed."))
+        || msg.starts_with("Failed to open ")
+}
+
+fn sanitize_mpv_log(prefix: &str, msg: &str) -> String {
+    let collapsed: String = strip_url_queries(msg)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let full = if prefix.is_empty() {
+        collapsed
+    } else {
+        format!("{prefix}: {collapsed}")
+    };
+    const MAX_LEN: usize = 140;
+    if full.chars().count() <= MAX_LEN {
+        return full;
+    }
+    let truncated: String = full.chars().take(MAX_LEN - 1).collect();
+    format!("{}…", truncated.trim_end())
+}
+
+fn format_playback_error(path: Option<&Path>, reason: &str, detail: Option<&str>) -> String {
+    let base = match path {
+        Some(p) => format!("Could not play {}: {reason}", display_target_name(p)),
+        None => format!("Playback failed: {reason}"),
+    };
+    match detail.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => format!("{base} ({d})"),
+        None => base,
+    }
+}
+
 impl MpvEngine {
     pub fn new(options: MpvOptions, events: Sender<EngineEvent>) -> EngineResult<MpvEngine> {
         let custom_ao = options.audio_output.is_some();
         let mpv = Self::create(&options, true)?;
         let _ = mpv.set_property("access-references", "no");
+        if let Err(e) = request_log_messages(&mpv, "warn") {
+            log::warn!("{e}");
+        }
 
         for (name, format, id) in [
             ("pause", Format::Flag, OBS_PAUSE),
@@ -250,6 +367,8 @@ impl MpvEngine {
             current_path: None,
             started_any: false,
             last_position: None,
+            last_error: None,
+            last_error_generic: false,
         };
         let thread = std::thread::Builder::new()
             .name("mpv-events".into())
@@ -294,6 +413,13 @@ impl MpvEngine {
             i.set_property("input-default-bindings", "no")?;
             i.set_property("terminal", "no")?;
             i.set_property("ytdl", "no")?;
+            i.set_property("user-agent", crate::online::STREAM_USER_AGENT)?;
+            #[cfg(target_os = "linux")]
+            if let Some(ca_bundle) = system_ca_bundle()
+                && let Err(e) = i.set_property("tls-ca-file", ca_bundle)
+            {
+                log::warn!("could not set tls-ca-file={ca_bundle}: {e}");
+            }
             if let Some(ao) = &options.audio_output {
                 i.set_property("ao", ao.as_str())?;
             }
@@ -531,6 +657,8 @@ struct EventLoop {
     current_path: Option<PathBuf>,
     started_any: bool,
     last_position: Option<Instant>,
+    last_error: Option<String>,
+    last_error_generic: bool,
 }
 
 impl EventLoop {
@@ -548,14 +676,14 @@ impl EventLoop {
                     // those as Err without the reason, so the player learns
                     // about it through `Error` (and the following Idle or
                     // TrackStarted).
-                    let what = match &self.current_path {
-                        Some(p) => format!(
-                            "Could not play {}: {}",
-                            p.file_name().unwrap_or_default().to_string_lossy(),
-                            describe(&e)
-                        ),
-                        None => format!("Playback failed: {}", describe(&e)),
-                    };
+                    let reason = describe(&e);
+                    let detail = self.last_error.take();
+                    self.last_error_generic = false;
+                    let what = format_playback_error(
+                        self.current_path.as_deref(),
+                        &reason,
+                        detail.as_deref(),
+                    );
                     self.send(EngineEvent::Error(what));
                 }
                 Some(Ok(ev)) => self.handle(ev),
@@ -580,12 +708,20 @@ impl EventLoop {
                 }
             }
             Event::FileLoaded => {
+                self.last_error = None;
+                self.last_error_generic = false;
                 // Observed `duration` only reports changes: two tracks of the
                 // same length in a row would produce no event, so read it.
                 if let Ok(seconds) = self.mpv.get_property::<f64>("duration") {
                     self.send(EngineEvent::Duration { seconds });
                 }
             }
+            Event::LogMessage {
+                prefix,
+                level: _,
+                text,
+                log_level,
+            } => self.on_log_message(prefix, text, log_level),
             Event::Seek | Event::PlaybackRestart => {
                 if let Ok(seconds) = self.mpv.get_property::<f64>("time-pos") {
                     self.last_position = Some(Instant::now());
@@ -601,9 +737,33 @@ impl EventLoop {
         }
     }
 
+    fn on_log_message(&mut self, prefix: &str, text: &str, log_level: libmpv2::LogLevel) {
+        let msg = text.trim();
+        if msg.is_empty() {
+            return;
+        }
+        match log_level {
+            libmpv2::mpv_log_level::Fatal | libmpv2::mpv_log_level::Error => {
+                let sanitized = sanitize_mpv_log(prefix, msg);
+                log::error!("mpv {sanitized}");
+                let generic = is_generic_mpv_error(prefix, msg);
+                if self.last_error.is_none() || (self.last_error_generic && !generic) {
+                    self.last_error = Some(sanitized);
+                    self.last_error_generic = generic;
+                }
+            }
+            libmpv2::mpv_log_level::Warn => {
+                log::warn!("mpv {}: {}", prefix, strip_url_queries(msg));
+            }
+            _ => {}
+        }
+    }
+
     fn on_start_file(&mut self) {
         self.started_any = true;
         self.last_position = None;
+        self.last_error = None;
+        self.last_error_generic = false;
         let started = {
             let mut slots = lock_slots(&self.slots);
             self.started_entry(&mut slots)
@@ -693,5 +853,60 @@ impl EventLoop {
                 let _ = name;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_target_name_strips_query_and_fragment_from_urls() {
+        let stream = Path::new(
+            "https://rr1---sn-4g5e6n7d.googlevideo.com/videoplayback?expire=1764000000&ei=abc&ip=1.2.3.4&sig=xyz#frag",
+        );
+        assert_eq!(
+            display_target_name(stream),
+            "https://rr1---sn-4g5e6n7d.googlevideo.com/videoplayback"
+        );
+
+        let http_stream = Path::new("http://stream.example.com/live/audio.aac?token=secret");
+        assert_eq!(
+            display_target_name(http_stream),
+            "http://stream.example.com/live/audio.aac"
+        );
+
+        let long_path = Path::new(
+            "https://cdn.example.com/very/long/signed/path/segment/that/exceeds/eighty/characters/audio.m4a?sig=1",
+        );
+        assert_eq!(display_target_name(long_path), "https://cdn.example.com");
+
+        assert_eq!(
+            display_target_name(Path::new("/home/user/Music/01 - Track.flac")),
+            "01 - Track.flac"
+        );
+        assert_eq!(display_target_name(Path::new("song.mp3")), "song.mp3");
+    }
+
+    #[test]
+    fn sanitize_mpv_log_and_format_error_hide_url_queries_and_keep_reason() {
+        let log_line = "Failed to open https://rr1.googlevideo.com/videoplayback?expire=123&sig=abc: HTTP error 403 Forbidden\n";
+        let sanitized = sanitize_mpv_log("ffmpeg", log_line.trim());
+        assert!(!sanitized.contains("expire="));
+        assert!(!sanitized.contains("sig="));
+        assert!(sanitized.contains("HTTP error 403 Forbidden"));
+
+        let err = format_playback_error(
+            Some(Path::new(
+                "https://rr1.googlevideo.com/videoplayback?expire=123&sig=abc",
+            )),
+            "the file could not be loaded",
+            Some("ffmpeg: https: HTTP error 403 Forbidden"),
+        );
+        assert_eq!(
+            err,
+            "Could not play https://rr1.googlevideo.com/videoplayback: the file could not be loaded (ffmpeg: https: HTTP error 403 Forbidden)"
+        );
+        assert!(!err.contains("expire="));
     }
 }

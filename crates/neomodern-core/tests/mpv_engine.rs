@@ -435,3 +435,20 @@ fn crossfade_plays_the_tail_and_the_next_track() {
         log.seen
     );
 }
+
+#[test]
+fn missing_file_emits_error_with_mpv_log_detail() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("does-not-exist.mp3");
+    let (engine, rx) = engine();
+    let mut log = Log::new(rx);
+    engine.load(&missing).unwrap();
+    let ev = log.wait("Error", |e| matches!(e, EngineEvent::Error(_)));
+    let EngineEvent::Error(msg) = ev else {
+        unreachable!()
+    };
+    assert!(
+        msg.starts_with("Could not play does-not-exist.mp3: the file could not be loaded"),
+        "unexpected error message: {msg}"
+    );
+}

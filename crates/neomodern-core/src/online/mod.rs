@@ -29,6 +29,9 @@ pub mod tools;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(12);
 const USER_AGENT: &str = concat!("NeoModern/", env!("CARGO_PKG_VERSION"));
+/// Shared desktop User-Agent passed to both `yt-dlp` and `libmpv` when
+/// resolving and playing online audio streams so CDN tokens match.
+pub const STREAM_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
 const MAX_COVER_DOWNLOAD_BYTES: usize = 15 * 1024 * 1024;
 /// Small JSON APIs (Deezer, Wikipedia).
 const MAX_SMALL_JSON_BYTES: usize = 1024 * 1024;
@@ -727,15 +730,7 @@ impl OnlineService {
         let track = track.clone();
         let stream_url = tokio::task::spawn_blocking(move || {
             let target = pick_source(&bin, &track);
-            let args = [
-                "-4",
-                "--no-playlist",
-                "-f",
-                "bestaudio/best",
-                "-g",
-                "--",
-                &target,
-            ];
+            let args = resolve_stream_args(&target);
             let out = run_ytdlp_lines(&bin, &args, YTDLP_RESOLVE_TIMEOUT, &|| false)?;
             out.into_iter()
                 .find(|l| !l.trim().is_empty())
@@ -1067,13 +1062,7 @@ impl OnlineService {
         tokio::spawn(async move {
             let _guard = guard;
             service
-                .run_artist_scan(
-                    lib,
-                    targets,
-                    prefer_tr,
-                    on_library_changed,
-                    on_artist_scan,
-                )
+                .run_artist_scan(lib, targets, prefer_tr, on_library_changed, on_artist_scan)
                 .await;
         });
 
@@ -2243,6 +2232,22 @@ fn pick_source(ytdlp_bin: &str, track: &OnlineTrack) -> String {
             fallback
         }
     }
+}
+
+/// Arguments passed to `yt-dlp` when resolving a direct playback URL.
+#[cfg(not(target_os = "android"))]
+pub(crate) fn resolve_stream_args(target: &str) -> [&str; 9] {
+    [
+        "-4",
+        "--no-playlist",
+        "--user-agent",
+        STREAM_USER_AGENT,
+        "-f",
+        "bestaudio/best",
+        "-g",
+        "--",
+        target,
+    ]
 }
 
 pub fn yt_search_query(track: &OnlineTrack) -> String {

@@ -958,3 +958,23 @@ fn parses_innertube_player_m4a_prefers_itag_140_and_reports_errors() {
     let err = parse_innertube_player_m4a(err_json).unwrap_err();
     assert_eq!(err.to_string(), "Sign in to confirm your age");
 }
+
+#[cfg(not(target_os = "android"))]
+#[test]
+fn resolve_stream_args_includes_ipv4_and_shared_stream_user_agent() {
+    let args = resolve_stream_args("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    assert_eq!(
+        args,
+        [
+            "-4",
+            "--no-playlist",
+            "--user-agent",
+            STREAM_USER_AGENT,
+            "-f",
+            "bestaudio/best",
+            "-g",
+            "--",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        ]
+    );
+}

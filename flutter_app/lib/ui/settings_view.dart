@@ -7,6 +7,7 @@ import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/sync_settings_section.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 
 class SettingsView extends StatefulWidget {
   const SettingsView({super.key, required this.controller});
@@ -84,16 +85,13 @@ class _SettingsViewState extends State<SettingsView> {
     final preamp = _preampDraft ?? snap.eqPreampDb;
     final crossfade = _crossfadeDraft ?? snap.crossfadeSeconds;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-      children: [
-        Text(t('Settings'), style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 2),
-        Text(
-          t('Audio playback, watched folders, and offline privacy'),
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 24),
+    return SmoothScrollWrapper(
+      builder: (context, scrollController) => ListView(
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        children: [
+          Text(t('Settings'), style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 24),
 
         // Language Section
         _SettingsSection(
@@ -631,6 +629,7 @@ class _SettingsViewState extends State<SettingsView> {
 
         ExternalSourcesSettingsSection(controller: ctrl),
       ],
+      ),
     );
   }
 

@@ -11,6 +11,7 @@ import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 
 enum RightPanelTab { nowPlaying, queue, lyrics }
 
@@ -85,92 +86,26 @@ class _RightPanelState extends State<RightPanel>
           left: BorderSide(color: AppTheme.zinc800.withValues(alpha: 0.80)),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.zinc900.withValues(alpha: 0.85),
-              border: Border(
-                bottom:
-                    BorderSide(color: AppTheme.zinc800.withValues(alpha: 0.80)),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: _PanelTabButton(
-                          icon: Icons.smart_display_outlined,
-                          label: t('Now playing'),
-                          active: widget.activeTab == RightPanelTab.nowPlaying,
-                          onTap: () =>
-                              widget.onTabChanged(RightPanelTab.nowPlaying),
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      Flexible(
-                        child: _PanelTabButton(
-                          icon: Icons.queue_music_rounded,
-                          label: t('Queue'),
-                          active: widget.activeTab == RightPanelTab.queue,
-                          onTap: () => widget.onTabChanged(RightPanelTab.queue),
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      Flexible(
-                        child: _PanelTabButton(
-                          icon: Icons.lyrics_rounded,
-                          label: t('Lyrics'),
-                          active: widget.activeTab == RightPanelTab.lyrics,
-                          onTap: () =>
-                              widget.onTabChanged(RightPanelTab.lyrics),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: t('Close panel'),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 28, minHeight: 28),
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    size: 18,
-                    color: AppTheme.zinc400,
-                  ),
-                  onPressed: widget.onClose,
-                ),
-              ],
-            ),
+      child: switch (widget.activeTab) {
+        RightPanelTab.nowPlaying => _NowPlayingSide(
+            controller: widget.controller,
+            onShowLyrics: () => widget.onTabChanged(RightPanelTab.lyrics),
+            onOpenQueue: () => widget.onTabChanged(RightPanelTab.queue),
+            onClose: widget.onClose,
+            onOpenArtist: widget.onOpenArtist,
+            onOpenAlbum: widget.onOpenAlbum,
           ),
-          Expanded(
-            child: switch (widget.activeTab) {
-              RightPanelTab.nowPlaying => _NowPlayingSide(
-                  controller: widget.controller,
-                  onShowLyrics: () => widget.onTabChanged(RightPanelTab.lyrics),
-                  onOpenQueue: () => widget.onTabChanged(RightPanelTab.queue),
-                  onOpenArtist: widget.onOpenArtist,
-                  onOpenAlbum: widget.onOpenAlbum,
-                ),
-              RightPanelTab.queue => _QueueSide(
-                  controller: widget.controller,
-                  onOpenArtist: widget.onOpenArtist,
-                ),
-              RightPanelTab.lyrics => _LyricsSide(
-                  controller: widget.controller,
-                ),
-            },
+        RightPanelTab.queue => _QueueSide(
+            controller: widget.controller,
+            onClose: widget.onClose,
+            onOpenArtist: widget.onOpenArtist,
+            onOpenAlbum: widget.onOpenAlbum,
           ),
-        ],
-      ),
+        RightPanelTab.lyrics => _LyricsSide(
+            controller: widget.controller,
+            onClose: widget.onClose,
+          ),
+      },
     );
 
     if (!disableAnimations) {
@@ -187,68 +122,12 @@ class _RightPanelState extends State<RightPanel>
   }
 }
 
-class _PanelTabButton extends StatelessWidget {
-  const _PanelTabButton({
-    required this.icon,
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: active
-          ? AppTheme.accent950.withValues(alpha: 0.65)
-          : Colors.transparent,
-      borderRadius: BorderRadius.circular(7),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(7),
-        hoverColor: active
-            ? AppTheme.accent950.withValues(alpha: 0.75)
-            : AppTheme.zinc800,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 14,
-                color: active ? AppTheme.accent300 : AppTheme.zinc400,
-              ),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                    color: active ? AppTheme.accent300 : AppTheme.zinc200,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _NowPlayingSide extends StatefulWidget {
   const _NowPlayingSide({
     required this.controller,
     required this.onShowLyrics,
     required this.onOpenQueue,
+    required this.onClose,
     this.onOpenArtist,
     this.onOpenAlbum,
   });
@@ -256,6 +135,7 @@ class _NowPlayingSide extends StatefulWidget {
   final PlayerController controller;
   final VoidCallback onShowLyrics;
   final VoidCallback onOpenQueue;
+  final VoidCallback onClose;
   final ValueChanged<String>? onOpenArtist;
   final ValueChanged<PlatformInt64>? onOpenAlbum;
 
@@ -285,21 +165,67 @@ class _NowPlayingSideState extends State<_NowPlayingSide> {
     final ctrl = widget.controller;
     final snap = ctrl.snapshot;
     final cur = snap.current;
+    final currentRow = ctrl.currentTrackRow;
+    final albumTitle = (currentRow != null && currentRow.album.isNotEmpty)
+        ? currentRow.album
+        : t('Now Playing');
+    final albumId = currentRow?.albumId;
+
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 10, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: HoverLinkText(
+              text: albumTitle,
+              onTap: albumId != null && widget.onOpenAlbum != null
+                  ? () => widget.onOpenAlbum!(albumId)
+                  : null,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.zinc100,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: t('Close panel'),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            icon: const Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: AppTheme.zinc400,
+            ),
+            onPressed: widget.onClose,
+          ),
+        ],
+      ),
+    );
 
     if (cur == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t('Nothing playing'),
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppTheme.zinc400, fontSize: 13.5),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  t('Nothing playing'),
+                  textAlign: TextAlign.center,
+                  style:
+                      const TextStyle(color: AppTheme.zinc400, fontSize: 13.5),
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       );
     }
 
-    final currentRow = ctrl.currentTrackRow;
     final tint = tintFromColor(ctrl.currentCoverColor);
     final isLocalTrack =
         !cur.path.startsWith('http://') && !cur.path.startsWith('https://');
@@ -311,26 +237,17 @@ class _NowPlayingSideState extends State<_NowPlayingSide> {
             (lyrics.plainText?.trim().isNotEmpty ?? false));
     final next = snap.nextTrack;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (currentRow != null && currentRow.album.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: HoverLinkText(
-              text: currentRow.album,
-              onTap: currentRow.albumId != null && widget.onOpenAlbum != null
-                  ? () => widget.onOpenAlbum!(currentRow.albumId!)
-                  : null,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.zinc200,
-              ),
-            ),
-          ),
-        ],
-        Container(
+        header,
+        Expanded(
+          child: SmoothScrollWrapper(
+            builder: (context, scrollController) => ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+              children: [
+                Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
@@ -596,6 +513,10 @@ class _NowPlayingSideState extends State<_NowPlayingSide> {
           ),
         ],
       ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -678,16 +599,20 @@ class _LyricsPreviewLines extends StatelessWidget {
 }
 
 class _LyricsSide extends StatefulWidget {
-  const _LyricsSide({required this.controller});
+  const _LyricsSide({
+    required this.controller,
+    required this.onClose,
+  });
 
   final PlayerController controller;
+  final VoidCallback onClose;
 
   @override
   State<_LyricsSide> createState() => _LyricsSideState();
 }
 
 class _LyricsSideState extends State<_LyricsSide> {
-  final ScrollController _scrollCtrl = ScrollController();
+  final SmoothScrollController _scrollCtrl = SmoothScrollController();
   List<GlobalKey> _lineKeys = const [];
   String? _lastKeyedTrack;
   int _lastKeyCount = 0;
@@ -797,15 +722,52 @@ class _LyricsSideState extends State<_LyricsSide> {
     final current = ctrl.snapshot.current;
 
     if (current == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t('Play a track to view lyrics.'),
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppTheme.zinc400, fontSize: 13),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 10, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    t('Lyrics'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.zinc100,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: t('Close panel'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: AppTheme.zinc400,
+                  ),
+                  onPressed: widget.onClose,
+                ),
+              ],
+            ),
           ),
-        ),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  t('Play a track to view lyrics.'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppTheme.zinc400, fontSize: 13),
+                ),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -826,86 +788,91 @@ class _LyricsSideState extends State<_LyricsSide> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 10, 8),
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
             child: Row(
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        current.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.92),
+                      Flexible(
+                        child: Text(
+                          current.artist.isNotEmpty
+                              ? '${current.title} · ${current.artist}'
+                              : current.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.90),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 1),
-                      Text(
-                        current.artist.isNotEmpty
-                            ? current.artist
-                            : t('Unknown Artist'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.68),
+                      if (lyrics?.source != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            lyrics!.source!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.80),
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
-                if (lyrics?.source != null)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: Text(
-                      lyrics!.source!,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withValues(alpha: 0.85),
-                      ),
-                    ),
-                  ),
+                const SizedBox(width: 4),
                 if (canSaveLrc)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: TextButton.icon(
-                      onPressed: () =>
-                          _saveLrc(context, ctrl, current.path, lyrics),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: Colors.black.withValues(alpha: 0.22),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        minimumSize: const Size(0, 28),
-                      ),
-                      icon: const Icon(Icons.save_alt_rounded, size: 14),
-                      label: Text(
-                        t('Save .lrc'),
-                        style: const TextStyle(fontSize: 11.5),
-                      ),
+                  IconButton(
+                    tooltip: t('Save .lrc'),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    icon: Icon(
+                      Icons.save_alt_rounded,
+                      size: 17,
+                      color: Colors.white.withValues(alpha: 0.80),
                     ),
+                    onPressed: () =>
+                        _saveLrc(context, ctrl, current.path, lyrics),
                   ),
                 IconButton(
                   tooltip: t('Reload lyrics'),
                   visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
                   icon: Icon(
                     Icons.refresh_rounded,
-                    size: 16,
+                    size: 17,
                     color: Colors.white.withValues(alpha: 0.80),
                   ),
                   onPressed: ctrl.lyricsLoading ? null : ctrl.refreshLyrics,
+                ),
+                IconButton(
+                  tooltip: t('Close panel'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: Colors.white.withValues(alpha: 0.80),
+                  ),
+                  onPressed: widget.onClose,
                 ),
               ],
             ),
@@ -1028,9 +995,11 @@ class _LyricsSideState extends State<_LyricsSide> {
                       stops: [0.0, 0.05, 0.88, 1.0],
                     ).createShader(bounds),
                     blendMode: BlendMode.dstIn,
-                    child: ListView.builder(
+                    child: SmoothScrollWrapper(
                       controller: _scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
+                      child: ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
                       itemCount: lines.length,
                       itemBuilder: (context, index) {
                         final line = lines[index];
@@ -1078,6 +1047,7 @@ class _LyricsSideState extends State<_LyricsSide> {
                           ),
                         );
                       },
+                      ),
                     ),
                   ),
                 ),
@@ -1149,43 +1119,147 @@ class _LyricsSideState extends State<_LyricsSide> {
         stops: [0.0, 0.05, 0.88, 1.0],
       ).createShader(bounds),
       blendMode: BlendMode.dstIn,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(18, 22, 18, 36),
-        itemCount: plainLines.length,
-        itemBuilder: (context, index) {
-          final line = plainLines[index].trim();
-          if (line.isEmpty) {
-            return const SizedBox(height: 12);
-          }
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: SelectableText(
-              line,
-              style: const TextStyle(
-                fontSize: 22,
-                height: 1.32,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+      child: SmoothScrollWrapper(
+        builder: (context, scrollController) => ListView.builder(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(18, 22, 18, 36),
+          itemCount: plainLines.length,
+          itemBuilder: (context, index) {
+            final line = plainLines[index].trim();
+            if (line.isEmpty) {
+              return const SizedBox(height: 12);
+            }
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: SelectableText(
+                line,
+                style: const TextStyle(
+                  fontSize: 22,
+                  height: 1.32,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 }
 
-class _QueueSide extends StatelessWidget {
+enum _QueueSubTab { queue, recent }
+
+class _QueueSide extends StatefulWidget {
   const _QueueSide({
     required this.controller,
+    required this.onClose,
     this.onOpenArtist,
+    this.onOpenAlbum,
   });
 
   final PlayerController controller;
+  final VoidCallback onClose;
   final ValueChanged<String>? onOpenArtist;
+  final ValueChanged<PlatformInt64>? onOpenAlbum;
+
+  @override
+  State<_QueueSide> createState() => _QueueSideState();
+}
+
+class _QueueSideState extends State<_QueueSide> {
+  _QueueSubTab _subTab = _QueueSubTab.queue;
+  List<UiRecentListenEvent>? _fallbackRecent;
+  bool _loadingRecent = false;
+
+  void _selectSubTab(_QueueSubTab next) {
+    if (_subTab == next) return;
+    setState(() => _subTab = next);
+    if (next == _QueueSubTab.recent) {
+      unawaited(_ensureRecentLoaded());
+    }
+  }
+
+  Future<void> _ensureRecentLoaded() async {
+    final ctrl = widget.controller;
+    final homeRecent = ctrl.homeFeed?.recentlyPlayedTracks;
+    if ((homeRecent != null && homeRecent.isNotEmpty) || !ctrl.initialized) {
+      return;
+    }
+    setState(() => _loadingRecent = true);
+    try {
+      final summary = await ctrl.fetchStatsRange();
+      if (mounted) {
+        setState(() {
+          _fallbackRecent = summary.recentEvents.take(30).toList();
+          _loadingRecent = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingRecent = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final ctrl = widget.controller;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 10, 0),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: AppTheme.zinc800.withValues(alpha: 0.80),
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              _QueueTabHeaderButton(
+                label: t('Queue'),
+                active: _subTab == _QueueSubTab.queue,
+                onTap: () => _selectSubTab(_QueueSubTab.queue),
+              ),
+              const SizedBox(width: 16),
+              _QueueTabHeaderButton(
+                label: t('Recently played'),
+                active: _subTab == _QueueSubTab.recent,
+                onTap: () => _selectSubTab(_QueueSubTab.recent),
+              ),
+              const Spacer(),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: IconButton(
+                  tooltip: t('Close panel'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: AppTheme.zinc400,
+                  ),
+                  onPressed: widget.onClose,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _subTab == _QueueSubTab.queue
+              ? _buildQueueBody(ctrl)
+              : _buildRecentBody(ctrl),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQueueBody(PlayerController controller) {
     final snap = controller.snapshot;
     final count = snap.queueLength;
     final currentIndex = snap.currentIndex;
@@ -1291,8 +1365,8 @@ class _QueueSide extends StatelessWidget {
                               ? snap.current!.artist
                               : t('Unknown Artist'),
                           onTap: snap.current!.artist.isNotEmpty &&
-                                  onOpenArtist != null
-                              ? () => onOpenArtist!(snap.current!.artist)
+                                  widget.onOpenArtist != null
+                              ? () => widget.onOpenArtist!(snap.current!.artist)
                               : null,
                           style: const TextStyle(
                             fontSize: 12,
@@ -1338,48 +1412,299 @@ class _QueueSide extends StatelessWidget {
                     ),
                   ),
                 )
-              : ReorderableListView.builder(
-                  buildDefaultDragHandles: false,
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-                  itemCount: upNextCount,
-                  itemExtent: 56,
-                  onReorderItem: (oldIdx, newIdx) {
-                    final from = upNextStart + oldIdx;
-                    final to = upNextStart + newIdx;
-                    controller.moveQueueItem(from, to);
-                  },
-                  itemBuilder: (context, localIdx) {
-                    final queueIdx = upNextStart + localIdx;
-                    final item = controller.queueTrackAt(queueIdx);
-                    if (item == null) {
-                      return Padding(
-                        key: ValueKey('queue-loading-$queueIdx'),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            t('Loading...'),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.zinc500,
+              : SmoothScrollWrapper(
+                  builder: (context, scrollController) =>
+                      ReorderableListView.builder(
+                    scrollController: scrollController,
+                    buildDefaultDragHandles: false,
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                    itemCount: upNextCount,
+                    itemExtent: 56,
+                    onReorderItem: (oldIdx, newIdx) {
+                      final from = upNextStart + oldIdx;
+                      final to = upNextStart + newIdx;
+                      controller.moveQueueItem(from, to);
+                    },
+                    itemBuilder: (context, localIdx) {
+                      final queueIdx = upNextStart + localIdx;
+                      final item = controller.queueTrackAt(queueIdx);
+                      if (item == null) {
+                        return Padding(
+                          key: ValueKey('queue-loading-$queueIdx'),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              t('Loading...'),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.zinc500,
+                              ),
                             ),
                           ),
-                        ),
+                        );
+                      }
+                      return _QueueUpNextRow(
+                        key: ValueKey('queue-${item.id}-$queueIdx'),
+                        dragIndex: localIdx,
+                        item: item,
+                        coverPath: controller.trackCoverCached(item.path),
+                        onPlay: () => controller.playIndex(queueIdx),
+                        onRemove: () => controller.removeFromQueue(queueIdx),
+                        onOpenArtist: widget.onOpenArtist,
                       );
-                    }
-                    return _QueueUpNextRow(
-                      key: ValueKey('queue-${item.id}-$queueIdx'),
-                      dragIndex: localIdx,
-                      item: item,
-                      coverPath: controller.trackCoverCached(item.path),
-                      onPlay: () => controller.playIndex(queueIdx),
-                      onRemove: () => controller.removeFromQueue(queueIdx),
-                      onOpenArtist: onOpenArtist,
-                    );
-                  },
+                    },
+                  ),
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRecentBody(PlayerController ctrl) {
+    final homeRecent = ctrl.homeFeed?.recentlyPlayedTracks ?? const [];
+    if (_loadingRecent && homeRecent.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (homeRecent.isNotEmpty) {
+      return SmoothScrollWrapper(
+        builder: (context, scrollController) => ListView.builder(
+          controller: scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          itemCount: homeRecent.length,
+          itemExtent: 56,
+          itemBuilder: (context, index) {
+            final row = homeRecent[index].track;
+            return _RecentSideRow(
+              title: row.title,
+              artist: row.artist,
+              coverPath: row.cover,
+              path: row.path,
+              track: row,
+              controller: ctrl,
+              onPlay: () => ctrl.playTracks([row.path], 0),
+              onOpenArtist: widget.onOpenArtist,
+              onOpenAlbum: widget.onOpenAlbum,
+            );
+          },
+        ),
+      );
+    }
+
+    final events = _fallbackRecent ?? const [];
+    if (events.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            t('Nothing playing.'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.zinc400,
+              fontSize: 13.5,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SmoothScrollWrapper(
+      builder: (context, scrollController) => ListView.builder(
+        controller: scrollController,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        itemCount: events.length,
+        itemExtent: 56,
+        itemBuilder: (context, index) {
+          final ev = events[index];
+          final isLocal =
+              !ev.path.startsWith('http://') && !ev.path.startsWith('https://');
+          final fallbackRow = UiTrackRow(
+            id: ev.trackId ?? -1,
+            title: ev.title,
+            artist: ev.artist,
+            album: ev.album,
+            path: ev.path,
+            cover: ev.cover,
+            plays: 0,
+          );
+          return _RecentSideRow(
+            title: ev.title,
+            artist: ev.artist,
+            coverPath: ev.cover,
+            path: ev.path,
+            track: fallbackRow,
+            controller: ctrl,
+            onPlay: isLocal ? () => ctrl.playTracks([ev.path], 0) : null,
+            onOpenArtist: widget.onOpenArtist,
+            onOpenAlbum: widget.onOpenAlbum,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _QueueTabHeaderButton extends StatefulWidget {
+  const _QueueTabHeaderButton({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  State<_QueueTabHeaderButton> createState() => _QueueTabHeaderButtonState();
+}
+
+class _QueueTabHeaderButtonState extends State<_QueueTabHeaderButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                width: 2,
+                color:
+                    widget.active ? AppTheme.accent500 : Colors.transparent,
+              ),
+            ),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+              color: widget.active
+                  ? Colors.white
+                  : (_hovered ? AppTheme.zinc200 : AppTheme.zinc400),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentSideRow extends StatefulWidget {
+  const _RecentSideRow({
+    required this.title,
+    required this.artist,
+    required this.coverPath,
+    required this.path,
+    required this.track,
+    required this.controller,
+    required this.onPlay,
+    this.onOpenArtist,
+    this.onOpenAlbum,
+  });
+
+  final String title;
+  final String artist;
+  final String? coverPath;
+  final String path;
+  final UiTrackRow track;
+  final PlayerController controller;
+  final VoidCallback? onPlay;
+  final ValueChanged<String>? onOpenArtist;
+  final ValueChanged<PlatformInt64>? onOpenAlbum;
+
+  @override
+  State<_RecentSideRow> createState() => _RecentSideRowState();
+}
+
+class _RecentSideRowState extends State<_RecentSideRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: widget.onPlay != null
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onPlay,
+        onSecondaryTapDown: (d) => TrackMenu.show(
+          context: context,
+          globalPosition: d.globalPosition,
+          track: widget.track,
+          controller: widget.controller,
+          onPlay: widget.onPlay,
+          onOpenArtist: widget.onOpenArtist,
+          onOpenAlbum: widget.onOpenAlbum,
+        ),
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? AppTheme.zinc800.withValues(alpha: 0.60)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              CoverArt(
+                path: widget.coverPath,
+                size: 40,
+                borderRadius: 4,
+                iconSize: 16,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    HoverLinkText(
+                      text: widget.title,
+                      onTap: widget.track.albumId != null &&
+                              widget.onOpenAlbum != null
+                          ? () => widget.onOpenAlbum!(widget.track.albumId!)
+                          : widget.onPlay,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.zinc200,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    HoverLinkText(
+                      text: widget.artist.isNotEmpty
+                          ? widget.artist
+                          : t('Unknown Artist'),
+                      onTap: widget.artist.isNotEmpty &&
+                              widget.onOpenArtist != null
+                          ? () => widget.onOpenArtist!(widget.artist)
+                          : null,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.zinc400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

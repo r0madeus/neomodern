@@ -4,10 +4,11 @@ use crate::frb_generated::StreamSink;
 use neomodern_core::audio::mpv::{MpvEngine, MpvOptions};
 use neomodern_core::audio::{AudioEngine, Equalizer, NetGuardedEngine, ReplayGain};
 use neomodern_core::library::{
-    AlbumDetail, AlbumRow, ArtistProfile, ArtistRow, ArtistTopTrack, DynamicMix, FolderInfo,
-    HomeFeed, HomeMixDetail, Hooks, Library, ListeningStats, MAX_PROFILES, NewListenEvent,
-    PROFILE_COLORS, PlaylistInfo, Profile, ProfileId, RecentTrack, SortSpec, TopAlbumStat,
-    TopArtistStat, TopTrackStat, TrackRow, cover_color, m3u, scan, tags,
+    AlbumDetail, AlbumRow, ArtistProfile, ArtistRow, ArtistTopTrack, BucketStat, DynamicMix,
+    FolderInfo, GenreRow, HomeFeed, HomeMixDetail, Hooks, Library, ListeningStats, MAX_PROFILES,
+    NewListenEvent, PROFILE_COLORS, PlaylistInfo, Profile, ProfileId, RecentListen, RecentTrack,
+    SortSpec, TopAlbumStat, TopArtistStat, TopGenreStat, TopTrackStat, TrackRow, cover_color, m3u,
+    scan, tags,
 };
 use neomodern_core::lyrics::save::{self as lyrics_save, SaveMode};
 use neomodern_core::lyrics::{LyricsOptions, LyricsResult, LyricsService, LyricsSource};
@@ -475,6 +476,24 @@ pub struct UiLyrics {
 }
 
 #[derive(Debug, Clone)]
+pub struct UiGenreInfo {
+    pub name: String,
+    pub track_count: u32,
+    pub album_count: u32,
+    pub cover_path: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiGenreDetail {
+    pub name: String,
+    pub track_count: u32,
+    pub album_count: u32,
+    pub total_duration_ms: u64,
+    pub cover_path: Option<String>,
+    pub albums: Vec<UiAlbumRow>,
+}
+
+#[derive(Debug, Clone)]
 pub struct UiTopTrackStat {
     pub track_id: Option<i64>,
     pub path: String,
@@ -484,6 +503,7 @@ pub struct UiTopTrackStat {
     pub cover: Option<String>,
     pub play_count: u64,
     pub listened_ms: u64,
+    pub skip_count: u64,
 }
 
 impl From<TopTrackStat> for UiTopTrackStat {
@@ -497,6 +517,7 @@ impl From<TopTrackStat> for UiTopTrackStat {
             cover: t.cover,
             play_count: t.play_count,
             listened_ms: t.listened_ms,
+            skip_count: t.skip_count,
         }
     }
 }
@@ -508,6 +529,7 @@ pub struct UiTopArtistStat {
     pub play_count: u64,
     pub listened_ms: u64,
     pub unique_tracks: u64,
+    pub skip_count: u64,
 }
 
 impl From<TopArtistStat> for UiTopArtistStat {
@@ -518,6 +540,7 @@ impl From<TopArtistStat> for UiTopArtistStat {
             play_count: a.play_count,
             listened_ms: a.listened_ms,
             unique_tracks: a.unique_tracks,
+            skip_count: a.skip_count,
         }
     }
 }
@@ -546,35 +569,156 @@ impl From<TopAlbumStat> for UiTopAlbumStat {
 }
 
 #[derive(Debug, Clone)]
+pub struct UiMonthlyStat {
+    pub label: String,
+    pub listened_ms: i64,
+    pub plays: i64,
+}
+
+impl From<BucketStat> for UiMonthlyStat {
+    fn from(b: BucketStat) -> Self {
+        Self {
+            label: b.label,
+            listened_ms: i64::try_from(b.listened_ms).unwrap_or(i64::MAX),
+            plays: i64::try_from(b.play_count).unwrap_or(i64::MAX),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiGenreStat {
+    pub genre: String,
+    pub listened_ms: i64,
+    pub plays: i64,
+}
+
+impl From<TopGenreStat> for UiGenreStat {
+    fn from(g: TopGenreStat) -> Self {
+        Self {
+            genre: g.genre,
+            listened_ms: i64::try_from(g.listened_ms).unwrap_or(i64::MAX),
+            plays: i64::try_from(g.play_count).unwrap_or(i64::MAX),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiRecentListenEvent {
+    pub id: i64,
+    pub track_id: Option<i64>,
+    pub path: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub cover: Option<String>,
+    pub started_at: i64,
+    pub listened_ms: i64,
+    pub completed: bool,
+    pub skipped: bool,
+    pub source: String,
+}
+
+impl From<RecentListen> for UiRecentListenEvent {
+    fn from(r: RecentListen) -> Self {
+        Self {
+            id: r.id,
+            track_id: r.track_id,
+            path: r.path,
+            title: r.title,
+            artist: r.artist,
+            album: r.album,
+            cover: r.cover,
+            started_at: r.started_at,
+            listened_ms: i64::try_from(r.listened_ms).unwrap_or(i64::MAX),
+            completed: r.completed,
+            skipped: r.skipped,
+            source: r.source,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct UiStatsSummary {
     pub total_listened_ms: u64,
     pub play_count: u64,
+    pub raw_event_count: u64,
+    pub skip_count: u64,
+    pub completed_count: u64,
     pub unique_tracks: u64,
     pub unique_artists: u64,
     pub unique_albums: u64,
     pub active_days: u64,
     pub longest_streak_days: u64,
     pub current_streak_days: u64,
+    /// Completion ratio in `[0.0, 1.0]` (`completed_count / raw_event_count`).
+    pub completion_rate: f64,
+    pub peak_hour: Option<u32>,
+    /// Monday = 0 .. Sunday = 6, matching `neomodern-core`.
+    pub favorite_weekday: Option<u32>,
+    pub first_listen_at: Option<i64>,
+    /// 24 local-hour buckets (0..23) of listening duration in milliseconds.
+    pub hourly_ms: Vec<i64>,
+    /// 7 weekday buckets (Monday = 0 .. Sunday = 6) of listening duration in milliseconds.
+    pub weekday_ms: Vec<i64>,
+    pub monthly: Vec<UiMonthlyStat>,
+    pub top_genres: Vec<UiGenreStat>,
     pub top_tracks: Vec<UiTopTrackStat>,
     pub top_artists: Vec<UiTopArtistStat>,
     pub top_albums: Vec<UiTopAlbumStat>,
+    pub recent_events: Vec<UiRecentListenEvent>,
+    pub available_years: Vec<i32>,
+}
+
+fn stats_to_ui(s: ListeningStats, sort_by_plays: bool) -> UiStatsSummary {
+    let completion_rate = if s.summary.raw_event_count > 0 {
+        s.summary.completed_count as f64 / s.summary.raw_event_count as f64
+    } else {
+        0.0
+    };
+    let top_tracks_src = if sort_by_plays {
+        s.top_tracks_by_plays
+    } else {
+        s.top_tracks_by_time
+    };
+    UiStatsSummary {
+        total_listened_ms: s.summary.total_listened_ms,
+        play_count: s.summary.play_count,
+        raw_event_count: s.summary.raw_event_count,
+        skip_count: s.summary.skip_count,
+        completed_count: s.summary.completed_count,
+        unique_tracks: s.summary.unique_tracks,
+        unique_artists: s.summary.unique_artists,
+        unique_albums: s.summary.unique_albums,
+        active_days: s.summary.active_days,
+        longest_streak_days: s.summary.longest_streak_days,
+        current_streak_days: s.summary.current_streak_days,
+        completion_rate,
+        peak_hour: s.summary.top_hour,
+        favorite_weekday: s.summary.top_weekday,
+        first_listen_at: s.summary.first_listen_at,
+        hourly_ms: s
+            .by_hour
+            .into_iter()
+            .map(|b| i64::try_from(b.listened_ms).unwrap_or(i64::MAX))
+            .collect(),
+        weekday_ms: s
+            .by_weekday
+            .into_iter()
+            .map(|b| i64::try_from(b.listened_ms).unwrap_or(i64::MAX))
+            .collect(),
+        monthly: s.by_month.into_iter().map(Into::into).collect(),
+        top_genres: s.top_genres.into_iter().map(Into::into).collect(),
+        top_tracks: top_tracks_src.into_iter().map(Into::into).collect(),
+        top_artists: s.top_artists_by_time.into_iter().map(Into::into).collect(),
+        top_albums: s.top_albums_by_time.into_iter().map(Into::into).collect(),
+        recent_events: s.recent.into_iter().map(Into::into).collect(),
+        available_years: s.available_years,
+    }
 }
 
 impl From<ListeningStats> for UiStatsSummary {
     fn from(s: ListeningStats) -> Self {
-        Self {
-            total_listened_ms: s.summary.total_listened_ms,
-            play_count: s.summary.play_count,
-            unique_tracks: s.summary.unique_tracks,
-            unique_artists: s.summary.unique_artists,
-            unique_albums: s.summary.unique_albums,
-            active_days: s.summary.active_days,
-            longest_streak_days: s.summary.longest_streak_days,
-            current_streak_days: s.summary.current_streak_days,
-            top_tracks: s.top_tracks_by_time.into_iter().map(Into::into).collect(),
-            top_artists: s.top_artists_by_time.into_iter().map(Into::into).collect(),
-            top_albums: s.top_albums_by_time.into_iter().map(Into::into).collect(),
-        }
+        stats_to_ui(s, false)
     }
 }
 
@@ -2202,6 +2346,81 @@ pub fn library_play_artist_from(
 }
 
 // ---------------------------------------------------------------------
+// Genres
+// ---------------------------------------------------------------------
+
+fn genre_row_to_ui(lib: &Library, row: GenreRow) -> UiGenreInfo {
+    let album_count = lib
+        .genre_detail(&row.name)
+        .ok()
+        .and_then(|d| u32::try_from(d.albums.len()).ok())
+        .unwrap_or(0);
+    UiGenreInfo {
+        name: row.name,
+        track_count: row.track_count,
+        album_count,
+        cover_path: row.cover,
+    }
+}
+
+pub fn library_genres() -> Result<Vec<UiGenreInfo>, String> {
+    let lib = &core()?.library;
+    let rows = lib.genres().map_err(|e| e.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| genre_row_to_ui(lib, row))
+        .collect())
+}
+
+pub fn library_genre_detail(genre: String) -> Result<UiGenreDetail, String> {
+    let lib = &core()?.library;
+    let detail = lib.genre_detail(&genre).map_err(|e| e.to_string())?;
+    let cover_path = detail.albums.iter().find_map(|a| a.cover.clone());
+    let album_count = u32::try_from(detail.albums.len()).unwrap_or(u32::MAX);
+    Ok(UiGenreDetail {
+        name: detail.name,
+        track_count: detail.track_count,
+        album_count,
+        total_duration_ms: detail.duration_ms,
+        cover_path,
+        albums: detail.albums.into_iter().map(Into::into).collect(),
+    })
+}
+
+pub fn library_genre_tracks_page(
+    genre: String,
+    offset: u32,
+    limit: u32,
+) -> Result<Vec<UiTrackRow>, String> {
+    let lib = &core()?.library;
+    let page = lib
+        .genre_tracks_page(&genre, u64::from(offset), u64::from(limit).min(1000))
+        .map_err(|e| e.to_string())?;
+    Ok(page.items.into_iter().map(Into::into).collect())
+}
+
+pub fn library_play_genre(
+    genre: String,
+    shuffle: bool,
+    start_index: u32,
+) -> Result<UiPlayerSnapshot, String> {
+    let state = core()?;
+    let tracks = state
+        .library
+        .genre_tracks(&genre)
+        .map_err(|e| e.to_string())?;
+    if shuffle {
+        let _ = state.player.set_shuffle(true);
+    }
+    let context = Some(format!("genre:{}", genre.to_lowercase()));
+    state
+        .player
+        .replace_queue_from(tracks, start_index as usize, context)
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------
 // Lyrics
 // ---------------------------------------------------------------------
 
@@ -2296,8 +2515,32 @@ pub fn listening_stats(days: Option<u32>) -> Result<UiStatsSummary, String> {
         .unwrap_or(0);
     let from = days.map(|d| now.saturating_sub(i64::from(d) * 86_400));
     lib.listening_stats(from, None)
-        .map(Into::into)
+        .map(|s| stats_to_ui(s, false))
         .map_err(|e| e.to_string())
+}
+
+/// Aggregated listening statistics for the `[from_ms, to_ms)` Unix-millisecond range.
+pub fn listening_stats_range(
+    from_ms: Option<i64>,
+    to_ms: Option<i64>,
+    sort_by_plays: bool,
+) -> Result<UiStatsSummary, String> {
+    let lib = &core()?.library;
+    let from_secs = from_ms.map(|ms| ms.div_euclid(1000));
+    let to_secs = to_ms.map(|ms| ms.div_euclid(1000));
+    lib.listening_stats(from_secs, to_secs)
+        .map(|s| stats_to_ui(s, sort_by_plays))
+        .map_err(|e| e.to_string())
+}
+
+pub fn listening_history_clear() -> Result<(), String> {
+    let state = core()?;
+    state
+        .library
+        .clear_listen_history()
+        .map_err(|e| e.to_string())?;
+    let _ = state.event_tx.send(UiEvent::LibraryChanged);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -3140,5 +3383,165 @@ mod tests {
         assert_eq!(parse_pinned_kind("album").unwrap(), PinnedKind::Album);
         assert_eq!(parse_pinned_kind("playlist").unwrap(), PinnedKind::Playlist);
         assert!(parse_pinned_kind("artist").is_err());
+    }
+
+    #[test]
+    fn stats_to_ui_maps_full_summary_and_sort_order() {
+        use neomodern_core::library::StatsSummary;
+
+        let by_hour = (0u32..24)
+            .map(|h| BucketStat {
+                label: format!("{h:02}"),
+                listened_ms: if h == 21 { 50_000 } else { u64::from(h) * 100 },
+                play_count: if h == 21 { 2 } else { 0 },
+            })
+            .collect();
+        let by_weekday = (0..7)
+            .map(|w| BucketStat {
+                label: w.to_string(),
+                listened_ms: if w == 4 { 80_000 } else { 1_000 },
+                play_count: if w == 4 { 3 } else { 0 },
+            })
+            .collect();
+        let stats = ListeningStats {
+            summary: StatsSummary {
+                total_listened_ms: 120_000,
+                play_count: 4,
+                raw_event_count: 5,
+                skip_count: 1,
+                completed_count: 3,
+                unique_tracks: 2,
+                unique_artists: 2,
+                unique_albums: 1,
+                active_days: 3,
+                longest_streak_days: 2,
+                current_streak_days: 1,
+                top_hour: Some(21),
+                top_weekday: Some(4),
+                first_listen_at: Some(1_700_000_000),
+            },
+            top_tracks_by_plays: vec![TopTrackStat {
+                track_id: Some(10),
+                path: "/music/plays.mp3".to_string(),
+                title: "Most Played".to_string(),
+                artist: "Artist A".to_string(),
+                album: "Album A".to_string(),
+                cover: Some("/covers/a.jpg".to_string()),
+                play_count: 10,
+                listened_ms: 30_000,
+                skip_count: 0,
+            }],
+            top_tracks_by_time: vec![TopTrackStat {
+                track_id: Some(20),
+                path: "/music/time.mp3".to_string(),
+                title: "Longest Time".to_string(),
+                artist: "Artist B".to_string(),
+                album: "Album B".to_string(),
+                cover: None,
+                play_count: 2,
+                listened_ms: 90_000,
+                skip_count: 1,
+            }],
+            top_artists_by_time: vec![TopArtistStat {
+                artist: "Artist B".to_string(),
+                cover: None,
+                play_count: 2,
+                listened_ms: 90_000,
+                unique_tracks: 1,
+                skip_count: 1,
+            }],
+            top_albums_by_time: vec![TopAlbumStat {
+                album: "Album B".to_string(),
+                artist: "Artist B".to_string(),
+                album_id: Some(7),
+                cover: None,
+                play_count: 2,
+                listened_ms: 90_000,
+            }],
+            top_genres: vec![TopGenreStat {
+                genre: "Ambient".to_string(),
+                play_count: 3,
+                listened_ms: 100_000,
+            }],
+            by_hour,
+            by_weekday,
+            by_month: vec![BucketStat {
+                label: "2026-11".to_string(),
+                listened_ms: 120_000,
+                play_count: 4,
+            }],
+            recent: vec![RecentListen {
+                id: 99,
+                track_id: Some(20),
+                path: "/music/time.mp3".to_string(),
+                title: "Longest Time".to_string(),
+                artist: "Artist B".to_string(),
+                album: "Album B".to_string(),
+                cover: None,
+                started_at: 1_700_001_000,
+                listened_ms: 45_000,
+                completed: true,
+                skipped: false,
+                source: "local".to_string(),
+            }],
+            available_years: vec![2026],
+        };
+
+        let by_time = stats_to_ui(stats.clone(), false);
+        assert_eq!(by_time.top_tracks[0].title, "Longest Time");
+        assert_eq!(by_time.raw_event_count, 5);
+        assert_eq!(by_time.skip_count, 1);
+        assert_eq!(by_time.completed_count, 3);
+        assert!((by_time.completion_rate - 0.6).abs() < 1e-9);
+        assert_eq!(by_time.peak_hour, Some(21));
+        assert_eq!(by_time.favorite_weekday, Some(4));
+        assert_eq!(by_time.hourly_ms.len(), 24);
+        assert_eq!(by_time.hourly_ms[21], 50_000);
+        assert_eq!(by_time.weekday_ms.len(), 7);
+        assert_eq!(by_time.weekday_ms[4], 80_000);
+        assert_eq!(by_time.monthly.len(), 1);
+        assert_eq!(by_time.monthly[0].label, "2026-11");
+        assert_eq!(by_time.monthly[0].plays, 4);
+        assert_eq!(by_time.top_genres.len(), 1);
+        assert_eq!(by_time.top_genres[0].genre, "Ambient");
+        assert_eq!(by_time.recent_events.len(), 1);
+        assert!(by_time.recent_events[0].completed);
+        assert_eq!(by_time.available_years, vec![2026]);
+
+        let by_plays = stats_to_ui(stats, true);
+        assert_eq!(by_plays.top_tracks[0].title, "Most Played");
+        assert_eq!(by_plays.top_tracks[0].play_count, 10);
+    }
+
+    #[test]
+    fn genre_row_to_ui_reports_zero_albums_for_empty_library() {
+        let dir = std::env::temp_dir().join(format!(
+            "neomodern_genre_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let lib = Library::open(
+            &dir.join("library.sqlite3"),
+            &dir.join("covers"),
+            Hooks::none(),
+        )
+        .unwrap();
+        let ui = genre_row_to_ui(
+            &lib,
+            GenreRow {
+                name: "Jazz".to_string(),
+                track_count: 4,
+                cover: Some("/covers/jazz.jpg".to_string()),
+            },
+        );
+        assert_eq!(ui.name, "Jazz");
+        assert_eq!(ui.track_count, 4);
+        assert_eq!(ui.album_count, 0);
+        assert_eq!(ui.cover_path.as_deref(), Some("/covers/jazz.jpg"));
+        drop(lib);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

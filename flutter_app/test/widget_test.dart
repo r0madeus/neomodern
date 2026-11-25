@@ -1,12 +1,16 @@
+import 'package:flutter/gestures.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/genre_view.dart';
 import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/recap_view.dart';
 import 'package:neomodern/ui/right_panel.dart';
+import 'package:neomodern/ui/search_view.dart';
 import 'package:neomodern/ui/settings_view.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/sync_settings_section.dart';
@@ -14,6 +18,9 @@ import 'package:neomodern/ui/tag_editor_dialog.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/welcome_dialog.dart';
+import 'package:neomodern/ui/widgets/neomodern_logo.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
+import 'package:neomodern/ui/widgets/track_row.dart';
 
 void main() {
   test('formatDuration formats seconds cleanly', () {
@@ -93,12 +100,12 @@ void main() {
     expect(toggled, 1);
   });
 
-  testWidgets('RightPanel switches between Lyrics and Queue tabs',
+  testWidgets('RightPanel renders mode-specific headers without 3-tab pill bar',
       (WidgetTester tester) async {
     final ctrl = PlayerController();
     addTearDown(ctrl.dispose);
-    var tab = RightPanelTab.lyrics;
-    var closed = false;
+    var tab = RightPanelTab.nowPlaying;
+    var closeCount = 0;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -106,11 +113,36 @@ void main() {
         home: StatefulBuilder(
           builder: (context, setState) {
             return Scaffold(
-              body: RightPanel(
-                controller: ctrl,
-                activeTab: tab,
-                onTabChanged: (t) => setState(() => tab = t),
-                onClose: () => closed = true,
+              body: Column(
+                children: [
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => tab = RightPanelTab.nowPlaying),
+                        child: const Text('SwitchNP'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => tab = RightPanelTab.queue),
+                        child: const Text('SwitchQ'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => tab = RightPanelTab.lyrics),
+                        child: const Text('SwitchLyr'),
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: RightPanel(
+                      controller: ctrl,
+                      activeTab: tab,
+                      onTabChanged: (t) => setState(() => tab = t),
+                      onClose: () => closeCount++,
+                    ),
+                  ),
+                ],
               ),
             );
           },
@@ -118,17 +150,31 @@ void main() {
       ),
     );
 
-    expect(find.text('Play a track to view lyrics.'), findsOneWidget);
-
-    await tester.tap(find.text('Queue'));
-    await tester.pump();
-    expect(find.text('Queue is empty.'), findsOneWidget);
-
+    // NowPlaying mode header: "Now Playing" + Close (X), no redundant 3-tab pill bar.
+    expect(find.text('Now Playing'), findsOneWidget);
+    expect(find.text('Nothing playing'), findsOneWidget);
+    expect(find.text('Now playing'), findsNothing);
     await tester.tap(find.byIcon(Icons.close_rounded));
-    expect(closed, true);
+    expect(closeCount, 1);
+
+    // Queue mode header: ONLY 2 underline tabs ("Queue" and "Recently played") + Close (X).
+    await tester.tap(find.text('SwitchQ'));
+    await tester.pump();
+    expect(find.text('Queue'), findsOneWidget);
+    expect(find.text('Recently played'), findsOneWidget);
+    expect(find.text('Queue is empty.'), findsOneWidget);
+    await tester.tap(find.text('Recently played'));
+    await tester.pump();
+    expect(find.text('Nothing playing.'), findsOneWidget);
+
+    // Lyrics mode header: "Lyrics" + Close (X).
+    await tester.tap(find.text('SwitchLyr'));
+    await tester.pump();
+    expect(find.text('Lyrics'), findsOneWidget);
+    expect(find.text('Play a track to view lyrics.'), findsOneWidget);
   });
 
-  testWidgets('SettingsView displays Library, Playback, EQ, and Network',
+  testWidgets('SettingsView displays clean Settings title without subtitle',
       (WidgetTester tester) async {
     final ctrl = PlayerController();
     addTearDown(ctrl.dispose);
@@ -140,16 +186,106 @@ void main() {
       ),
     );
 
+    expect(find.text('Settings'), findsOneWidget);
+    expect(
+      find.text('Audio playback, watched folders, and offline privacy'),
+      findsNothing,
+    );
     expect(find.text('Library Folders'), findsOneWidget);
     expect(find.text('Playback'), findsOneWidget);
     expect(find.text('ReplayGain'), findsOneWidget);
     expect(find.text('Gapless Playback'), findsOneWidget);
   });
 
-  testWidgets('RecapView shows neutral Listening Stats header and periods',
+  testWidgets('RecapView shows 5 period pills, KPIs, insights, charts, and activity',
       (WidgetTester tester) async {
     final ctrl = PlayerController();
     addTearDown(ctrl.dispose);
+
+    final summary = UiStatsSummary(
+      totalListenedMs: BigInt.from(3660000),
+      playCount: BigInt.from(18),
+      rawEventCount: BigInt.from(20),
+      skipCount: BigInt.from(2),
+      completedCount: BigInt.from(16),
+      uniqueTracks: BigInt.from(10),
+      uniqueArtists: BigInt.from(4),
+      uniqueAlbums: BigInt.from(5),
+      activeDays: BigInt.from(6),
+      longestStreakDays: BigInt.from(5),
+      currentStreakDays: BigInt.from(3),
+      completionRate: 0.80,
+      peakHour: 21,
+      favoriteWeekday: 4,
+      firstListenAt: 1700000000,
+      hourlyMs: Int64List.fromList(
+        List<int>.generate(24, (h) => h == 21 ? 900000 : 60000),
+      ),
+      weekdayMs: Int64List.fromList(
+        List<int>.generate(7, (d) => d == 4 ? 1200000 : 300000),
+      ),
+      monthly: [
+        UiMonthlyStat(
+          label: '2026-10',
+          listenedMs: 1200000,
+          plays: 6,
+        ),
+        UiMonthlyStat(
+          label: '2026-11',
+          listenedMs: 2460000,
+          plays: 12,
+        ),
+      ],
+      topGenres: [
+        UiGenreStat(genre: 'Electronic', listenedMs: 2000000, plays: 10),
+      ],
+      topTracks: [
+        UiTopTrackStat(
+          trackId: 1,
+          path: '/music/track1.flac',
+          title: 'Daydreaming',
+          artist: 'Radiohead',
+          album: 'A Moon Shaped Pool',
+          playCount: BigInt.from(9),
+          listenedMs: BigInt.from(1800000),
+          skipCount: BigInt.zero,
+        ),
+      ],
+      topArtists: [
+        UiTopArtistStat(
+          artist: 'Radiohead',
+          playCount: BigInt.from(12),
+          listenedMs: BigInt.from(2400000),
+          uniqueTracks: BigInt.from(4),
+          skipCount: BigInt.zero,
+        ),
+      ],
+      topAlbums: [
+        UiTopAlbumStat(
+          album: 'A Moon Shaped Pool',
+          artist: 'Radiohead',
+          albumId: 10,
+          playCount: BigInt.from(9),
+          listenedMs: BigInt.from(1800000),
+        ),
+      ],
+      recentEvents: [
+        UiRecentListenEvent(
+          id: 1,
+          trackId: 1,
+          path: '/music/track1.flac',
+          title: 'Daydreaming',
+          artist: 'Radiohead',
+          album: 'A Moon Shaped Pool',
+          startedAt: 1700000000,
+          listenedMs: 300000,
+          completed: true,
+          skipped: false,
+          source: 'local',
+        ),
+      ],
+      availableYears: Int32List.fromList([2026]),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -159,15 +295,29 @@ void main() {
             controller: ctrl,
             onOpenArtist: (_) {},
             onOpenAlbum: (_) {},
+            onFetchStatsRange: ({fromMs, toMs, sortByPlays = false}) async =>
+                summary,
           ),
         ),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('Listening Stats'), findsOneWidget);
     expect(find.text('7 Days'), findsOneWidget);
     expect(find.text('30 Days'), findsOneWidget);
+    expect(find.text('This Year'), findsOneWidget);
     expect(find.text('All Time'), findsOneWidget);
+    expect(find.text('Custom'), findsOneWidget);
+
+    expect(find.text('80%'), findsOneWidget);
+    expect(find.text('21:00'), findsOneWidget);
+    expect(find.text('Friday'), findsOneWidget);
+    expect(find.text('16 / 2'), findsOneWidget);
+    expect(find.text('Electronic'), findsOneWidget);
+    expect(find.text('Listening rhythm'), findsOneWidget);
+    expect(find.text('Recent activity'), findsOneWidget);
+    expect(find.text('Clear history'), findsOneWidget);
   });
 
   testWidgets('SyncSettingsSection keeps Party Queue disabled by default',
@@ -407,5 +557,229 @@ void main() {
     await tester.pumpAndSettle();
     expect(written?.title, 'New Title');
     expect(written?.year, 2024);
+  });
+
+  testWidgets('NeoModernLogo renders vector CustomPaint at requested size',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: NeoModernLogo(size: 32, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+
+    final logoBox = tester.widget<SizedBox>(
+      find.descendant(
+        of: find.byType(NeoModernLogo),
+        matching: find.byType(SizedBox),
+      ),
+    );
+    expect(logoBox.width, 32);
+    expect(logoBox.height, 32);
+    expect(
+      find.descendant(
+        of: find.byType(NeoModernLogo),
+        matching: find.byType(CustomPaint),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('SmoothScrollWrapper animates mouse wheel scroll smoothly',
+      (WidgetTester tester) async {
+    final scrollCtrl = SmoothScrollController();
+    addTearDown(scrollCtrl.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SizedBox(
+            height: 200,
+            child: SmoothScrollWrapper(
+              controller: scrollCtrl,
+              child: ListView.builder(
+                controller: scrollCtrl,
+                itemExtent: 50,
+                itemCount: 40,
+                itemBuilder: (_, i) => Text('Item $i'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(scrollCtrl.offset, 0.0);
+    final center = tester.getCenter(find.byType(ListView));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: center,
+        kind: PointerDeviceKind.mouse,
+        scrollDelta: const Offset(0, 120),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(scrollCtrl.offset, greaterThan(0.0));
+    expect(scrollCtrl.offset, lessThan(120.0));
+
+    await tester.pumpAndSettle();
+    expect(scrollCtrl.offset, closeTo(120.0, 0.1));
+  });
+
+  testWidgets('DesktopTrackRow TitleLink navigates to track albumId on click',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+    PlatformInt64? openedAlbum;
+
+    const track = UiTrackRow(
+      id: 1,
+      title: 'Click Title To Album',
+      artist: 'Some Artist',
+      album: 'Some Album',
+      albumId: 42,
+      path: '/music/a.flac',
+      plays: 0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SizedBox(
+            height: 56,
+            child: DesktopTrackRow(
+              indexLabel: '1',
+              track: track,
+              controller: ctrl,
+              onTap: () {},
+              onPlay: () {},
+              onOpenAlbum: (id) => openedAlbum = id,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Click Title To Album'));
+    await tester.pump();
+    expect(openedAlbum, 42);
+  });
+
+  testWidgets('SearchView displays Browse all genre cards and searches library',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SearchView(
+            controller: ctrl,
+            onOpenAlbum: (_) {},
+            onOpenArtist: (_) {},
+            onFetchGenres: () async => const [
+              UiGenreInfo(name: 'Electronic', trackCount: 24, albumCount: 3),
+              UiGenreInfo(name: 'Jazz', trackCount: 12, albumCount: 2),
+            ],
+            onSearchArtists: (q) async => [
+              UiArtistRow(
+                name: 'Boards of Canada',
+                trackCount: 10,
+                albumCount: 2,
+                playCount: BigInt.zero,
+                listenedMs: BigInt.zero,
+              ),
+            ]
+                .where((a) => a.name.toLowerCase().contains(q.toLowerCase()))
+                .toList(),
+            onSearchAlbums: (_) async => const [],
+            onSearchTracks: (_) async => const [],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Browse all'), findsOneWidget);
+    expect(find.text('Electronic'), findsOneWidget);
+    expect(find.text('Jazz'), findsOneWidget);
+    expect(find.text('Ctrl K'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Boards');
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Boards of Canada'), findsOneWidget);
+  });
+
+  testWidgets('GenreView renders hero banner, albums, and paginated tracks',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+    PlatformInt64? openedAlbum;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: GenreView(
+            name: 'Electronic',
+            controller: ctrl,
+            onBack: () {},
+            onOpenAlbum: (id) => openedAlbum = id,
+            onOpenArtist: (_) {},
+            onFetchGenreDetail: (genre) async => UiGenreDetail(
+              name: genre,
+              trackCount: 1,
+              albumCount: 1,
+              totalDurationMs: BigInt.from(240000),
+              albums: const [
+                UiAlbumRow(
+                  id: 77,
+                  title: 'Music Has the Right to Children',
+                  albumArtist: 'Boards of Canada',
+                  year: 1998,
+                  trackCount: 18,
+                ),
+              ],
+            ),
+            onFetchGenreTracksPage: (genre, offset, limit) async => const [
+              UiTrackRow(
+                id: 99,
+                title: 'Roygbiv',
+                artist: 'Boards of Canada',
+                album: 'Music Has the Right to Children',
+                albumId: 77,
+                path: '/music/roygbiv.flac',
+                plays: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Electronic'), findsOneWidget);
+    expect(find.text('Music Has the Right to Children'), findsWidgets);
+
+    await tester.scrollUntilVisible(
+      find.text('Roygbiv'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Roygbiv'), findsOneWidget);
+
+    await tester.tap(find.text('Roygbiv'));
+    await tester.pump();
+    expect(openedAlbum, 77);
   });
 }

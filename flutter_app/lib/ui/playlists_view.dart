@@ -13,6 +13,7 @@ import 'package:neomodern/ui/playlist_cover_dialog.dart';
 import 'package:neomodern/ui/selection_bar.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/widgets/collection_header.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 import 'package:neomodern/ui/widgets/track_row.dart';
 
 class PlaylistsView extends StatefulWidget {
@@ -490,74 +491,80 @@ class _PlaylistsViewState extends State<PlaylistsView> {
                             style: const TextStyle(color: AppTheme.zinc400),
                           ),
                         )
-                      : ReorderableListView.builder(
-                          buildDefaultDragHandles: false,
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            4,
-                            16,
-                            selectedTracks.isNotEmpty ? 84 : 16,
-                          ),
-                          itemCount: _tracks.length,
-                          itemExtent: 56,
-                          onReorderItem: (oldIndex, newIndex) =>
-                              unawaited(_reorderTrack(oldIndex, newIndex)),
-                          itemBuilder: (context, index) {
-                            final track = _tracks[index];
-                            final isActive = activePath == track.path;
-                            final isSelected =
-                                _selectedIndices.contains(index);
-                            void playHere() => ctrl.playPlaylist(pl.id, index);
+                      : SmoothScrollWrapper(
+                          builder: (context, scrollController) =>
+                              ReorderableListView.builder(
+                            scrollController: scrollController,
+                            buildDefaultDragHandles: false,
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              4,
+                              16,
+                              selectedTracks.isNotEmpty ? 84 : 16,
+                            ),
+                            itemCount: _tracks.length,
+                            itemExtent: 56,
+                            onReorderItem: (oldIndex, newIndex) =>
+                                unawaited(_reorderTrack(oldIndex, newIndex)),
+                            itemBuilder: (context, index) {
+                              final track = _tracks[index];
+                              final isActive = activePath == track.path;
+                              final isSelected =
+                                  _selectedIndices.contains(index);
+                              void playHere() =>
+                                  ctrl.playPlaylist(pl.id, index);
 
-                            return Material(
-                              key: ValueKey('pl-${pl.id}-${track.id}-$index'),
-                              color: Colors.transparent,
-                              child: DesktopTrackRow(
-                                indexLabel: '${index + 1}',
-                                track: track,
-                                controller: ctrl,
-                                isActive: isActive,
-                                isSelected: isSelected,
-                                horizontalPadding: 14,
-                                numberColumnWidth: 34,
-                                leadingDragHandle: ReorderableDragStartListener(
-                                  index: index,
-                                  child: const Padding(
-                                    padding: EdgeInsets.only(right: 10),
-                                    child: MouseRegion(
-                                      cursor: SystemMouseCursors.grab,
-                                      child: Icon(
-                                        Icons.drag_indicator_rounded,
-                                        size: 16,
-                                        color: AppTheme.zinc500,
+                              return Material(
+                                key: ValueKey('pl-${pl.id}-${track.id}-$index'),
+                                color: Colors.transparent,
+                                child: DesktopTrackRow(
+                                  indexLabel: '${index + 1}',
+                                  track: track,
+                                  controller: ctrl,
+                                  isActive: isActive,
+                                  isSelected: isSelected,
+                                  horizontalPadding: 14,
+                                  numberColumnWidth: 34,
+                                  leadingDragHandle:
+                                      ReorderableDragStartListener(
+                                    index: index,
+                                    child: const Padding(
+                                      padding: EdgeInsets.only(right: 10),
+                                      child: MouseRegion(
+                                        cursor: SystemMouseCursors.grab,
+                                        child: Icon(
+                                          Icons.drag_indicator_rounded,
+                                          size: 16,
+                                          color: AppTheme.zinc500,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                trailingAction: IconButton(
-                                  tooltip: t('Remove from Playlist'),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 30,
-                                    minHeight: 30,
+                                  trailingAction: IconButton(
+                                    tooltip: t('Remove from Playlist'),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 30,
+                                      minHeight: 30,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      size: 16,
+                                      color: AppTheme.zinc400,
+                                    ),
+                                    onPressed: () => _removeTrackAt(index),
                                   ),
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 16,
-                                    color: AppTheme.zinc400,
-                                  ),
-                                  onPressed: () => _removeTrackAt(index),
+                                  onTap: () => _handleRowTap(pl, index),
+                                  onPlay: playHere,
+                                  onOpenArtist: widget.onOpenArtist,
+                                  onOpenAlbum: widget.onOpenAlbum,
+                                  onRemoveFromPlaylist: () =>
+                                      _removeTrackAt(index),
                                 ),
-                                onTap: () => _handleRowTap(pl, index),
-                                onPlay: playHere,
-                                onOpenArtist: widget.onOpenArtist,
-                                onOpenAlbum: widget.onOpenAlbum,
-                                onRemoveFromPlaylist: () =>
-                                    _removeTrackAt(index),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
             ),
           ],

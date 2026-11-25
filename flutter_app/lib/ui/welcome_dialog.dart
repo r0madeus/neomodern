@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/widgets/neomodern_logo.dart';
 
 Future<void> showWelcomeDialog({
   required BuildContext context,
@@ -128,8 +129,8 @@ class _WelcomeDialogState extends State<WelcomeDialog> {
                       color: AppColors.accentMuted,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
-                      Icons.headphones_rounded,
+                    alignment: Alignment.center,
+                    child: const NeoModernLogo(
                       size: 24,
                       color: AppColors.accent,
                     ),

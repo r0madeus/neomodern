@@ -147,10 +147,14 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            widget.track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          HoverLinkText(
+                            text: widget.track.title,
+                            onTap: widget.track.albumId != null &&
+                                    widget.onOpenAlbum != null
+                                ? () => widget.onOpenAlbum!(
+                                      widget.track.albumId!,
+                                    )
+                                : null,
                             style: TextStyle(
                               fontSize: 13.5,
                               fontWeight: widget.isActive

@@ -9,6 +9,7 @@ import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 import 'package:neomodern/ui/widgets/track_row.dart';
 
 class ArtistsView extends StatefulWidget {
@@ -164,31 +165,35 @@ class _ArtistsViewState extends State<ArtistsView> {
                     style: const TextStyle(color: AppTheme.zinc400),
                   ),
                 )
-              : GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    childAspectRatio: 0.78,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                  ),
-                  itemCount: ctrl.artistCount,
-                  itemBuilder: (context, index) {
-                    final artist = ctrl.artistAt(index);
-                    if (artist == null) {
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: AppTheme.zinc900,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+              : SmoothScrollWrapper(
+                  builder: (context, scrollController) => GridView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 200,
+                      childAspectRatio: 0.78,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                    ),
+                    itemCount: ctrl.artistCount,
+                    itemBuilder: (context, index) {
+                      final artist = ctrl.artistAt(index);
+                      if (artist == null) {
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: AppTheme.zinc900,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        );
+                      }
+                      return _ArtistCard(
+                        artist: artist,
+                        onTap: () => _openArtist(artist.name),
+                        onPlay: () => ctrl.playArtist(artist.name),
                       );
-                    }
-                    return _ArtistCard(
-                      artist: artist,
-                      onTap: () => _openArtist(artist.name),
-                      onPlay: () => ctrl.playArtist(artist.name),
-                    );
-                  },
+                    },
+                  ),
                 ),
         ),
       ],
@@ -337,9 +342,11 @@ class _ArtistDetailViewState extends State<_ArtistDetailView> {
     final isPlayingArtist =
         ctrl.isPlaying && ctrl.snapshot.context == contextKey;
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 32),
-      children: [
+    return SmoothScrollWrapper(
+      builder: (context, scrollController) => ListView(
+        controller: scrollController,
+        padding: const EdgeInsets.only(bottom: 32),
+        children: [
         // Full-bleed 290px hero banner with gradient overlay
         SizedBox(
           height: 290,
@@ -696,6 +703,7 @@ class _ArtistDetailViewState extends State<_ArtistDetailView> {
           ),
         ),
       ],
+      ),
     );
   }
 }

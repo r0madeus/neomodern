@@ -20,18 +20,21 @@ import 'package:neomodern/ui/playlists_view.dart';
 import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/recap_view.dart';
 import 'package:neomodern/ui/right_panel.dart';
+import 'package:neomodern/ui/search_view.dart';
 import 'package:neomodern/ui/settings_view.dart';
 import 'package:neomodern/ui/songs_view.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/welcome_dialog.dart';
 import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/neomodern_logo.dart';
 
 enum NavTab {
   home,
   songs,
   albums,
   artists,
+  search,
   sources,
   recap,
   settings,
@@ -62,6 +65,8 @@ class _AppShellState extends State<AppShell> {
 
   String? _externalArtistName;
   int _externalArtistNonce = 0;
+
+  int _searchFocusNonce = 0;
 
   bool _sidebarCollapsed = false;
   bool _draggingSidebar = false;
@@ -100,6 +105,16 @@ class _AppShellState extends State<AppShell> {
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final keys = HardwareKeyboard.instance;
+    if ((keys.isControlPressed || keys.isMetaPressed) &&
+        event.logicalKey == LogicalKeyboardKey.keyK) {
+      setState(() {
+        _tab = NavTab.search;
+        _searchFocusNonce++;
+      });
+      return KeyEventResult.handled;
+    }
 
     final primary = FocusManager.instance.primaryFocus;
     final primaryContext = primary?.context;
@@ -275,6 +290,12 @@ class _AppShellState extends State<AppShell> {
           externalSelectionNonce: _externalArtistNonce,
           onOpenAlbum: _openAlbum,
           onOpenArtist: _openArtist,
+        ),
+      NavTab.search => SearchView(
+          controller: ctrl,
+          onOpenAlbum: _openAlbum,
+          onOpenArtist: _openArtist,
+          focusNonce: _searchFocusNonce,
         ),
       NavTab.sources => SourcesView(controller: ctrl),
       NavTab.recap => RecapView(
@@ -710,6 +731,30 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           _NavItem(
+            icon: Icons.search_rounded,
+            label: t('Search'),
+            collapsed: collapsed,
+            active: selected == NavTab.search,
+            trailingWidget: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: AppTheme.zinc800.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: AppTheme.zinc700),
+              ),
+              child: const Text(
+                'Ctrl K',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.zinc400,
+                ),
+              ),
+            ),
+            onTap: () => onSelect(NavTab.search),
+          ),
+          const SizedBox(height: 2),
+          _NavItem(
             icon: Icons.bar_chart_rounded,
             label: t('Recap'),
             collapsed: collapsed,
@@ -1054,8 +1099,7 @@ class _LogoBadge extends StatelessWidget {
         ),
       ),
       alignment: Alignment.center,
-      child: const Icon(
-        Icons.headphones_rounded,
+      child: const NeoModernLogo(
         size: 16,
         color: Colors.white,
       ),
@@ -1117,6 +1161,7 @@ class _NavItem extends StatefulWidget {
     required this.active,
     required this.onTap,
     this.trailing,
+    this.trailingWidget,
   });
 
   final IconData icon;
@@ -1125,6 +1170,7 @@ class _NavItem extends StatefulWidget {
   final bool active;
   final VoidCallback onTap;
   final String? trailing;
+  final Widget? trailingWidget;
 
   @override
   State<_NavItem> createState() => _NavItemState();
@@ -1180,7 +1226,9 @@ class _NavItemState extends State<_NavItem> {
                     ),
                   ),
                 ),
-                if (widget.trailing != null)
+                if (widget.trailingWidget != null)
+                  widget.trailingWidget!
+                else if (widget.trailing != null)
                   Text(
                     widget.trailing!,
                     style: const TextStyle(

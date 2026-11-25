@@ -11,6 +11,7 @@ import 'package:neomodern/ui/metadata_match_dialog.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/widgets/collection_header.dart';
 import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 import 'package:neomodern/ui/widgets/track_row.dart';
 
 class AlbumsView extends StatefulWidget {
@@ -185,33 +186,37 @@ class _AlbumsViewState extends State<AlbumsView> {
                     ],
                   ),
                 )
-              : GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    childAspectRatio: 0.76,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                  ),
-                  itemCount: ctrl.albumCount,
-                  itemBuilder: (context, index) {
-                    final album = ctrl.albumAt(index);
-                    if (album == null) {
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: AppTheme.zinc900,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+              : SmoothScrollWrapper(
+                  builder: (context, scrollController) => GridView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 200,
+                      childAspectRatio: 0.76,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                    ),
+                    itemCount: ctrl.albumCount,
+                    itemBuilder: (context, index) {
+                      final album = ctrl.albumAt(index);
+                      if (album == null) {
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: AppTheme.zinc900,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        );
+                      }
+                      return _AlbumCard(
+                        album: album,
+                        isPinned: ctrl.isPinned('album', album.id),
+                        onTogglePin: () => ctrl.togglePinned('album', album.id),
+                        onTap: () => _openAlbum(album.id),
+                        onPlay: () => ctrl.playAlbum(album.id, 0),
                       );
-                    }
-                    return _AlbumCard(
-                      album: album,
-                      isPinned: ctrl.isPinned('album', album.id),
-                      onTogglePin: () => ctrl.togglePinned('album', album.id),
-                      onTap: () => _openAlbum(album.id),
-                      onPlay: () => ctrl.playAlbum(album.id, 0),
-                    );
-                  },
+                    },
+                  ),
                 ),
         ),
       ],
@@ -387,8 +392,10 @@ class _AlbumDetailView extends StatelessWidget {
         controller.snapshot.context == 'album:${album.id}';
     final totalDuration = _formatTotalDuration(detail.tracks);
 
-    return CustomScrollView(
-      slivers: [
+    return SmoothScrollWrapper(
+      builder: (context, scrollController) => CustomScrollView(
+        controller: scrollController,
+        slivers: [
         SliverToBoxAdapter(
           child: CollectionHeader(
             tint: tint,
@@ -582,6 +589,7 @@ class _AlbumDetailView extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }

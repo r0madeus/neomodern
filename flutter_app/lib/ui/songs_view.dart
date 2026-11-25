@@ -9,6 +9,7 @@ import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/selection_bar.dart';
 import 'package:neomodern/ui/track_menu.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 import 'package:neomodern/ui/widgets/track_row.dart';
 
 class SongsView extends StatefulWidget {
@@ -254,33 +255,36 @@ class _SongsViewState extends State<SongsView> {
                         ],
                       ),
                     )
-                  : ListView.builder(
-                      padding: EdgeInsets.only(
-                        bottom: selectedTracks.isNotEmpty ? 76 : 12,
-                      ),
-                      itemCount: ctrl.trackCount,
-                      itemExtent: 56,
-                      itemBuilder: (context, index) {
-                        final track = ctrl.trackAt(index);
-                        if (track == null) {
-                          return const _TrackRowSkeleton();
-                        }
-                        final isActive = activePath == track.path;
-                        final isSelected = _selectedIndices.contains(index);
-                        void playHere() => ctrl.playAllFromSearch(index);
+                  : SmoothScrollWrapper(
+                      builder: (context, scrollController) => ListView.builder(
+                        controller: scrollController,
+                        padding: EdgeInsets.only(
+                          bottom: selectedTracks.isNotEmpty ? 76 : 12,
+                        ),
+                        itemCount: ctrl.trackCount,
+                        itemExtent: 56,
+                        itemBuilder: (context, index) {
+                          final track = ctrl.trackAt(index);
+                          if (track == null) {
+                            return const _TrackRowSkeleton();
+                          }
+                          final isActive = activePath == track.path;
+                          final isSelected = _selectedIndices.contains(index);
+                          void playHere() => ctrl.playAllFromSearch(index);
 
-                        return DesktopTrackRow(
-                          indexLabel: '${index + 1}',
-                          track: track,
-                          controller: ctrl,
-                          isActive: isActive,
-                          isSelected: isSelected,
-                          onTap: () => _handleRowTap(index),
-                          onPlay: playHere,
-                          onOpenArtist: widget.onOpenArtist,
-                          onOpenAlbum: widget.onOpenAlbum,
-                        );
-                      },
+                          return DesktopTrackRow(
+                            indexLabel: '${index + 1}',
+                            track: track,
+                            controller: ctrl,
+                            isActive: isActive,
+                            isSelected: isSelected,
+                            onTap: () => _handleRowTap(index),
+                            onPlay: playHere,
+                            onOpenArtist: widget.onOpenArtist,
+                            onOpenAlbum: widget.onOpenAlbum,
+                          );
+                        },
+                      ),
                     ),
             ),
           ],

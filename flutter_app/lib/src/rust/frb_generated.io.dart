@@ -104,6 +104,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Float64List dco_decode_list_prim_f_64_strict(dynamic raw);
 
   @protected
+  Int32List dco_decode_list_prim_i_32_strict(dynamic raw);
+
+  @protected
   Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
 
   @protected
@@ -133,10 +136,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<UiFolderInfo> dco_decode_list_ui_folder_info(dynamic raw);
 
   @protected
+  List<UiGenreInfo> dco_decode_list_ui_genre_info(dynamic raw);
+
+  @protected
+  List<UiGenreStat> dco_decode_list_ui_genre_stat(dynamic raw);
+
+  @protected
   List<UiMetadataFieldDiff> dco_decode_list_ui_metadata_field_diff(dynamic raw);
 
   @protected
   List<UiMetadataTrackDiff> dco_decode_list_ui_metadata_track_diff(dynamic raw);
+
+  @protected
+  List<UiMonthlyStat> dco_decode_list_ui_monthly_stat(dynamic raw);
 
   @protected
   List<UiPartyGuestInfo> dco_decode_list_ui_party_guest_info(dynamic raw);
@@ -155,6 +167,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<UiProfile> dco_decode_list_ui_profile(dynamic raw);
+
+  @protected
+  List<UiRecentListenEvent> dco_decode_list_ui_recent_listen_event(dynamic raw);
 
   @protected
   List<UiRecentTrack> dco_decode_list_ui_recent_track(dynamic raw);
@@ -262,6 +277,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiFolderInfo dco_decode_ui_folder_info(dynamic raw);
 
   @protected
+  UiGenreDetail dco_decode_ui_genre_detail(dynamic raw);
+
+  @protected
+  UiGenreInfo dco_decode_ui_genre_info(dynamic raw);
+
+  @protected
+  UiGenreStat dco_decode_ui_genre_stat(dynamic raw);
+
+  @protected
   UiHomeFeed dco_decode_ui_home_feed(dynamic raw);
 
   @protected
@@ -278,6 +302,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiMetadataTrackDiff dco_decode_ui_metadata_track_diff(dynamic raw);
+
+  @protected
+  UiMonthlyStat dco_decode_ui_monthly_stat(dynamic raw);
 
   @protected
   UiPairingOpen dco_decode_ui_pairing_open(dynamic raw);
@@ -311,6 +338,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiProfilesState dco_decode_ui_profiles_state(dynamic raw);
+
+  @protected
+  UiRecentListenEvent dco_decode_ui_recent_listen_event(dynamic raw);
 
   @protected
   UiRecentTrack dco_decode_ui_recent_track(dynamic raw);
@@ -444,6 +474,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Float64List sse_decode_list_prim_f_64_strict(SseDeserializer deserializer);
 
   @protected
+  Int32List sse_decode_list_prim_i_32_strict(SseDeserializer deserializer);
+
+  @protected
   Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
 
   @protected
@@ -481,12 +514,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<UiGenreInfo> sse_decode_list_ui_genre_info(SseDeserializer deserializer);
+
+  @protected
+  List<UiGenreStat> sse_decode_list_ui_genre_stat(SseDeserializer deserializer);
+
+  @protected
   List<UiMetadataFieldDiff> sse_decode_list_ui_metadata_field_diff(
     SseDeserializer deserializer,
   );
 
   @protected
   List<UiMetadataTrackDiff> sse_decode_list_ui_metadata_track_diff(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiMonthlyStat> sse_decode_list_ui_monthly_stat(
     SseDeserializer deserializer,
   );
 
@@ -517,6 +561,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<UiProfile> sse_decode_list_ui_profile(SseDeserializer deserializer);
+
+  @protected
+  List<UiRecentListenEvent> sse_decode_list_ui_recent_listen_event(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<UiRecentTrack> sse_decode_list_ui_recent_track(
@@ -650,6 +699,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiFolderInfo sse_decode_ui_folder_info(SseDeserializer deserializer);
 
   @protected
+  UiGenreDetail sse_decode_ui_genre_detail(SseDeserializer deserializer);
+
+  @protected
+  UiGenreInfo sse_decode_ui_genre_info(SseDeserializer deserializer);
+
+  @protected
+  UiGenreStat sse_decode_ui_genre_stat(SseDeserializer deserializer);
+
+  @protected
   UiHomeFeed sse_decode_ui_home_feed(SseDeserializer deserializer);
 
   @protected
@@ -672,6 +730,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiMetadataTrackDiff sse_decode_ui_metadata_track_diff(
     SseDeserializer deserializer,
   );
+
+  @protected
+  UiMonthlyStat sse_decode_ui_monthly_stat(SseDeserializer deserializer);
 
   @protected
   UiPairingOpen sse_decode_ui_pairing_open(SseDeserializer deserializer);
@@ -705,6 +766,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiProfilesState sse_decode_ui_profiles_state(SseDeserializer deserializer);
+
+  @protected
+  UiRecentListenEvent sse_decode_ui_recent_listen_event(
+    SseDeserializer deserializer,
+  );
 
   @protected
   UiRecentTrack sse_decode_ui_recent_track(SseDeserializer deserializer);
@@ -860,6 +926,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_prim_i_32_strict(
+    Int32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_i_64_strict(
     Int64List self,
     SseSerializer serializer,
@@ -914,6 +986,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_ui_genre_info(
+    List<UiGenreInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_genre_stat(
+    List<UiGenreStat> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_ui_metadata_field_diff(
     List<UiMetadataFieldDiff> self,
     SseSerializer serializer,
@@ -922,6 +1006,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_ui_metadata_track_diff(
     List<UiMetadataTrackDiff> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_monthly_stat(
+    List<UiMonthlyStat> self,
     SseSerializer serializer,
   );
 
@@ -958,6 +1048,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_ui_profile(
     List<UiProfile> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_recent_listen_event(
+    List<UiRecentListenEvent> self,
     SseSerializer serializer,
   );
 
@@ -1124,6 +1220,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ui_folder_info(UiFolderInfo self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_genre_detail(UiGenreDetail self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_genre_info(UiGenreInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_genre_stat(UiGenreStat self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ui_home_feed(UiHomeFeed self, SseSerializer serializer);
 
   @protected
@@ -1152,6 +1257,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     UiMetadataTrackDiff self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_ui_monthly_stat(UiMonthlyStat self, SseSerializer serializer);
 
   @protected
   void sse_encode_ui_pairing_open(UiPairingOpen self, SseSerializer serializer);
@@ -1195,6 +1303,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_ui_profiles_state(
     UiProfilesState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_recent_listen_event(
+    UiRecentListenEvent self,
     SseSerializer serializer,
   );
 

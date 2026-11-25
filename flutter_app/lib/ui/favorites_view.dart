@@ -10,6 +10,7 @@ import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/selection_bar.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/widgets/collection_header.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 import 'package:neomodern/ui/widgets/track_row.dart';
 
 class FavoritesView extends StatefulWidget {
@@ -225,30 +226,33 @@ class _FavoritesViewState extends State<FavoritesView> {
                         ],
                       ),
                     )
-                  : ListView.builder(
-                      padding: EdgeInsets.only(
-                        bottom: selectedTracks.isNotEmpty ? 76 : 12,
-                      ),
-                      itemCount: tracks.length,
-                      itemExtent: 56,
-                      itemBuilder: (context, index) {
-                        final track = tracks[index];
-                        final isActive = activePath == track.path;
-                        final isSelected = _selectedIndices.contains(index);
-                        void playHere() => controller.playFavorites(index);
+                  : SmoothScrollWrapper(
+                      builder: (context, scrollController) => ListView.builder(
+                        controller: scrollController,
+                        padding: EdgeInsets.only(
+                          bottom: selectedTracks.isNotEmpty ? 76 : 12,
+                        ),
+                        itemCount: tracks.length,
+                        itemExtent: 56,
+                        itemBuilder: (context, index) {
+                          final track = tracks[index];
+                          final isActive = activePath == track.path;
+                          final isSelected = _selectedIndices.contains(index);
+                          void playHere() => controller.playFavorites(index);
 
-                        return DesktopTrackRow(
-                          indexLabel: '${index + 1}',
-                          track: track,
-                          controller: controller,
-                          isActive: isActive,
-                          isSelected: isSelected,
-                          onTap: () => _handleRowTap(index),
-                          onPlay: playHere,
-                          onOpenArtist: widget.onOpenArtist,
-                          onOpenAlbum: widget.onOpenAlbum,
-                        );
-                      },
+                          return DesktopTrackRow(
+                            indexLabel: '${index + 1}',
+                            track: track,
+                            controller: controller,
+                            isActive: isActive,
+                            isSelected: isSelected,
+                            onTap: () => _handleRowTap(index),
+                            onPlay: playHere,
+                            onOpenArtist: widget.onOpenArtist,
+                            onOpenAlbum: widget.onOpenAlbum,
+                          );
+                        },
+                      ),
                     ),
             ),
           ],

@@ -10,9 +10,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'neomodern.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `cache_album_proposals`, `cached_cover_color_only`, `compute_and_cache_cover_color`, `core`, `find_process_hwnd`, `find_track_id_for_path`, `generate_provider_id`, `load_ui_prefs`, `map_apply_outcome`, `map_field_diff`, `map_source_configs`, `normalize_language`, `parse_pinned_kind`, `playlist_cover_mode_and_value`, `qr_parts`, `refresh_player_meta`, `rgb_to_argb`, `sanitize_width`, `save_ui_prefs`, `source_label`, `validate_and_normalize_ui_prefs`
+// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `cache_album_proposals`, `cached_cover_color_only`, `compute_and_cache_cover_color`, `core`, `find_process_hwnd`, `find_track_id_for_path`, `generate_provider_id`, `genre_row_to_ui`, `load_ui_prefs`, `map_apply_outcome`, `map_field_diff`, `map_source_configs`, `normalize_language`, `parse_pinned_kind`, `playlist_cover_mode_and_value`, `qr_parts`, `refresh_player_meta`, `rgb_to_argb`, `sanitize_width`, `save_ui_prefs`, `source_label`, `stats_to_ui`, `validate_and_normalize_ui_prefs`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreEventSink`, `CoreState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<UiPlayerSnapshot> initCore({
   required String dataDir,
@@ -362,6 +362,32 @@ Future<UiPlayerSnapshot> libraryPlayArtistFrom({
   shuffle: shuffle,
 );
 
+Future<List<UiGenreInfo>> libraryGenres() =>
+    RustLib.instance.api.crateApiNeomodernLibraryGenres();
+
+Future<UiGenreDetail> libraryGenreDetail({required String genre}) =>
+    RustLib.instance.api.crateApiNeomodernLibraryGenreDetail(genre: genre);
+
+Future<List<UiTrackRow>> libraryGenreTracksPage({
+  required String genre,
+  required int offset,
+  required int limit,
+}) => RustLib.instance.api.crateApiNeomodernLibraryGenreTracksPage(
+  genre: genre,
+  offset: offset,
+  limit: limit,
+);
+
+Future<UiPlayerSnapshot> libraryPlayGenre({
+  required String genre,
+  required bool shuffle,
+  required int startIndex,
+}) => RustLib.instance.api.crateApiNeomodernLibraryPlayGenre(
+  genre: genre,
+  shuffle: shuffle,
+  startIndex: startIndex,
+);
+
 Future<UiLyrics> lyricsForTrack({
   required String path,
   required String title,
@@ -386,6 +412,20 @@ Future<String> lyricsSaveLrc({
 
 Future<UiStatsSummary> listeningStats({int? days}) =>
     RustLib.instance.api.crateApiNeomodernListeningStats(days: days);
+
+/// Aggregated listening statistics for the `[from_ms, to_ms)` Unix-millisecond range.
+Future<UiStatsSummary> listeningStatsRange({
+  PlatformInt64? fromMs,
+  PlatformInt64? toMs,
+  required bool sortByPlays,
+}) => RustLib.instance.api.crateApiNeomodernListeningStatsRange(
+  fromMs: fromMs,
+  toMs: toMs,
+  sortByPlays: sortByPlays,
+);
+
+Future<void> listeningHistoryClear() =>
+    RustLib.instance.api.crateApiNeomodernListeningHistoryClear();
 
 Future<UiProfilesState> profilesList() =>
     RustLib.instance.api.crateApiNeomodernProfilesList();
@@ -926,6 +966,100 @@ class UiFolderInfo {
           path == other.path;
 }
 
+class UiGenreDetail {
+  final String name;
+  final int trackCount;
+  final int albumCount;
+  final BigInt totalDurationMs;
+  final String? coverPath;
+  final List<UiAlbumRow> albums;
+
+  const UiGenreDetail({
+    required this.name,
+    required this.trackCount,
+    required this.albumCount,
+    required this.totalDurationMs,
+    this.coverPath,
+    required this.albums,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      trackCount.hashCode ^
+      albumCount.hashCode ^
+      totalDurationMs.hashCode ^
+      coverPath.hashCode ^
+      albums.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiGenreDetail &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          trackCount == other.trackCount &&
+          albumCount == other.albumCount &&
+          totalDurationMs == other.totalDurationMs &&
+          coverPath == other.coverPath &&
+          albums == other.albums;
+}
+
+class UiGenreInfo {
+  final String name;
+  final int trackCount;
+  final int albumCount;
+  final String? coverPath;
+
+  const UiGenreInfo({
+    required this.name,
+    required this.trackCount,
+    required this.albumCount,
+    this.coverPath,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      trackCount.hashCode ^
+      albumCount.hashCode ^
+      coverPath.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiGenreInfo &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          trackCount == other.trackCount &&
+          albumCount == other.albumCount &&
+          coverPath == other.coverPath;
+}
+
+class UiGenreStat {
+  final String genre;
+  final PlatformInt64 listenedMs;
+  final PlatformInt64 plays;
+
+  const UiGenreStat({
+    required this.genre,
+    required this.listenedMs,
+    required this.plays,
+  });
+
+  @override
+  int get hashCode => genre.hashCode ^ listenedMs.hashCode ^ plays.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiGenreStat &&
+          runtimeType == other.runtimeType &&
+          genre == other.genre &&
+          listenedMs == other.listenedMs &&
+          plays == other.plays;
+}
+
 class UiHomeFeed {
   final List<UiAlbumRow> recentlyPlayedAlbums;
   final List<UiRecentTrack> recentlyPlayedTracks;
@@ -1103,6 +1237,30 @@ class UiMetadataTrackDiff {
           title == other.title &&
           matched == other.matched &&
           fields == other.fields;
+}
+
+class UiMonthlyStat {
+  final String label;
+  final PlatformInt64 listenedMs;
+  final PlatformInt64 plays;
+
+  const UiMonthlyStat({
+    required this.label,
+    required this.listenedMs,
+    required this.plays,
+  });
+
+  @override
+  int get hashCode => label.hashCode ^ listenedMs.hashCode ^ plays.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiMonthlyStat &&
+          runtimeType == other.runtimeType &&
+          label == other.label &&
+          listenedMs == other.listenedMs &&
+          plays == other.plays;
 }
 
 class UiPairingOpen {
@@ -1599,6 +1757,69 @@ class UiProfilesState {
           locked == other.locked;
 }
 
+class UiRecentListenEvent {
+  final PlatformInt64 id;
+  final PlatformInt64? trackId;
+  final String path;
+  final String title;
+  final String artist;
+  final String album;
+  final String? cover;
+  final PlatformInt64 startedAt;
+  final PlatformInt64 listenedMs;
+  final bool completed;
+  final bool skipped;
+  final String source;
+
+  const UiRecentListenEvent({
+    required this.id,
+    this.trackId,
+    required this.path,
+    required this.title,
+    required this.artist,
+    required this.album,
+    this.cover,
+    required this.startedAt,
+    required this.listenedMs,
+    required this.completed,
+    required this.skipped,
+    required this.source,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      trackId.hashCode ^
+      path.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      cover.hashCode ^
+      startedAt.hashCode ^
+      listenedMs.hashCode ^
+      completed.hashCode ^
+      skipped.hashCode ^
+      source.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiRecentListenEvent &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          trackId == other.trackId &&
+          path == other.path &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          cover == other.cover &&
+          startedAt == other.startedAt &&
+          listenedMs == other.listenedMs &&
+          completed == other.completed &&
+          skipped == other.skipped &&
+          source == other.source;
+}
+
 class UiRecentTrack {
   final UiTrackRow track;
   final PlatformInt64 startedAt;
@@ -1648,43 +1869,90 @@ class UiSourceProvider {
 class UiStatsSummary {
   final BigInt totalListenedMs;
   final BigInt playCount;
+  final BigInt rawEventCount;
+  final BigInt skipCount;
+  final BigInt completedCount;
   final BigInt uniqueTracks;
   final BigInt uniqueArtists;
   final BigInt uniqueAlbums;
   final BigInt activeDays;
   final BigInt longestStreakDays;
   final BigInt currentStreakDays;
+
+  /// Completion ratio in `[0.0, 1.0]` (`completed_count / raw_event_count`).
+  final double completionRate;
+  final int? peakHour;
+
+  /// Monday = 0 .. Sunday = 6, matching `neomodern-core`.
+  final int? favoriteWeekday;
+  final PlatformInt64? firstListenAt;
+
+  /// 24 local-hour buckets (0..23) of listening duration in milliseconds.
+  final Int64List hourlyMs;
+
+  /// 7 weekday buckets (Monday = 0 .. Sunday = 6) of listening duration in milliseconds.
+  final Int64List weekdayMs;
+  final List<UiMonthlyStat> monthly;
+  final List<UiGenreStat> topGenres;
   final List<UiTopTrackStat> topTracks;
   final List<UiTopArtistStat> topArtists;
   final List<UiTopAlbumStat> topAlbums;
+  final List<UiRecentListenEvent> recentEvents;
+  final Int32List availableYears;
 
   const UiStatsSummary({
     required this.totalListenedMs,
     required this.playCount,
+    required this.rawEventCount,
+    required this.skipCount,
+    required this.completedCount,
     required this.uniqueTracks,
     required this.uniqueArtists,
     required this.uniqueAlbums,
     required this.activeDays,
     required this.longestStreakDays,
     required this.currentStreakDays,
+    required this.completionRate,
+    this.peakHour,
+    this.favoriteWeekday,
+    this.firstListenAt,
+    required this.hourlyMs,
+    required this.weekdayMs,
+    required this.monthly,
+    required this.topGenres,
     required this.topTracks,
     required this.topArtists,
     required this.topAlbums,
+    required this.recentEvents,
+    required this.availableYears,
   });
 
   @override
   int get hashCode =>
       totalListenedMs.hashCode ^
       playCount.hashCode ^
+      rawEventCount.hashCode ^
+      skipCount.hashCode ^
+      completedCount.hashCode ^
       uniqueTracks.hashCode ^
       uniqueArtists.hashCode ^
       uniqueAlbums.hashCode ^
       activeDays.hashCode ^
       longestStreakDays.hashCode ^
       currentStreakDays.hashCode ^
+      completionRate.hashCode ^
+      peakHour.hashCode ^
+      favoriteWeekday.hashCode ^
+      firstListenAt.hashCode ^
+      hourlyMs.hashCode ^
+      weekdayMs.hashCode ^
+      monthly.hashCode ^
+      topGenres.hashCode ^
       topTracks.hashCode ^
       topArtists.hashCode ^
-      topAlbums.hashCode;
+      topAlbums.hashCode ^
+      recentEvents.hashCode ^
+      availableYears.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1693,15 +1961,28 @@ class UiStatsSummary {
           runtimeType == other.runtimeType &&
           totalListenedMs == other.totalListenedMs &&
           playCount == other.playCount &&
+          rawEventCount == other.rawEventCount &&
+          skipCount == other.skipCount &&
+          completedCount == other.completedCount &&
           uniqueTracks == other.uniqueTracks &&
           uniqueArtists == other.uniqueArtists &&
           uniqueAlbums == other.uniqueAlbums &&
           activeDays == other.activeDays &&
           longestStreakDays == other.longestStreakDays &&
           currentStreakDays == other.currentStreakDays &&
+          completionRate == other.completionRate &&
+          peakHour == other.peakHour &&
+          favoriteWeekday == other.favoriteWeekday &&
+          firstListenAt == other.firstListenAt &&
+          hourlyMs == other.hourlyMs &&
+          weekdayMs == other.weekdayMs &&
+          monthly == other.monthly &&
+          topGenres == other.topGenres &&
           topTracks == other.topTracks &&
           topArtists == other.topArtists &&
-          topAlbums == other.topAlbums;
+          topAlbums == other.topAlbums &&
+          recentEvents == other.recentEvents &&
+          availableYears == other.availableYears;
 }
 
 class UiSyncStatus {
@@ -1830,6 +2111,7 @@ class UiTopArtistStat {
   final BigInt playCount;
   final BigInt listenedMs;
   final BigInt uniqueTracks;
+  final BigInt skipCount;
 
   const UiTopArtistStat({
     required this.artist,
@@ -1837,6 +2119,7 @@ class UiTopArtistStat {
     required this.playCount,
     required this.listenedMs,
     required this.uniqueTracks,
+    required this.skipCount,
   });
 
   @override
@@ -1845,7 +2128,8 @@ class UiTopArtistStat {
       cover.hashCode ^
       playCount.hashCode ^
       listenedMs.hashCode ^
-      uniqueTracks.hashCode;
+      uniqueTracks.hashCode ^
+      skipCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1856,7 +2140,8 @@ class UiTopArtistStat {
           cover == other.cover &&
           playCount == other.playCount &&
           listenedMs == other.listenedMs &&
-          uniqueTracks == other.uniqueTracks;
+          uniqueTracks == other.uniqueTracks &&
+          skipCount == other.skipCount;
 }
 
 class UiTopTrackStat {
@@ -1868,6 +2153,7 @@ class UiTopTrackStat {
   final String? cover;
   final BigInt playCount;
   final BigInt listenedMs;
+  final BigInt skipCount;
 
   const UiTopTrackStat({
     this.trackId,
@@ -1878,6 +2164,7 @@ class UiTopTrackStat {
     this.cover,
     required this.playCount,
     required this.listenedMs,
+    required this.skipCount,
   });
 
   @override
@@ -1889,7 +2176,8 @@ class UiTopTrackStat {
       album.hashCode ^
       cover.hashCode ^
       playCount.hashCode ^
-      listenedMs.hashCode;
+      listenedMs.hashCode ^
+      skipCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1903,7 +2191,8 @@ class UiTopTrackStat {
           album == other.album &&
           cover == other.cover &&
           playCount == other.playCount &&
-          listenedMs == other.listenedMs;
+          listenedMs == other.listenedMs &&
+          skipCount == other.skipCount;
 }
 
 class UiTrackInfo {

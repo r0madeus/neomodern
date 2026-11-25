@@ -6,6 +6,7 @@ import 'package:neomodern/src/rust/frb_generated.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/shell.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +44,7 @@ class _NeoModernAppState extends State<NeoModernApp> {
       title: 'NeoModern',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
+      scrollBehavior: const AppScrollBehavior(),
       home: AppShell(controller: _controller),
     );
   }

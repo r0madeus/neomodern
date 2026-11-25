@@ -181,9 +181,7 @@ class _PlayerBarState extends State<PlayerBar> {
                                           ? () => widget.onOpenAlbum!(
                                                 currentRow!.albumId!,
                                               )
-                                          : () => widget.onTogglePanel(
-                                                RightPanelTab.nowPlaying,
-                                              ),
+                                          : null,
                                       style: const TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w500,

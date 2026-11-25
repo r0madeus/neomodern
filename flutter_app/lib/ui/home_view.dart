@@ -10,6 +10,7 @@ import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/widgets/collection_header.dart';
 import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 import 'package:neomodern/ui/widgets/track_row.dart';
 
 class HomeView extends StatefulWidget {
@@ -177,9 +178,11 @@ class _HomeViewState extends State<HomeView> {
     final addedAlbums = feed.recentlyAddedAlbums;
     final mixes = feed.mixes;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-      children: [
+    return SmoothScrollWrapper(
+      builder: (context, scrollController) => ListView(
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        children: [
         // Greeting & toolbar pills
         Wrap(
           alignment: WrapAlignment.spaceBetween,
@@ -444,6 +447,7 @@ class _HomeViewState extends State<HomeView> {
           ),
         ],
       ],
+      ),
     );
   }
 }
@@ -838,8 +842,10 @@ class _MixDetailView extends StatelessWidget {
         mix.coverPaths.isNotEmpty ? mix.coverPaths.first : null;
     final tint = tintFromColor(controller.coverColorCached(firstCover));
 
-    return CustomScrollView(
-      slivers: [
+    return SmoothScrollWrapper(
+      builder: (context, scrollController) => CustomScrollView(
+        controller: scrollController,
+        slivers: [
         SliverToBoxAdapter(
           child: CollectionHeader(
             tint: tint,
@@ -896,6 +902,7 @@ class _MixDetailView extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }

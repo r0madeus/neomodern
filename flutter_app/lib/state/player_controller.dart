@@ -1007,6 +1007,105 @@ class PlayerController extends ChangeNotifier {
     return listeningStats(days: days);
   }
 
+  Future<UiStatsSummary> fetchStatsRange({
+    int? fromMs,
+    int? toMs,
+    bool sortByPlays = false,
+  }) {
+    return listeningStatsRange(
+      fromMs: fromMs != null ? PlatformInt64Util.from(fromMs) : null,
+      toMs: toMs != null ? PlatformInt64Util.from(toMs) : null,
+      sortByPlays: sortByPlays,
+    );
+  }
+
+  Future<void> clearListeningHistory() async {
+    await listeningHistoryClear();
+    await _refreshHome();
+    notifyListeners();
+  }
+
+  Future<UiPlaylistInfo?> saveTracksAsPlaylist(
+    String name,
+    List<PlatformInt64> trackIds,
+  ) async {
+    try {
+      final info = await playlistsCreate(name: name);
+      if (trackIds.isNotEmpty) {
+        await playlistsAddTracks(
+          id: info.id,
+          trackIds:
+              Int64List.fromList(trackIds.map((e) => e.toInt()).toList()),
+        );
+      }
+      await _refreshPlaylists();
+      notifyListeners();
+      return info;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // Genres & Search
+  Future<List<UiGenreInfo>> fetchGenres() {
+    return libraryGenres();
+  }
+
+  Future<UiGenreDetail> fetchGenreDetail(String genre) {
+    return libraryGenreDetail(genre: genre);
+  }
+
+  Future<List<UiTrackRow>> fetchGenreTracksPage(
+    String genre, {
+    int offset = 0,
+    int limit = 100,
+  }) {
+    return libraryGenreTracksPage(genre: genre, offset: offset, limit: limit);
+  }
+
+  Future<void> playGenre(
+    String genre, {
+    bool shuffle = false,
+    int startIndex = 0,
+  }) async {
+    await _runPlayerCmd(
+      () => libraryPlayGenre(
+        genre: genre,
+        shuffle: shuffle,
+        startIndex: startIndex,
+      ),
+    );
+  }
+
+  Future<List<UiArtistRow>> searchArtists(String query, {int limit = 12}) {
+    final q = query.trim();
+    return libraryArtistsPage(
+      offset: 0,
+      limit: limit,
+      search: q.isEmpty ? null : q,
+    );
+  }
+
+  Future<List<UiAlbumRow>> searchAlbums(String query, {int limit = 12}) {
+    final q = query.trim();
+    return libraryAlbumsPage(
+      offset: 0,
+      limit: limit,
+      search: q.isEmpty ? null : q,
+    );
+  }
+
+  Future<List<UiTrackRow>> searchTracks(String query, {int limit = 25}) {
+    final q = query.trim();
+    return libraryTracksPage(
+      offset: 0,
+      limit: limit,
+      search: q.isEmpty ? null : q,
+    );
+  }
+
   // Library search & virtualized paging
   Future<void> setTrackSearch(String query) async {
     if (_trackSearch == query) return;

@@ -19,6 +19,7 @@ import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/neomodern_logo.dart';
 
 enum MobileNavTab {
   home,
@@ -873,8 +874,8 @@ class _HomeTabState extends State<_HomeTab> {
                       color: AppTheme.accent500.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(
-                      Icons.headphones_rounded,
+                    alignment: Alignment.center,
+                    child: const NeoModernLogo(
                       size: 32,
                       color: AppTheme.accent500,
                     ),

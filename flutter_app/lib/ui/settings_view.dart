@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/sources_view.dart';
@@ -36,13 +37,37 @@ class _SettingsViewState extends State<SettingsView> {
 
   Future<void> _pickAndAddFolder() async {
     final uri = await FilePicker.pickDirectory(
-      dialogTitle: 'Select music folder',
+      dialogTitle: t('Select music folder'),
     );
     if (uri != null) {
       final path = uri.isScheme('file') ? uri.toFilePath() : uri.toString();
       if (path.isNotEmpty) {
         await widget.controller.addFolder(path);
       }
+    }
+  }
+
+  Future<void> _importM3u() async {
+    final files = await FilePicker.pickFiles(
+      dialogTitle: t('Import M3U Playlist'),
+      type: FileType.custom,
+      allowedExtensions: const ['m3u', 'm3u8'],
+    );
+    if (files.isEmpty) return;
+    final path = files.first.path;
+    if (path == null || path.isEmpty) return;
+    final baseName = File(path).uri.pathSegments.last;
+    final dotIdx = baseName.lastIndexOf('.');
+    final stem = dotIdx > 0 ? baseName.substring(0, dotIdx) : baseName;
+    final imported = await widget.controller.importPlaylistM3u(path, stem);
+    if (imported != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t('Imported playlist "{name}"', {'name': imported.name})),
+          behavior: SnackBarBehavior.floating,
+          width: 320,
+        ),
+      );
     }
   }
 
@@ -62,19 +87,60 @@ class _SettingsViewState extends State<SettingsView> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
       children: [
-        Text('Settings', style: Theme.of(context).textTheme.headlineSmall),
+        Text(t('Settings'), style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 2),
         Text(
-          'Audio playback, watched folders, and offline privacy',
+          t('Audio playback, watched folders, and offline privacy'),
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 24),
 
+        // Language Section
+        _SettingsSection(
+          title: t('Language'),
+          children: [
+            _SettingRow(
+              title: t('Language'),
+              subtitle: t('Choose the interface language'),
+              trailing: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(value: 'system', label: Text(t('System'))),
+                  ButtonSegment(value: 'en', label: Text(t('English'))),
+                  ButtonSegment(value: 'tr', label: Text(t('Türkçe'))),
+                ],
+                selected: {ctrl.language},
+                onSelectionChanged: (sel) => ctrl.setLanguage(sel.first),
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return AppColors.accentMuted;
+                    }
+                    return AppColors.canvas;
+                  }),
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return AppColors.accent;
+                    }
+                    return AppColors.textSecondary;
+                  }),
+                  side: WidgetStateProperty.all(
+                    const BorderSide(color: AppColors.border),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
         // Library Folders Section
         _SettingsSection(
-          title: 'Library Folders',
-          subtitle:
-              '${folders.length} watched ${folders.length == 1 ? 'folder' : 'folders'}',
+          title: t('Library Folders'),
+          subtitle: folders.length == 1
+              ? t('{n} watched folder', {'n': folders.length})
+              : t('{n} watched folders', {'n': folders.length}),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -93,7 +159,7 @@ class _SettingsViewState extends State<SettingsView> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh_rounded, size: 17),
-                label: Text(ctrl.isScanning ? 'Scanning...' : 'Rescan'),
+                label: Text(ctrl.isScanning ? t('Scanning...') : t('Rescan')),
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
@@ -103,9 +169,9 @@ class _SettingsViewState extends State<SettingsView> {
                   foregroundColor: AppColors.canvas,
                 ),
                 icon: const Icon(Icons.create_new_folder_rounded, size: 17),
-                label: const Text(
-                  'Add Folder',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                label: Text(
+                  t('Add Folder'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -132,7 +198,8 @@ class _SettingsViewState extends State<SettingsView> {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'Scanning library... ${ctrl.scannedCount} files processed',
+                      t('Scanning library... {n} files processed',
+                          {'n': ctrl.scannedCount}),
                       style: const TextStyle(
                         fontSize: 12.5,
                         color: AppColors.textPrimary,
@@ -142,11 +209,11 @@ class _SettingsViewState extends State<SettingsView> {
                 ),
               ),
             if (folders.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  'No music folders added yet. Click "Add Folder" to scan local audio files.',
-                  style: TextStyle(
+                  t('No music folders added yet. Click "Add Folder" to scan local audio files.'),
+                  style: const TextStyle(
                     fontSize: 13,
                     color: AppColors.textSecondary,
                   ),
@@ -177,7 +244,7 @@ class _SettingsViewState extends State<SettingsView> {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Remove folder',
+                        tooltip: t('Remove folder'),
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(
                           Icons.delete_outline_rounded,
@@ -195,18 +262,41 @@ class _SettingsViewState extends State<SettingsView> {
 
         const SizedBox(height: 20),
 
-        // Playback Section
+        // Playlists & M3U Section
         _SettingsSection(
-          title: 'Playback',
+          title: t('Playlists & M3U'),
           children: [
             _SettingRow(
-              title: 'ReplayGain',
-              subtitle: 'Normalize loudness using embedded ReplayGain tags',
+              title: t('Import M3U Playlist'),
+              subtitle:
+                  t('Import an .m3u or .m3u8 playlist file into your library'),
+              trailing: OutlinedButton.icon(
+                onPressed: _importM3u,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textPrimary,
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                icon: const Icon(Icons.file_open_outlined, size: 16),
+                label: Text(t('Import M3U')),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
+        // Playback Section
+        _SettingsSection(
+          title: t('Playback'),
+          children: [
+            _SettingRow(
+              title: t('ReplayGain'),
+              subtitle: t('Normalize loudness using embedded ReplayGain tags'),
               trailing: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'off', label: Text('Off')),
-                  ButtonSegment(value: 'track', label: Text('Track')),
-                  ButtonSegment(value: 'album', label: Text('Album')),
+                segments: [
+                  ButtonSegment(value: 'off', label: Text(t('Off'))),
+                  ButtonSegment(value: 'track', label: Text(t('Track'))),
+                  ButtonSegment(value: 'album', label: Text(t('Album'))),
                 ],
                 selected: {snap.replaygain},
                 onSelectionChanged: (sel) => ctrl.setReplaygain(sel.first),
@@ -231,8 +321,8 @@ class _SettingsViewState extends State<SettingsView> {
             ),
             const Divider(height: 20, color: AppColors.border),
             _SettingRow(
-              title: 'Gapless Playback',
-              subtitle: 'Seamless transitions between consecutive tracks',
+              title: t('Gapless Playback'),
+              subtitle: t('Seamless transitions between consecutive tracks'),
               trailing: Switch(
                 value: snap.gapless,
                 onChanged: ctrl.setGapless,
@@ -241,9 +331,9 @@ class _SettingsViewState extends State<SettingsView> {
             if (Platform.isWindows) ...[
               const Divider(height: 20, color: AppColors.border),
               _SettingRow(
-                title: 'WASAPI Exclusive Mode',
-                subtitle:
-                    'Bypass Windows audio mixer for bit-perfect output (takes effect on next track)',
+                title: t('WASAPI Exclusive Mode'),
+                subtitle: t(
+                    'Bypass Windows audio mixer for bit-perfect output (takes effect on next track)'),
                 trailing: Switch(
                   value: snap.wasapiExclusive,
                   onChanged: ctrl.setWasapiExclusive,
@@ -256,22 +346,22 @@ class _SettingsViewState extends State<SettingsView> {
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Crossfade',
-                            style: TextStyle(
+                            t('Crossfade'),
+                            style: const TextStyle(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w500,
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
-                            'Smoothly blend into the next local track',
-                            style: TextStyle(
+                            t('Smoothly blend into the next local track'),
+                            style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textSecondary,
                             ),
@@ -281,7 +371,7 @@ class _SettingsViewState extends State<SettingsView> {
                     ),
                     Text(
                       crossfade <= 0
-                          ? 'Off'
+                          ? t('Off')
                           : '${crossfade.toStringAsFixed(1)} s',
                       style: const TextStyle(
                         fontSize: 13,
@@ -311,22 +401,22 @@ class _SettingsViewState extends State<SettingsView> {
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Sleep Timer',
-                            style: TextStyle(
+                            t('Sleep Timer'),
+                            style: const TextStyle(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w500,
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
-                            'Automatically fade out and pause playback',
-                            style: TextStyle(
+                            t('Automatically fade out and pause playback'),
+                            style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textSecondary,
                             ),
@@ -337,7 +427,7 @@ class _SettingsViewState extends State<SettingsView> {
                     if (snap.sleepEndOfTrack || snap.sleepEndsAt != null)
                       Text(
                         snap.sleepEndOfTrack
-                            ? 'Active: End of track'
+                            ? t('Active: End of track')
                             : _formatSleepRemaining(snap.sleepEndsAt!),
                         style: const TextStyle(
                           fontSize: 12,
@@ -353,20 +443,20 @@ class _SettingsViewState extends State<SettingsView> {
                   runSpacing: 8,
                   children: [
                     _SleepChip(
-                      label: 'Off',
+                      label: t('Off'),
                       selected:
                           !snap.sleepEndOfTrack && snap.sleepEndsAt == null,
                       onTap: () => ctrl.setSleepTimer(),
                     ),
                     for (final mins in [15, 30, 45, 60])
                       _SleepChip(
-                        label: '$mins min',
+                        label: t('{n} min', {'n': mins}),
                         selected: false,
                         onTap: () =>
                             ctrl.setSleepTimer(minutes: mins.toDouble()),
                       ),
                     _SleepChip(
-                      label: 'End of Track',
+                      label: t('End of Track'),
                       selected: snap.sleepEndOfTrack,
                       onTap: () => ctrl.setSleepTimer(endOfTrack: true),
                     ),
@@ -381,8 +471,8 @@ class _SettingsViewState extends State<SettingsView> {
 
         // 10-Band Equalizer Section
         _SettingsSection(
-          title: '10-Band Equalizer',
-          subtitle: snap.eqEnabled ? 'Active' : 'Disabled',
+          title: t('10-Band Equalizer'),
+          subtitle: snap.eqEnabled ? t('Active') : t('Disabled'),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -398,7 +488,7 @@ class _SettingsViewState extends State<SettingsView> {
                     gainsDb: List<double>.filled(10, 0.0),
                   );
                 },
-                child: const Text('Reset Flat'),
+                child: Text(t('Reset Flat')),
               ),
               const SizedBox(width: 6),
               Switch(
@@ -414,11 +504,11 @@ class _SettingsViewState extends State<SettingsView> {
           children: [
             Row(
               children: [
-                const SizedBox(
+                SizedBox(
                   width: 84,
                   child: Text(
-                    'Preamp',
-                    style: TextStyle(
+                    t('Preamp'),
+                    style: const TextStyle(
                       fontSize: 12.5,
                       color: AppColors.textSecondary,
                     ),
@@ -519,12 +609,12 @@ class _SettingsViewState extends State<SettingsView> {
 
         // Network Section
         _SettingsSection(
-          title: 'Network',
+          title: t('Network'),
           children: [
             _SettingRow(
-              title: 'Offline Mode',
-              subtitle:
-                  'Block all network requests (online lyrics lookups remain disabled)',
+              title: t('Offline Mode'),
+              subtitle: t(
+                  'Block all network requests (online lyrics lookups remain disabled)'),
               trailing: Switch(
                 value: ctrl.offlineMode,
                 onChanged: ctrl.setOfflineMode,

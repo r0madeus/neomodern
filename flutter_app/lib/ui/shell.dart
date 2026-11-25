@@ -1,10 +1,17 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
+import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/albums_view.dart';
 import 'package:neomodern/ui/artists_view.dart';
+import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/favorites_view.dart';
 import 'package:neomodern/ui/home_view.dart';
 import 'package:neomodern/ui/mobile/mobile_shell.dart';
@@ -17,6 +24,7 @@ import 'package:neomodern/ui/settings_view.dart';
 import 'package:neomodern/ui/songs_view.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/track_menu.dart';
+import 'package:neomodern/ui/welcome_dialog.dart';
 
 enum NavTab {
   home,
@@ -53,6 +61,34 @@ class _AppShellState extends State<AppShell> {
 
   bool _rightPanelOpen = false;
   RightPanelTab _rightPanelTab = RightPanelTab.lyrics;
+  bool _welcomeChecked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_maybePromptWelcome);
+    _maybePromptWelcome();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_maybePromptWelcome);
+    super.dispose();
+  }
+
+  void _maybePromptWelcome() {
+    final ctrl = widget.controller;
+    if (_welcomeChecked || !ctrl.initialized) return;
+    _welcomeChecked = true;
+    if (ctrl.folders.isEmpty &&
+        !ctrl.welcomeDismissed &&
+        !ctrl.isProfileLocked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(showWelcomeDialog(context: context, controller: ctrl));
+      });
+    }
+  }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -127,14 +163,39 @@ class _AppShellState extends State<AppShell> {
   Future<void> _createPlaylist() async {
     final name = await showTextPromptDialog(
       context: context,
-      title: 'Create Playlist',
-      hintText: 'Playlist name',
-      confirmLabel: 'Create',
+      title: t('Create Playlist'),
+      hintText: t('Playlist name'),
+      confirmLabel: t('Create'),
     );
     if (name == null) return;
     final created = await widget.controller.createPlaylist(name);
     if (created != null && mounted) {
       _openPlaylist(created.id);
+    }
+  }
+
+  Future<void> _importM3uPlaylist() async {
+    final files = await FilePicker.pickFiles(
+      dialogTitle: t('Import M3U Playlist'),
+      type: FileType.custom,
+      allowedExtensions: const ['m3u', 'm3u8'],
+    );
+    if (files.isEmpty) return;
+    final path = files.first.path;
+    if (path == null || path.isEmpty) return;
+    final baseName = File(path).uri.pathSegments.last;
+    final dotIdx = baseName.lastIndexOf('.');
+    final stem = dotIdx > 0 ? baseName.substring(0, dotIdx) : baseName;
+    final imported = await widget.controller.importPlaylistM3u(path, stem);
+    if (imported != null && mounted) {
+      _openPlaylist(imported.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t('Imported playlist "{name}"', {'name': imported.name})),
+          behavior: SnackBarBehavior.floating,
+          width: 320,
+        ),
+      );
     }
   }
 
@@ -156,9 +217,9 @@ class _AppShellState extends State<AppShell> {
                     const Icon(Icons.error_outline_rounded,
                         size: 44, color: AppColors.danger),
                     const SizedBox(height: 12),
-                    const Text(
-                      'Failed to initialize NeoModern core',
-                      style: TextStyle(
+                    Text(
+                      t('Failed to initialize NeoModern core'),
+                      style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
@@ -178,16 +239,16 @@ class _AppShellState extends State<AppShell> {
         }
 
         if (!ctrl.initialized) {
-          return const Scaffold(
+          return Scaffold(
             body: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 14),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 14),
                   Text(
-                    'Starting NeoModern...',
-                    style: TextStyle(color: AppColors.textSecondary),
+                    t('Starting NeoModern...'),
+                    style: const TextStyle(color: AppColors.textSecondary),
                   ),
                 ],
               ),
@@ -262,14 +323,24 @@ class _AppShellState extends State<AppShell> {
                           child: Row(
                             children: [
                               _Sidebar(
+                                width: ctrl.sidebarWidth.clamp(190.0, 340.0),
                                 selected: activeTab,
                                 selectedPlaylistId: _selectedPlaylistId,
                                 controller: ctrl,
                                 onSelect: (t) => setState(() => _tab = t),
                                 onSelectPlaylist: _openPlaylist,
+                                onOpenAlbum: _openAlbum,
                                 onCreatePlaylist: _createPlaylist,
+                                onImportM3u: _importM3uPlaylist,
                                 onOpenProfiles: () =>
                                     showProfilesDialog(context, ctrl),
+                              ),
+                              _ResizeHandle(
+                                tooltip: t('Resize sidebar'),
+                                onDragDelta: (dx) => ctrl.previewSidebarWidth(
+                                  ctrl.sidebarWidth + dx,
+                                ),
+                                onDragEnd: () => unawaited(ctrl.saveUiPrefs()),
                               ),
                               Expanded(
                                 child: IndexedStack(
@@ -333,8 +404,18 @@ class _AppShellState extends State<AppShell> {
                                   ],
                                 ),
                               ),
-                              if (_rightPanelOpen)
+                              if (_rightPanelOpen) ...[
+                                _ResizeHandle(
+                                  tooltip: t('Resize right panel'),
+                                  onDragDelta: (dx) =>
+                                      ctrl.previewRightPanelWidth(
+                                    ctrl.rightPanelWidth - dx,
+                                  ),
+                                  onDragEnd: () => unawaited(ctrl.saveUiPrefs()),
+                                ),
                                 RightPanel(
+                                  width:
+                                      ctrl.rightPanelWidth.clamp(280.0, 480.0),
                                   controller: ctrl,
                                   activeTab: _rightPanelTab,
                                   onTabChanged: (t) =>
@@ -342,6 +423,7 @@ class _AppShellState extends State<AppShell> {
                                   onClose: () =>
                                       setState(() => _rightPanelOpen = false),
                                 ),
+                              ],
                             ],
                           ),
                         ),
@@ -367,35 +449,98 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
+class _ResizeHandle extends StatefulWidget {
+  const _ResizeHandle({
+    required this.tooltip,
+    required this.onDragDelta,
+    required this.onDragEnd,
+  });
+
+  final String tooltip;
+  final ValueChanged<double> onDragDelta;
+  final VoidCallback onDragEnd;
+
+  @override
+  State<_ResizeHandle> createState() => _ResizeHandleState();
+}
+
+class _ResizeHandleState extends State<_ResizeHandle> {
+  bool _hovered = false;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _hovered || _dragging;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: (_) => setState(() => _dragging = true),
+        onHorizontalDragUpdate: (details) =>
+            widget.onDragDelta(details.delta.dx),
+        onHorizontalDragEnd: (_) {
+          setState(() => _dragging = false);
+          widget.onDragEnd();
+        },
+        onHorizontalDragCancel: () {
+          setState(() => _dragging = false);
+          widget.onDragEnd();
+        },
+        child: Tooltip(
+          message: widget.tooltip,
+          waitDuration: const Duration(milliseconds: 600),
+          child: SizedBox(
+            width: 5,
+            height: double.infinity,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: active ? 2 : 1,
+                color: active ? AppColors.accent : AppColors.border,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
+    required this.width,
     required this.selected,
     required this.selectedPlaylistId,
     required this.controller,
     required this.onSelect,
     required this.onSelectPlaylist,
+    required this.onOpenAlbum,
     required this.onCreatePlaylist,
+    required this.onImportM3u,
     required this.onOpenProfiles,
   });
 
+  final double width;
   final NavTab selected;
   final PlatformInt64? selectedPlaylistId;
   final PlayerController controller;
   final ValueChanged<NavTab> onSelect;
   final ValueChanged<PlatformInt64> onSelectPlaylist;
+  final ValueChanged<PlatformInt64> onOpenAlbum;
   final VoidCallback onCreatePlaylist;
+  final VoidCallback onImportM3u;
   final VoidCallback onOpenProfiles;
 
   @override
   Widget build(BuildContext context) {
     final playlists = controller.playlists;
+    final pinned = controller.pinnedItems;
 
     return Container(
-      width: 228,
-      decoration: const BoxDecoration(
-        color: AppColors.sidebar,
-        border: Border(right: BorderSide(color: AppColors.border)),
-      ),
+      width: width,
+      color: AppColors.sidebar,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -431,44 +576,44 @@ class _Sidebar extends StatelessWidget {
           ),
           _NavItem(
             icon: Icons.home_rounded,
-            label: 'Home',
+            label: t('Home'),
             active: selected == NavTab.home,
             onTap: () => onSelect(NavTab.home),
           ),
           _NavItem(
             icon: Icons.music_note_rounded,
-            label: 'Songs',
+            label: t('Songs'),
             active: selected == NavTab.songs,
             onTap: () => onSelect(NavTab.songs),
           ),
           _NavItem(
             icon: Icons.album_rounded,
-            label: 'Albums',
+            label: t('Albums'),
             active: selected == NavTab.albums,
             onTap: () => onSelect(NavTab.albums),
           ),
           _NavItem(
             icon: Icons.person_rounded,
-            label: 'Artists',
+            label: t('Artists'),
             active: selected == NavTab.artists,
             onTap: () => onSelect(NavTab.artists),
           ),
           if (controller.hasEnabledSourceProviders)
             _NavItem(
               icon: Icons.hub_rounded,
-              label: 'Sources',
+              label: t('Sources'),
               active: selected == NavTab.sources,
               onTap: () => onSelect(NavTab.sources),
             ),
           _NavItem(
             icon: Icons.bar_chart_rounded,
-            label: 'Recap',
+            label: t('Recap'),
             active: selected == NavTab.recap,
             onTap: () => onSelect(NavTab.recap),
           ),
           _NavItem(
             icon: Icons.settings_rounded,
-            label: 'Settings',
+            label: t('Settings'),
             active: selected == NavTab.settings,
             onTap: () => onSelect(NavTab.settings),
           ),
@@ -480,18 +625,34 @@ class _Sidebar extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 4, 10, 4),
             child: Row(
               children: [
-                const Text(
-                  'YOUR LIBRARY',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.9,
-                    color: AppColors.textMuted,
+                Expanded(
+                  child: Text(
+                    t('YOUR LIBRARY'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.9,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 IconButton(
-                  tooltip: 'Create Playlist',
+                  tooltip: t('Import M3U Playlist'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 26, minHeight: 26),
+                  icon: const Icon(
+                    Icons.file_open_outlined,
+                    size: 15,
+                    color: AppColors.textSecondary,
+                  ),
+                  onPressed: onImportM3u,
+                ),
+                IconButton(
+                  tooltip: t('Create Playlist'),
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints:
@@ -508,13 +669,29 @@ class _Sidebar extends StatelessWidget {
           ),
           _NavItem(
             icon: Icons.star_rounded,
-            label: 'Favorites',
+            label: t('Favorites'),
             active: selected == NavTab.favorites,
             trailing: controller.favoriteCount > 0
                 ? '${controller.favoriteCount}'
                 : null,
             onTap: () => onSelect(NavTab.favorites),
           ),
+          if (pinned.isNotEmpty) ...[
+            for (final item in pinned)
+              _PinnedSidebarItem(
+                item: item,
+                active: item.kind == 'playlist' &&
+                    selected == NavTab.playlist &&
+                    selectedPlaylistId == item.targetId,
+                onTap: () {
+                  if (item.kind == 'album') {
+                    onOpenAlbum(item.targetId);
+                  } else {
+                    onSelectPlaylist(item.targetId);
+                  }
+                },
+              ),
+          ],
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 8),
@@ -559,7 +736,7 @@ class _Sidebar extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Scanning (${controller.scannedCount})',
+                            t('Scanning ({n})', {'n': controller.scannedCount}),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -581,8 +758,11 @@ class _Sidebar extends StatelessWidget {
                         Expanded(
                           child: Text(
                             controller.folders.isEmpty
-                                ? 'Add folder in Settings'
-                                : '${controller.trackCount} songs · ${controller.albumCount} albums',
+                                ? t('Add folder in Settings')
+                                : t('{songs} songs · {albums} albums', {
+                                    'songs': controller.trackCount,
+                                    'albums': controller.albumCount,
+                                  }),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -600,6 +780,69 @@ class _Sidebar extends StatelessWidget {
             onTap: onOpenProfiles,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PinnedSidebarItem extends StatelessWidget {
+  const _PinnedSidebarItem({
+    required this.item,
+    required this.active,
+    required this.onTap,
+  });
+
+  final UiPinnedItem item;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1.5),
+      child: Material(
+        color: active ? AppColors.accentMuted : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: active ? AppColors.accentMuted : AppColors.surfaceHover,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              children: [
+                CoverArt(
+                  path: item.coverPath,
+                  size: 24,
+                  borderRadius: 4,
+                  iconSize: 13,
+                  fallbackIcon: item.kind == 'album'
+                      ? Icons.album_rounded
+                      : Icons.queue_music_rounded,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      color: active ? AppColors.accent : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.push_pin_rounded,
+                  size: 12,
+                  color: AppColors.accent,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

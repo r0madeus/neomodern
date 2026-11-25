@@ -1,5 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/platform/android_audio_bridge.dart';
+import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/albums_view.dart';
@@ -51,6 +56,152 @@ class _MobileShellState extends State<MobileShell> {
 
   String? _externalArtistName;
   int _externalArtistNonce = 0;
+
+  bool _hasAudioPermission = true;
+  bool _requestingPermission = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (AndroidPlatformBridge.isAndroid) {
+      unawaited(_checkAudioPermission());
+    }
+  }
+
+  Future<void> _checkAudioPermission() async {
+    try {
+      final granted = await AndroidPlatformBridge.checkAudioPermission();
+      if (mounted && granted != _hasAudioPermission) {
+        setState(() => _hasAudioPermission = granted);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _requestAudioPermissionAndScan() async {
+    if (_requestingPermission) return;
+    setState(() => _requestingPermission = true);
+    try {
+      final granted = await AndroidPlatformBridge.requestAudioPermission();
+      if (!mounted) return;
+      setState(() {
+        _hasAudioPermission = granted;
+        _requestingPermission = false;
+      });
+      if (!granted) return;
+
+      String? musicDir;
+      try {
+        musicDir = await defaultMusicDir();
+      } catch (_) {}
+
+      final ctrl = widget.controller;
+      if (musicDir != null &&
+          musicDir.isNotEmpty &&
+          !ctrl.folders.any((f) => f.path == musicDir)) {
+        await ctrl.addFolder(musicDir);
+      }
+      await ctrl.rescanLibrary();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _requestingPermission = false);
+      }
+    }
+  }
+
+  Future<void> _scanQrCode() async {
+    String? scanned;
+    try {
+      scanned = await AndroidPlatformBridge.scanQrCode();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('QR scan failed: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final code = scanned?.trim();
+    if (code == null || code.isEmpty || !mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Row(
+          children: [
+            Icon(
+              Icons.qr_code_scanner_rounded,
+              size: 20,
+              color: AppColors.accent,
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Scanned QR Code',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Pairing / party code detected:',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.canvas,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: SelectableText(
+                code,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              unawaited(Clipboard.setData(ClipboardData(text: code)));
+              Navigator.of(dialogCtx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Copied QR code to clipboard.'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Copy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: AppColors.canvas,
+            ),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _openAlbum(PlatformInt64 albumId) {
     setState(() {
@@ -141,18 +292,36 @@ class _MobileShellState extends State<MobileShell> {
                         ),
                       ),
                       const SizedBox(width: 9),
-                      const Text(
-                        'NeoModern',
-                        style: TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                          letterSpacing: -0.2,
+                      const Expanded(
+                        child: Text(
+                          'NeoModern',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                       ),
-                      const Spacer(),
-                      SizedBox(
-                        width: 164,
+                      if (AndroidPlatformBridge.isAndroid)
+                        IconButton(
+                          tooltip: 'Scan QR',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          icon: const Icon(
+                            Icons.qr_code_scanner_rounded,
+                            size: 20,
+                            color: AppColors.textPrimary,
+                          ),
+                          onPressed: _scanQrCode,
+                        ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 148),
                         child: Padding(
                           padding: const EdgeInsets.only(top: 10),
                           child: ProfileBadgeButton(
@@ -165,6 +334,73 @@ class _MobileShellState extends State<MobileShell> {
                   ),
                 ),
               ),
+
+              if (!_hasAudioPermission)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.accent.withAlpha(110)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.library_music_rounded,
+                        size: 20,
+                        color: AppColors.accent,
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Allow access to your music files',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Grant audio permission to scan and play songs on your device.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: _requestingPermission
+                            ? null
+                            : _requestAudioPermissionAndScan,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          foregroundColor: AppColors.canvas,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          minimumSize: const Size(0, 34),
+                        ),
+                        child: Text(
+                          _requestingPermission ? 'Waiting...' : 'Allow',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               if (ctrl.lastError != null)
                 Container(

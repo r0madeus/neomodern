@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neomodern/platform/android_audio_bridge.dart';
 import 'package:neomodern/src/rust/android_engine.dart';
@@ -126,5 +127,68 @@ void main() {
   test('AndroidAudioBridge.start is a no-op on non-Android hosts', () async {
     AndroidAudioBridge.instance.start();
     await AndroidAudioBridge.instance.stop();
+  });
+
+  test('AndroidPlatformBridge returns safe defaults on non-Android hosts',
+      () async {
+    AndroidPlatformBridge.debugIsAndroidOverride = false;
+    addTearDown(() => AndroidPlatformBridge.debugIsAndroidOverride = null);
+
+    expect(await AndroidPlatformBridge.checkAudioPermission(), isTrue);
+    expect(await AndroidPlatformBridge.requestAudioPermission(), isTrue);
+    expect(await AndroidPlatformBridge.scanQrCode(), isNull);
+  });
+
+  test('AndroidPlatformBridge invokes platform MethodChannel on Android',
+      () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    AndroidPlatformBridge.debugIsAndroidOverride = true;
+    addTearDown(() {
+      AndroidPlatformBridge.debugIsAndroidOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(AndroidPlatformBridge.channel, null);
+    });
+
+    final calls = <String>[];
+    var permissionGranted = false;
+    String? qrPayload = 'neomodern://pair?code=482910';
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      AndroidPlatformBridge.channel,
+      (MethodCall call) async {
+        calls.add(call.method);
+        switch (call.method) {
+          case 'checkAudioPermission':
+            return permissionGranted;
+          case 'requestAudioPermission':
+            permissionGranted = true;
+            return true;
+          case 'scanQrCode':
+            return qrPayload;
+          default:
+            return null;
+        }
+      },
+    );
+
+    expect(await AndroidPlatformBridge.checkAudioPermission(), isFalse);
+    expect(await AndroidPlatformBridge.requestAudioPermission(), isTrue);
+    expect(await AndroidPlatformBridge.checkAudioPermission(), isTrue);
+    expect(
+      await AndroidPlatformBridge.scanQrCode(),
+      'neomodern://pair?code=482910',
+    );
+
+    qrPayload = null;
+    expect(await AndroidPlatformBridge.scanQrCode(), isNull);
+
+    expect(calls, [
+      'checkAudioPermission',
+      'requestAudioPermission',
+      'checkAudioPermission',
+      'scanQrCode',
+      'scanQrCode',
+    ]);
   });
 }

@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart' as rust_api;
 import 'package:path_provider/path_provider.dart';
@@ -104,11 +106,29 @@ class PlayerController extends ChangeNotifier {
   UiPartyStatus? _partyStatus;
   List<UiSourceProvider> _sourceProviders = const [];
 
+  // Wave 1 preferences, cover colors, and pinned items
+  UiPrefs _uiPrefs = const UiPrefs(
+    language: 'system',
+    welcomeDismissed: false,
+    sidebarWidth: 228.0,
+    rightPanelWidth: 328.0,
+  );
+  final Map<String, Color?> _coverColorCache = {};
+  final Set<String> _coverColorLoading = {};
+  List<UiPinnedItem> _pinnedItems = const [];
+
   bool get initialized => _initialized;
   String? get initError => _initError;
   String? get lastError => _lastError;
   UiPlayerSnapshot get snapshot => _snapshot;
   String? get currentCoverPath => _currentCoverPath;
+  Color? get currentCoverColor => coverColorCached(_currentCoverPath);
+  UiPrefs get uiPrefs => _uiPrefs;
+  String get language => _uiPrefs.language;
+  bool get welcomeDismissed => _uiPrefs.welcomeDismissed;
+  double get sidebarWidth => _uiPrefs.sidebarWidth;
+  double get rightPanelWidth => _uiPrefs.rightPanelWidth;
+  List<UiPinnedItem> get pinnedItems => _pinnedItems;
   bool get isPlaying => _snapshot.status == 'playing';
   bool get isScanning => _isScanning;
   int get scannedCount => _scannedCount;
@@ -174,6 +194,8 @@ class PlayerController extends ChangeNotifier {
       _folders = await libraryFolders();
       _isScanning = await libraryIsScanning();
       _offlineMode = await settingsGetOffline();
+      _uiPrefs = await uiPrefsGet();
+      AppStrings.setLanguage(_uiPrefs.language);
 
       await Future.wait([
         _refreshTracks(),
@@ -181,6 +203,7 @@ class PlayerController extends ChangeNotifier {
         _refreshArtists(),
         _refreshFavorites(),
         _refreshPlaylists(),
+        _refreshPinned(),
         _refreshHome(),
         _refreshProfiles(),
         _refreshSyncAndParty(),
@@ -280,12 +303,15 @@ class PlayerController extends ChangeNotifier {
     try {
       _folders = await libraryFolders();
       _isScanning = await libraryIsScanning();
+      _coverColorCache.clear();
+      _coverColorLoading.clear();
       await Future.wait([
         _refreshTracks(),
         _refreshAlbums(),
         _refreshArtists(),
         _refreshFavorites(),
         _refreshPlaylists(),
+        _refreshPinned(),
         _refreshHome(),
         _refreshProfiles(),
         _refreshSyncAndParty(),
@@ -487,12 +513,22 @@ class PlayerController extends ChangeNotifier {
     await _runPlayerCmd(() => queueEnqueue(paths: paths));
   }
 
+  Future<void> enqueueManyTracks(List<String> paths) async {
+    if (paths.isEmpty) return;
+    await _runPlayerCmd(() => queueEnqueueMany(paths: paths));
+  }
+
   Future<void> insertNextTracks(List<String> paths) async {
     await _runPlayerCmd(() => queueInsertNext(paths: paths));
   }
 
   Future<void> removeFromQueue(int index) async {
     await _runPlayerCmd(() => queueRemove(index: index));
+  }
+
+  Future<void> moveQueueItem(int from, int to) async {
+    if (from == to) return;
+    await _runPlayerCmd(() => queueMove(from: from, to: to));
   }
 
   Future<void> clearQueuedTracks() async {
@@ -627,6 +663,24 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  Future<void> setManyFavorites(
+    List<PlatformInt64> trackIds,
+    bool favorite,
+  ) async {
+    if (trackIds.isEmpty) return;
+    try {
+      await favoritesSetMany(
+        trackIds: Int64List.fromList(trackIds.map((e) => e.toInt()).toList()),
+        favorite: favorite,
+      );
+      await Future.wait([_refreshFavorites(), _refreshHome()]);
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
   Future<void> toggleCurrentFavorite() async {
     final path = _snapshot.current?.path;
     if (path == null) return;
@@ -668,7 +722,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> renamePlaylist(PlatformInt64 id, String name) async {
     try {
       await playlistsRename(id: id, name: name);
-      await _refreshPlaylists();
+      await Future.wait([_refreshPlaylists(), _refreshPinned()]);
       notifyListeners();
     } catch (e) {
       _lastError = e.toString();
@@ -679,7 +733,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> deletePlaylist(PlatformInt64 id) async {
     try {
       await playlistsDelete(id: id);
-      await _refreshPlaylists();
+      await Future.wait([_refreshPlaylists(), _refreshPinned()]);
       notifyListeners();
     } catch (e) {
       _lastError = e.toString();
@@ -719,6 +773,63 @@ class PlayerController extends ChangeNotifier {
     } catch (e) {
       _lastError = e.toString();
       notifyListeners();
+    }
+  }
+
+  Future<void> movePlaylistTrack(
+    PlatformInt64 playlistId,
+    int from,
+    int to,
+  ) async {
+    if (from == to) return;
+    try {
+      await playlistsMoveTrack(playlistId: playlistId, from: from, to: to);
+      await _refreshPlaylists();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> setPlaylistCover(
+    PlatformInt64 playlistId,
+    String mode,
+    String? value,
+  ) async {
+    try {
+      await playlistsSetCover(
+        playlistId: playlistId,
+        mode: mode,
+        value: value,
+      );
+      await Future.wait([_refreshPlaylists(), _refreshPinned()]);
+      _coverColorCache.clear();
+      _coverColorLoading.clear();
+      notifyListeners();
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<int> exportPlaylistM3u(PlatformInt64 playlistId, String destPath) {
+    return playlistsExportM3U(playlistId: playlistId, destPath: destPath);
+  }
+
+  Future<UiPlaylistInfo?> importPlaylistM3u(
+    String srcPath,
+    String name,
+  ) async {
+    try {
+      final info = await playlistsImportM3U(srcPath: srcPath, name: name);
+      await _refreshPlaylists();
+      notifyListeners();
+      return info;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
     }
   }
 
@@ -1072,6 +1183,7 @@ class PlayerController extends ChangeNotifier {
         _refreshSyncAndParty(),
         _refreshFavorites(),
         _refreshPlaylists(),
+        _refreshPinned(),
         _refreshHome(),
       ]);
       notifyListeners();
@@ -1302,6 +1414,165 @@ class PlayerController extends ChangeNotifier {
         artist: track.artist,
       ),
     );
+  }
+
+  // Cover Color Cache
+  Color? coverColorCached(String? path) {
+    final key = path?.trim();
+    if (key == null || key.isEmpty) return null;
+    if (_coverColorCache.containsKey(key)) {
+      return _coverColorCache[key];
+    }
+    if (!_coverColorLoading.contains(key)) {
+      _coverColorLoading.add(key);
+      unawaited(
+        coverColorForPath(path: key).then((argb) {
+          _coverColorCache[key] = argb != null ? Color(argb) : null;
+          notifyListeners();
+        }).catchError((_) {
+          _coverColorCache[key] = null;
+        }).whenComplete(() {
+          _coverColorLoading.remove(key);
+        }),
+      );
+    }
+    return null;
+  }
+
+  // Pinned Items
+  Future<void> _refreshPinned() async {
+    _pinnedItems = await pinnedList();
+  }
+
+  bool isPinned(String kind, PlatformInt64 targetId) {
+    return _pinnedItems.any((p) => p.kind == kind && p.targetId == targetId);
+  }
+
+  Future<bool?> togglePinned(String kind, PlatformInt64 targetId) async {
+    try {
+      final pinned = await pinnedToggle(kind: kind, targetId: targetId);
+      await _refreshPinned();
+      notifyListeners();
+      return pinned;
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // UI Preferences & Welcome
+  void previewSidebarWidth(double width) {
+    final clamped = width.clamp(190.0, 340.0);
+    if ((_uiPrefs.sidebarWidth - clamped).abs() < 0.5) return;
+    _uiPrefs = UiPrefs(
+      language: _uiPrefs.language,
+      welcomeDismissed: _uiPrefs.welcomeDismissed,
+      sidebarWidth: clamped,
+      rightPanelWidth: _uiPrefs.rightPanelWidth,
+    );
+    notifyListeners();
+  }
+
+  void previewRightPanelWidth(double width) {
+    final clamped = width.clamp(280.0, 480.0);
+    if ((_uiPrefs.rightPanelWidth - clamped).abs() < 0.5) return;
+    _uiPrefs = UiPrefs(
+      language: _uiPrefs.language,
+      welcomeDismissed: _uiPrefs.welcomeDismissed,
+      sidebarWidth: _uiPrefs.sidebarWidth,
+      rightPanelWidth: clamped,
+    );
+    notifyListeners();
+  }
+
+  Future<void> saveUiPrefs() async {
+    try {
+      await uiPrefsSave(prefs: _uiPrefs);
+    } catch (e) {
+      _lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> setLanguage(String language) async {
+    final normalized = language.trim();
+    if (_uiPrefs.language == normalized) return;
+    _uiPrefs = UiPrefs(
+      language: normalized,
+      welcomeDismissed: _uiPrefs.welcomeDismissed,
+      sidebarWidth: _uiPrefs.sidebarWidth,
+      rightPanelWidth: _uiPrefs.rightPanelWidth,
+    );
+    AppStrings.setLanguage(normalized);
+    notifyListeners();
+    await saveUiPrefs();
+  }
+
+  Future<void> dismissWelcome() async {
+    if (_uiPrefs.welcomeDismissed) return;
+    _uiPrefs = UiPrefs(
+      language: _uiPrefs.language,
+      welcomeDismissed: true,
+      sidebarWidth: _uiPrefs.sidebarWidth,
+      rightPanelWidth: _uiPrefs.rightPanelWidth,
+    );
+    notifyListeners();
+    await saveUiPrefs();
+  }
+
+  Future<String?> fetchDefaultMusicDir() {
+    return defaultMusicDir();
+  }
+
+  // Lyrics save
+  Future<String> saveCurrentLyricsLrc(String trackPath, String content) async {
+    final savedPath = await lyricsSaveLrc(
+      trackPath: trackPath,
+      content: content,
+    );
+    await refreshLyrics();
+    return savedPath;
+  }
+
+  // Tag Editor & MusicBrainz Metadata Matching
+  Future<UiTrackTags> readTrackTags(String path) {
+    return trackTagsRead(path: path);
+  }
+
+  Future<void> writeTrackTags(String path, UiTrackTags newTags) async {
+    await trackTagsWrite(path: path, newTags: newTags);
+    await _onLibraryChanged();
+  }
+
+  Future<List<UiAlbumMatchCandidate>> matchAlbumMetadata(
+    PlatformInt64 albumId,
+  ) {
+    return metadataMatchAlbum(albumId: albumId);
+  }
+
+  Future<UiMetadataApplyResult> applyAlbumMetadata({
+    required PlatformInt64 albumId,
+    required String releaseMbid,
+    required bool downloadCover,
+  }) async {
+    final result = await metadataApplyAlbum(
+      albumId: albumId,
+      releaseMbid: releaseMbid,
+      downloadCover: downloadCover,
+    );
+    await _onLibraryChanged();
+    return result;
+  }
+
+  Future<int> undoLastMetadata() async {
+    final count = await metadataUndoLast();
+    await _onLibraryChanged();
+    return count;
+  }
+
+  Future<bool> canUndoMetadata() {
+    return metadataCanUndo();
   }
 
   @override

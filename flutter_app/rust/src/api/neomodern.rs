@@ -7,15 +7,17 @@ use neomodern_core::library::{
     AlbumDetail, AlbumRow, ArtistProfile, ArtistRow, ArtistTopTrack, DynamicMix, FolderInfo,
     HomeFeed, HomeMixDetail, Hooks, Library, ListeningStats, MAX_PROFILES, NewListenEvent,
     PROFILE_COLORS, PlaylistInfo, Profile, ProfileId, RecentTrack, SortSpec, TopAlbumStat,
-    TopArtistStat, TopTrackStat, TrackRow,
+    TopArtistStat, TopTrackStat, TrackRow, cover_color, m3u, scan, tags,
 };
+use neomodern_core::lyrics::save::{self as lyrics_save, SaveMode};
 use neomodern_core::lyrics::{LyricsOptions, LyricsResult, LyricsService, LyricsSource};
 #[cfg(not(target_os = "android"))]
 use neomodern_core::media_keys::{self, Extra as MediaKeysExtra, MediaKeys};
+use neomodern_core::metadata::{ApplyOutcome, MetadataService, Proposal};
 use neomodern_core::net::Feature;
 use neomodern_core::player::{Player, PlayerEvent, PlayerSnapshot, Status, TrackInfo};
 use neomodern_core::queue::{RepeatMode, Track};
-use neomodern_core::session::SessionStore;
+use neomodern_core::session::{PinnedKind, PinnedRef, SessionStore, is_stream_url};
 use neomodern_core::source_provider::{
     ExternalTrack, HttpJsonProvider, ProviderConfig, ProviderKind, ProviderRegistry,
     load_provider_configs, save_provider_configs, validate_base_url,
@@ -26,7 +28,8 @@ use neomodern_core::sync::service::{PairingOpen, SyncStatus};
 use neomodern_core::sync::{
     EventSink, RemoteFeed, SyncConfig, SyncService, default_device_name, link,
 };
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -49,11 +52,16 @@ struct CoreState {
     library: Arc<Library>,
     session: Arc<SessionStore>,
     lyrics: Arc<LyricsService>,
+    metadata: Arc<MetadataService>,
     sync: SyncService,
     profile_lock: AtomicBool,
     source_config_path: PathBuf,
     source_configs: Mutex<Vec<ProviderConfig>>,
     source_registry: Arc<ProviderRegistry>,
+    cover_colors: Mutex<HashMap<String, Option<u32>>>,
+    metadata_proposals: Mutex<HashMap<(i64, String), Proposal>>,
+    ui_prefs_path: PathBuf,
+    ui_prefs: Mutex<UiPrefs>,
     #[cfg(not(target_os = "android"))]
     media_keys: Option<MediaKeys>,
     #[cfg(target_os = "android")]
@@ -208,10 +216,12 @@ pub struct UiAlbumRow {
     pub year: Option<i32>,
     pub track_count: u32,
     pub cover: Option<String>,
+    pub cover_color: Option<u32>,
 }
 
 impl From<AlbumRow> for UiAlbumRow {
     fn from(a: AlbumRow) -> Self {
+        let cover_color = cached_cover_color_only(a.cover.as_deref());
         Self {
             id: a.id,
             title: a.title,
@@ -219,6 +229,7 @@ impl From<AlbumRow> for UiAlbumRow {
             year: a.year,
             track_count: a.track_count,
             cover: a.cover,
+            cover_color,
         }
     }
 }
@@ -352,16 +363,21 @@ pub struct UiPlaylistInfo {
     pub track_count: u32,
     pub cover: Option<String>,
     pub album_covers: Vec<String>,
+    pub cover_mode: String,
+    pub cover_value: Option<String>,
 }
 
 impl From<PlaylistInfo> for UiPlaylistInfo {
     fn from(p: PlaylistInfo) -> Self {
+        let (cover_mode, cover_value) = playlist_cover_mode_and_value(p.cover.as_deref());
         Self {
             id: p.id,
             name: p.name,
             track_count: p.track_count,
             cover: p.cover,
             album_covers: p.album_covers,
+            cover_mode,
+            cover_value,
         }
     }
 }
@@ -779,6 +795,103 @@ pub struct UiExternalTrack {
     pub cover_url: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct UiTrackTags {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub track_number: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub year: Option<i32>,
+    pub genre: Option<String>,
+}
+
+impl From<tags::EditableTags> for UiTrackTags {
+    fn from(t: tags::EditableTags) -> Self {
+        Self {
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            album_artist: t.album_artist,
+            track_number: t.track_no,
+            disc_number: t.disc_no,
+            year: t.year,
+            genre: t.genre,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiMetadataFieldDiff {
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiMetadataTrackDiff {
+    pub track_id: i64,
+    pub path: String,
+    pub title: String,
+    pub matched: bool,
+    pub fields: Vec<UiMetadataFieldDiff>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiAlbumMatchCandidate {
+    pub release_mbid: String,
+    pub release_group_mbid: String,
+    pub title: String,
+    pub artist: String,
+    pub year: Option<i32>,
+    pub country: Option<String>,
+    pub format: Option<String>,
+    pub status: Option<String>,
+    pub track_count: u32,
+    pub score: u8,
+    pub label: String,
+    pub cover_preview: Option<String>,
+    pub album_fields: Vec<UiMetadataFieldDiff>,
+    pub tracks: Vec<UiMetadataTrackDiff>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiMetadataApplyResult {
+    pub batch_id: i64,
+    pub updated: u32,
+    pub failed: Vec<String>,
+    pub cover: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiPinnedItem {
+    pub kind: String,
+    pub target_id: i64,
+    pub title: String,
+    pub subtitle: String,
+    pub cover_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiPrefs {
+    pub language: String,
+    pub welcome_dismissed: bool,
+    pub sidebar_width: f64,
+    pub right_panel_width: f64,
+}
+
+impl Default for UiPrefs {
+    fn default() -> Self {
+        Self {
+            language: "system".to_string(),
+            welcome_dismissed: false,
+            sidebar_width: 228.0,
+            right_panel_width: 328.0,
+        }
+    }
+}
+
 impl From<ExternalTrack> for UiExternalTrack {
     fn from(t: ExternalTrack) -> Self {
         Self {
@@ -837,6 +950,173 @@ fn source_label(source: LyricsSource) -> String {
         LyricsSource::Lrclib => "LRCLIB".to_string(),
         LyricsSource::Netease => "NetEase".to_string(),
     }
+}
+
+fn rgb_to_argb([r, g, b]: [u8; 3]) -> u32 {
+    0xFF00_0000 | (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)
+}
+
+fn cached_cover_color_only(cover: Option<&str>) -> Option<u32> {
+    let cover = cover?.trim();
+    if cover.is_empty() {
+        return None;
+    }
+    let state = CORE.get()?;
+    let cache = state.cover_colors.lock().unwrap_or_else(|e| e.into_inner());
+    cache.get(cover).copied().flatten()
+}
+
+fn compute_and_cache_cover_color(state: &CoreState, path: &str) -> Option<u32> {
+    let key = path.trim();
+    if key.is_empty() {
+        return None;
+    }
+    {
+        let cache = state.cover_colors.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(&cached) = cache.get(key) {
+            return cached;
+        }
+    }
+    let color = cover_color::cover_color(Path::new(key))
+        .ok()
+        .map(rgb_to_argb);
+    let mut cache = state.cover_colors.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= 1024 {
+        cache.clear();
+    }
+    cache.insert(key.to_owned(), color);
+    color
+}
+
+fn playlist_cover_mode_and_value(cover: Option<&str>) -> (String, Option<String>) {
+    match cover.map(str::trim).filter(|s| !s.is_empty()) {
+        None => ("auto".to_string(), None),
+        Some(s) if s.starts_with("preset:") => ("gradient".to_string(), Some(s.to_owned())),
+        Some(s) => ("image".to_string(), Some(s.to_owned())),
+    }
+}
+
+fn normalize_language(lang: &str) -> Option<&'static str> {
+    match lang.trim() {
+        "system" => Some("system"),
+        "en" => Some("en"),
+        "tr" => Some("tr"),
+        _ => None,
+    }
+}
+
+fn sanitize_width(value: f64, default: f64, min: f64, max: f64) -> f64 {
+    if value.is_finite() && value > 0.0 {
+        value.clamp(min, max)
+    } else {
+        default
+    }
+}
+
+fn validate_and_normalize_ui_prefs(prefs: UiPrefs) -> Result<UiPrefs, String> {
+    let language = normalize_language(&prefs.language)
+        .ok_or_else(|| format!("invalid ui language: {}", prefs.language))?
+        .to_string();
+    let defaults = UiPrefs::default();
+    Ok(UiPrefs {
+        language,
+        welcome_dismissed: prefs.welcome_dismissed,
+        sidebar_width: sanitize_width(prefs.sidebar_width, defaults.sidebar_width, 120.0, 600.0),
+        right_panel_width: sanitize_width(
+            prefs.right_panel_width,
+            defaults.right_panel_width,
+            180.0,
+            720.0,
+        ),
+    })
+}
+
+fn load_ui_prefs(path: &Path) -> UiPrefs {
+    let defaults = UiPrefs::default();
+    let Ok(bytes) = std::fs::read(path) else {
+        return defaults;
+    };
+    let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return defaults;
+    };
+    let language = val
+        .get("language")
+        .and_then(|v| v.as_str())
+        .and_then(normalize_language)
+        .unwrap_or("system")
+        .to_string();
+    let welcome_dismissed = val
+        .get("welcomeDismissed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(defaults.welcome_dismissed);
+    let sidebar_width = val
+        .get("sidebarWidth")
+        .and_then(|v| v.as_f64())
+        .map(|w| sanitize_width(w, defaults.sidebar_width, 120.0, 600.0))
+        .unwrap_or(defaults.sidebar_width);
+    let right_panel_width = val
+        .get("rightPanelWidth")
+        .and_then(|v| v.as_f64())
+        .map(|w| sanitize_width(w, defaults.right_panel_width, 180.0, 720.0))
+        .unwrap_or(defaults.right_panel_width);
+    UiPrefs {
+        language,
+        welcome_dismissed,
+        sidebar_width,
+        right_panel_width,
+    }
+}
+
+fn save_ui_prefs(path: &Path, prefs: &UiPrefs) -> Result<(), String> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_vec_pretty(&serde_json::json!({
+        "language": prefs.language,
+        "welcomeDismissed": prefs.welcome_dismissed,
+        "sidebarWidth": prefs.sidebar_width,
+        "rightPanelWidth": prefs.right_panel_width,
+    }))
+    .map_err(|e| e.to_string())?;
+    scan::write_atomic(path, &json).map_err(|e| e.to_string())
+}
+
+fn refresh_player_meta(library: &Library, player: &Player, paths: &[String]) {
+    for path in paths {
+        match library.track_meta(path) {
+            Ok(Some(meta)) => {
+                player.update_track_meta(path, &meta.title, &meta.artist);
+            }
+            Ok(None) => {}
+            Err(e) => log::warn!("could not read back {path}: {e}"),
+        }
+    }
+}
+
+fn find_track_id_for_path(library: &Library, path: &str) -> Result<Option<i64>, String> {
+    if let Some(id) = library.track_id_by_path(path).map_err(|e| e.to_string())? {
+        return Ok(Some(id));
+    }
+    let display = scan::display_path(Path::new(path));
+    if display != path
+        && let Some(id) = library
+            .track_id_by_path(&display)
+            .map_err(|e| e.to_string())?
+    {
+        return Ok(Some(id));
+    }
+    if let Ok(canon) = std::fs::canonicalize(Path::new(path)) {
+        let canon_display = scan::display_path(&canon);
+        if let Some(id) = library
+            .track_id_by_path(&canon_display)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
 }
 
 pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSnapshot, String> {
@@ -991,6 +1271,12 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
                 .with_net_policy(session.net_policy()),
         );
 
+        let metadata = Arc::new(
+            MetadataService::new()
+                .map_err(|e| format!("failed to create metadata service: {e}"))?
+                .with_net_policy(session.net_policy()),
+        );
+
         let sync = SyncService::new(
             Arc::clone(&library),
             Some(Arc::clone(&player)),
@@ -1022,6 +1308,9 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
             }
         }
 
+        let ui_prefs_path = data_path.join("ui_prefs.json");
+        let loaded_ui_prefs = load_ui_prefs(&ui_prefs_path);
+
         let allow_phones = session.allow_phone_connections();
         let party_enabled = session.jam_enabled();
         let sync_clone = sync.clone();
@@ -1031,11 +1320,16 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
             library,
             session,
             lyrics,
+            metadata,
             sync,
             profile_lock,
             source_config_path,
             source_configs: Mutex::new(configs),
             source_registry,
+            cover_colors: Mutex::new(HashMap::new()),
+            metadata_proposals: Mutex::new(HashMap::new()),
+            ui_prefs_path,
+            ui_prefs: Mutex::new(loaded_ui_prefs),
             #[cfg(not(target_os = "android"))]
             media_keys,
             #[cfg(target_os = "android")]
@@ -1342,6 +1636,10 @@ pub fn queue_enqueue(paths: Vec<String>) -> Result<UiPlayerSnapshot, String> {
         .map_err(|e| e.to_string())
 }
 
+pub fn queue_enqueue_many(paths: Vec<String>) -> Result<UiPlayerSnapshot, String> {
+    queue_enqueue(paths)
+}
+
 pub fn queue_insert_next(paths: Vec<String>) -> Result<UiPlayerSnapshot, String> {
     let state = core()?;
     let tracks = build_tracks(&state.library, paths);
@@ -1356,6 +1654,14 @@ pub fn queue_remove(index: u32) -> Result<UiPlayerSnapshot, String> {
     core()?
         .player
         .remove(index as usize)
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+pub fn queue_move(from: u32, to: u32) -> Result<UiPlayerSnapshot, String> {
+    core()?
+        .player
+        .move_entry(from as usize, to as usize)
         .map(Into::into)
         .map_err(|e| e.to_string())
 }
@@ -1448,7 +1754,8 @@ pub fn library_album_count(search: Option<String>) -> Result<u32, String> {
 }
 
 pub fn library_album_detail(album_id: i64) -> Result<Option<UiAlbumDetail>, String> {
-    let lib = &core()?.library;
+    let state = core()?;
+    let lib = &state.library;
     if lib
         .album_info(album_id)
         .map_err(|e| e.to_string())?
@@ -1457,7 +1764,18 @@ pub fn library_album_detail(album_id: i64) -> Result<Option<UiAlbumDetail>, Stri
         return Ok(None);
     }
     let detail = lib.album(album_id).map_err(|e| e.to_string())?;
-    Ok(Some(detail.into()))
+    let mut ui_detail: UiAlbumDetail = detail.into();
+    if ui_detail.album.cover_color.is_none()
+        && let Some(cover) = ui_detail.album.cover.as_deref()
+    {
+        ui_detail.album.cover_color = compute_and_cache_cover_color(state, cover);
+    }
+    Ok(Some(ui_detail))
+}
+
+pub fn cover_color_for_path(path: String) -> Result<Option<u32>, String> {
+    let state = core()?;
+    Ok(compute_and_cache_cover_color(state, &path))
 }
 
 pub fn library_track_count(search: Option<String>) -> Result<u32, String> {
@@ -1617,6 +1935,14 @@ pub fn favorites_toggle_by_path(path: String) -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
+pub fn favorites_set_many(track_ids: Vec<i64>, favorite: bool) -> Result<(), String> {
+    core()?
+        .library
+        .set_favorites(&track_ids, favorite)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 pub fn favorites_play(start_index: u32) -> Result<UiPlayerSnapshot, String> {
     let state = core()?;
     let tracks = state
@@ -1696,6 +2022,94 @@ pub fn playlists_remove_track(id: i64, position: u32) -> Result<(), String> {
         .library
         .playlist_remove(id, &[position as usize])
         .map_err(|e| e.to_string())
+}
+
+pub fn playlists_move_track(playlist_id: i64, from: u32, to: u32) -> Result<(), String> {
+    core()?
+        .library
+        .playlist_move(playlist_id, from as usize, to as usize)
+        .map_err(|e| e.to_string())
+}
+
+pub fn playlists_set_cover(
+    playlist_id: i64,
+    mode: String,
+    value: Option<String>,
+) -> Result<(), String> {
+    let lib = &core()?.library;
+    match mode.trim() {
+        "auto" => lib
+            .clear_playlist_cover(playlist_id)
+            .map_err(|e| e.to_string()),
+        "gradient" => {
+            let raw = value
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| "gradient preset value is required".to_string())?;
+            let preset = if raw.starts_with("preset:") {
+                raw.to_owned()
+            } else {
+                format!("preset:{raw}")
+            };
+            lib.set_playlist_cover_preset(playlist_id, &preset)
+                .map_err(|e| e.to_string())
+        }
+        "image" => {
+            let path = value
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| "image path is required".to_string())?;
+            lib.set_playlist_cover_file(playlist_id, Path::new(path))
+                .map_err(|e| e.to_string())
+        }
+        other => Err(format!("invalid playlist cover mode: {other}")),
+    }
+}
+
+pub fn playlists_export_m3u(playlist_id: i64, dest_path: String) -> Result<u32, String> {
+    let dest = dest_path.trim();
+    if dest.is_empty() {
+        return Err("destination path must not be empty".to_string());
+    }
+    let lib = &core()?.library;
+    let rows = lib
+        .playlist_tracks(playlist_id, 0, u32::MAX as u64)
+        .map_err(|e| e.to_string())?;
+    let count = u32::try_from(rows.len()).unwrap_or(u32::MAX);
+    let rendered = m3u::render(&rows);
+    let out_path = Path::new(dest);
+    if let Some(parent) = out_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(out_path, rendered).map_err(|e| format!("could not write {dest}: {e}"))?;
+    Ok(count)
+}
+
+pub fn playlists_import_m3u(src_path: String, name: String) -> Result<UiPlaylistInfo, String> {
+    let src = src_path.trim();
+    if src.is_empty() {
+        return Err("source path must not be empty".to_string());
+    }
+    let path = Path::new(src);
+    let bytes = std::fs::read(path).map_err(|e| format!("could not read {src}: {e}"))?;
+    let text = String::from_utf8_lossy(&bytes);
+    let playlist_name = if name.trim().is_empty() {
+        path.file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "Imported".to_string())
+    } else {
+        name.trim().to_string()
+    };
+    let imported = core()?
+        .library
+        .import_m3u(&playlist_name, &text, path.parent())
+        .map_err(|e| e.to_string())?;
+    Ok(imported.playlist.into())
 }
 
 pub fn playlists_play(id: i64, start_index: u32) -> Result<UiPlayerSnapshot, String> {
@@ -1849,6 +2263,25 @@ pub async fn lyrics_for_track(
             source: None,
         },
     })
+}
+
+pub fn lyrics_save_lrc(track_path: String, content: String) -> Result<String, String> {
+    if content.trim().is_empty() {
+        return Err("lyrics content must not be empty".to_string());
+    }
+    let audio = Path::new(track_path.trim());
+    if track_path.trim().is_empty() || is_stream_url(audio) {
+        return Err("cannot save .lrc for this track path".to_string());
+    }
+    let _wrote = lyrics_save::save(SaveMode::Sidecar, audio, &content)?;
+    let lower = audio.with_extension("lrc");
+    let upper = audio.with_extension("LRC");
+    let dest = if lower.exists() || !upper.exists() {
+        lower
+    } else {
+        upper
+    };
+    Ok(scan::display_path(&dest))
 }
 
 // ---------------------------------------------------------------------
@@ -2235,6 +2668,358 @@ pub async fn source_provider_play(
         .map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------------
+// Tag Editor
+// ---------------------------------------------------------------------
+
+pub fn track_tags_read(path: String) -> Result<UiTrackTags, String> {
+    tags::read_tags(Path::new(&path))
+        .map(Into::into)
+        .map_err(|e| e.to_string())
+}
+
+pub fn track_tags_write(path: String, new_tags: UiTrackTags) -> Result<(), String> {
+    let state = core()?;
+    let current = state.player.current_path();
+    if tags::is_playing_path(&path, current.as_deref()) {
+        return Err(tags::PLAYING_ERROR.to_string());
+    }
+    let changes = tags::TagChanges {
+        title: Some(new_tags.title),
+        artist: Some(new_tags.artist),
+        album: Some(new_tags.album),
+        album_artist: Some(new_tags.album_artist),
+        track_no: Some(new_tags.track_number),
+        disc_no: Some(new_tags.disc_number),
+        year: Some(new_tags.year),
+        genre: Some(new_tags.genre),
+        ..tags::TagChanges::default()
+    };
+    if let Some(track_id) = find_track_id_for_path(&state.library, &path)? {
+        let outcome =
+            tags::write_for_tracks(&state.library, &[track_id], &changes, current.as_deref())
+                .map_err(|e| e.to_string())?;
+        if !outcome.failed.is_empty() {
+            let msg = outcome
+                .failed
+                .into_iter()
+                .map(|f| f.error)
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(msg);
+        }
+        refresh_player_meta(&state.library, &state.player, &outcome.updated);
+    } else {
+        tags::write_tags(Path::new(&path), &changes).map_err(|e| e.to_string())?;
+        if let Ok(updated) = tags::read_tags(Path::new(&path)) {
+            let title = updated.title.unwrap_or_default();
+            let artist = updated.artist.unwrap_or_default();
+            state.player.update_track_meta(&path, &title, &artist);
+        }
+        let _ = state.event_tx.send(UiEvent::LibraryChanged);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------
+// MusicBrainz Metadata Matching
+// ---------------------------------------------------------------------
+
+fn map_field_diff(d: neomodern_core::metadata::FieldDiff) -> UiMetadataFieldDiff {
+    UiMetadataFieldDiff {
+        field: d.field.to_string(),
+        old_value: d.old,
+        new_value: d.new,
+    }
+}
+
+fn cache_album_proposals(
+    state: &CoreState,
+    album_id: i64,
+    candidates: &[neomodern_core::metadata::AlbumCandidate],
+) {
+    let mut cache = state
+        .metadata_proposals
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if cache.len() > 128 {
+        cache.clear();
+    }
+    for cand in candidates {
+        cache.insert((album_id, cand.release_id.clone()), cand.proposal.clone());
+    }
+}
+
+pub async fn metadata_match_album(album_id: i64) -> Result<Vec<UiAlbumMatchCandidate>, String> {
+    let state = core()?;
+    let candidates = state
+        .metadata
+        .match_album(&state.library, album_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    cache_album_proposals(state, album_id, &candidates);
+    Ok(candidates
+        .into_iter()
+        .map(|c| UiAlbumMatchCandidate {
+            release_mbid: c.release_id,
+            release_group_mbid: c.release_group_id,
+            title: c.title,
+            artist: c.artist,
+            year: c.year,
+            country: c.country,
+            format: c.format,
+            status: c.status,
+            track_count: u32::try_from(c.track_count).unwrap_or(u32::MAX),
+            score: c.score,
+            label: c.label.to_string(),
+            cover_preview: c.cover_preview,
+            album_fields: c.album_fields.into_iter().map(map_field_diff).collect(),
+            tracks: c
+                .tracks
+                .into_iter()
+                .map(|t| UiMetadataTrackDiff {
+                    track_id: t.track_id,
+                    path: t.path,
+                    title: t.title,
+                    matched: t.matched,
+                    fields: t.fields.into_iter().map(map_field_diff).collect(),
+                })
+                .collect(),
+        })
+        .collect())
+}
+
+fn map_apply_outcome(outcome: ApplyOutcome) -> UiMetadataApplyResult {
+    UiMetadataApplyResult {
+        batch_id: outcome.batch_id,
+        updated: u32::try_from(outcome.updated).unwrap_or(u32::MAX),
+        failed: outcome
+            .failed
+            .into_iter()
+            .map(|(path, err)| format!("{path}: {err}"))
+            .collect(),
+        cover: outcome.cover,
+    }
+}
+
+pub async fn metadata_apply_album(
+    album_id: i64,
+    release_mbid: String,
+    download_cover: bool,
+) -> Result<UiMetadataApplyResult, String> {
+    let state = core()?;
+    let cached = {
+        let cache = state
+            .metadata_proposals
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        cache.get(&(album_id, release_mbid.clone())).cloned()
+    };
+    let mut proposal = match cached {
+        Some(p) => p,
+        None => {
+            let candidates = state
+                .metadata
+                .match_album(&state.library, album_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            cache_album_proposals(state, album_id, &candidates);
+            candidates
+                .into_iter()
+                .find(|c| c.release_id == release_mbid)
+                .map(|c| c.proposal)
+                .ok_or_else(|| {
+                    format!("matching release {release_mbid} not found for album {album_id}")
+                })?
+        }
+    };
+    proposal.cover = download_cover;
+    let outcome = state
+        .metadata
+        .apply(&state.library, proposal, state.player.current_path())
+        .await
+        .map_err(|e| e.to_string())?;
+    refresh_player_meta(&state.library, &state.player, &outcome.updated_paths);
+    if outcome.cover.is_some() {
+        state
+            .cover_colors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
+    Ok(map_apply_outcome(outcome))
+}
+
+pub async fn metadata_undo_last() -> Result<u32, String> {
+    let state = core()?;
+    let latest = state
+        .library
+        .next_tag_batch_id()
+        .map_err(|e| e.to_string())?
+        - 1;
+    if latest <= 0 {
+        return Err("nothing to undo for this change".to_string());
+    }
+    let outcome = state
+        .metadata
+        .undo(&state.library, latest, state.player.current_path())
+        .await
+        .map_err(|e| e.to_string())?;
+    refresh_player_meta(&state.library, &state.player, &outcome.updated_paths);
+    state
+        .cover_colors
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    if outcome.updated == 0 && !outcome.failed.is_empty() {
+        let msg = outcome
+            .failed
+            .into_iter()
+            .map(|(p, e)| format!("{p}: {e}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(msg);
+    }
+    Ok(u32::try_from(outcome.updated).unwrap_or(u32::MAX))
+}
+
+pub fn metadata_can_undo() -> Result<bool, String> {
+    let state = core()?;
+    let latest = state
+        .library
+        .next_tag_batch_id()
+        .map_err(|e| e.to_string())?
+        - 1;
+    if latest <= 0 {
+        return Ok(false);
+    }
+    let rows = state
+        .library
+        .tag_history_batch(latest)
+        .map_err(|e| e.to_string())?;
+    Ok(!rows.is_empty())
+}
+
+// ---------------------------------------------------------------------
+// Pinned Items
+// ---------------------------------------------------------------------
+
+fn parse_pinned_kind(kind: &str) -> Result<PinnedKind, String> {
+    match kind.trim() {
+        "album" => Ok(PinnedKind::Album),
+        "playlist" => Ok(PinnedKind::Playlist),
+        other => Err(format!("invalid pinned kind: {other}")),
+    }
+}
+
+pub fn pinned_list() -> Result<Vec<UiPinnedItem>, String> {
+    let state = core()?;
+    let refs = state.session.pinned();
+    let mut playlists_cache: Option<Vec<PlaylistInfo>> = None;
+    let mut out = Vec::with_capacity(refs.len());
+    for item in refs {
+        match item.kind {
+            PinnedKind::Album => {
+                if let Ok(Some(album)) = state.library.album_info(item.id) {
+                    out.push(UiPinnedItem {
+                        kind: "album".to_string(),
+                        target_id: album.id,
+                        title: album.title,
+                        subtitle: album.album_artist,
+                        cover_path: album.cover,
+                    });
+                }
+            }
+            PinnedKind::Playlist => {
+                let list = match &playlists_cache {
+                    Some(v) => v,
+                    None => playlists_cache
+                        .insert(state.library.playlists().map_err(|e| e.to_string())?),
+                };
+                if let Some(p) = list.iter().find(|p| p.id == item.id) {
+                    let cover_path = p
+                        .cover
+                        .as_deref()
+                        .filter(|c| !c.starts_with("preset:"))
+                        .map(str::to_owned)
+                        .or_else(|| p.album_covers.first().cloned());
+                    out.push(UiPinnedItem {
+                        kind: "playlist".to_string(),
+                        target_id: p.id,
+                        title: p.name.clone(),
+                        subtitle: String::new(),
+                        cover_path,
+                    });
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+pub fn pinned_toggle(kind: String, target_id: i64) -> Result<bool, String> {
+    let state = core()?;
+    let kind = parse_pinned_kind(&kind)?;
+    let pinned = state.session.toggle_pin(PinnedRef {
+        kind,
+        id: target_id,
+    });
+    state.session.save_now(&state.player.export_session());
+    Ok(pinned)
+}
+
+// ---------------------------------------------------------------------
+// UI Preferences & Default Music Directory
+// ---------------------------------------------------------------------
+
+pub fn ui_prefs_get() -> Result<UiPrefs, String> {
+    let state = core()?;
+    Ok(state
+        .ui_prefs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone())
+}
+
+pub fn ui_prefs_save(prefs: UiPrefs) -> Result<(), String> {
+    let state = core()?;
+    let normalized = validate_and_normalize_ui_prefs(prefs)?;
+    save_ui_prefs(&state.ui_prefs_path, &normalized)?;
+    *state.ui_prefs.lock().unwrap_or_else(|e| e.into_inner()) = normalized;
+    Ok(())
+}
+
+pub fn default_music_dir() -> Option<String> {
+    let candidate: Option<PathBuf> = {
+        #[cfg(target_os = "windows")]
+        {
+            std::env::var_os("USERPROFILE")
+                .map(|home| PathBuf::from(home).join("Music"))
+                .or_else(|| {
+                    let drive = std::env::var_os("HOMEDRIVE")?;
+                    let path = std::env::var_os("HOMEPATH")?;
+                    let mut home = PathBuf::from(drive);
+                    home.push(path);
+                    Some(home.join("Music"))
+                })
+        }
+        #[cfg(target_os = "android")]
+        {
+            Some(PathBuf::from("/storage/emulated/0/Music"))
+        }
+        #[cfg(all(not(target_os = "windows"), not(target_os = "android")))]
+        {
+            std::env::var_os("XDG_MUSIC_DIR")
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir())
+                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Music")))
+        }
+    };
+    candidate
+        .filter(|p| p.is_dir())
+        .map(|p| scan::display_path(&p))
+}
+
 #[cfg(target_os = "windows")]
 fn find_process_hwnd() -> Option<*mut std::ffi::c_void> {
     use std::ffi::c_void;
@@ -2280,4 +3065,80 @@ fn find_process_hwnd() -> Option<*mut std::ffi::c_void> {
         EnumWindows(callback, (&mut search as *mut Search) as isize);
     }
     (!search.found.is_null()).then_some(search.found)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rgb_to_argb_packs_opaque_alpha() {
+        assert_eq!(rgb_to_argb([0x12, 0x34, 0x56]), 0xFF12_3456);
+        assert_eq!(rgb_to_argb([0, 0, 0]), 0xFF00_0000);
+        assert_eq!(rgb_to_argb([255, 255, 255]), 0xFFFF_FFFF);
+    }
+
+    #[test]
+    fn playlist_cover_mode_parses_auto_gradient_and_image() {
+        assert_eq!(
+            playlist_cover_mode_and_value(None),
+            ("auto".to_string(), None)
+        );
+        assert_eq!(
+            playlist_cover_mode_and_value(Some("  ")),
+            ("auto".to_string(), None)
+        );
+        assert_eq!(
+            playlist_cover_mode_and_value(Some("preset:teal:star")),
+            ("gradient".to_string(), Some("preset:teal:star".to_string()))
+        );
+        assert_eq!(
+            playlist_cover_mode_and_value(Some("C:/covers/pl.jpg")),
+            ("image".to_string(), Some("C:/covers/pl.jpg".to_string()))
+        );
+    }
+
+    #[test]
+    fn ui_prefs_validation_and_persistence_roundtrip() {
+        let valid = validate_and_normalize_ui_prefs(UiPrefs {
+            language: "tr".to_string(),
+            welcome_dismissed: true,
+            sidebar_width: 260.0,
+            right_panel_width: 340.0,
+        })
+        .unwrap();
+        assert_eq!(valid.language, "tr");
+        assert!(valid.welcome_dismissed);
+        assert_eq!(valid.sidebar_width, 260.0);
+        assert_eq!(valid.right_panel_width, 340.0);
+
+        assert!(
+            validate_and_normalize_ui_prefs(UiPrefs {
+                language: "fr".to_string(),
+                ..UiPrefs::default()
+            })
+            .is_err()
+        );
+
+        let dir = std::env::temp_dir().join(format!(
+            "neomodern_ui_prefs_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let prefs_path = dir.join("ui_prefs.json");
+        assert_eq!(load_ui_prefs(&prefs_path), UiPrefs::default());
+        save_ui_prefs(&prefs_path, &valid).unwrap();
+        assert_eq!(load_ui_prefs(&prefs_path), valid);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_pinned_kind_validates_variants() {
+        assert_eq!(parse_pinned_kind("album").unwrap(), PinnedKind::Album);
+        assert_eq!(parse_pinned_kind("playlist").unwrap(), PinnedKind::Playlist);
+        assert!(parse_pinned_kind("artist").is_err());
+    }
 }

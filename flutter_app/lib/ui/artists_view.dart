@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
+import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/track_menu.dart';
 
 class ArtistsView extends StatefulWidget {
@@ -109,11 +111,11 @@ class _ArtistsViewState extends State<ArtistsView> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Artists',
+                  Text(t('Artists'),
                       style: Theme.of(context).textTheme.headlineSmall),
                   const SizedBox(height: 2),
                   Text(
-                    '${ctrl.artistCount} artists',
+                    t('{n} artists', {'n': ctrl.artistCount}),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -126,7 +128,7 @@ class _ArtistsViewState extends State<ArtistsView> {
                   onChanged: _onSearchChanged,
                   style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: 'Search artists...',
+                    hintText: t('Search artists...'),
                     prefixIcon: const Icon(
                       Icons.search_rounded,
                       size: 18,
@@ -153,8 +155,8 @@ class _ArtistsViewState extends State<ArtistsView> {
               ? Center(
                   child: Text(
                     ctrl.artistSearch.isNotEmpty
-                        ? 'No matching artists found.'
-                        : 'No artists yet. Add a music folder in Settings.',
+                        ? t('No matching artists found.')
+                        : t('No artists yet. Add a music folder in Settings.'),
                     style: const TextStyle(color: AppColors.textSecondary),
                   ),
                 )
@@ -272,282 +274,308 @@ class _ArtistDetailView extends StatelessWidget {
   Widget build(BuildContext context) {
     final activePath = controller.snapshot.current?.path;
     final avatarPath = detail.image ?? detail.fallbackCover;
+    final tintColor = controller.coverColorCached(avatarPath);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
+      padding: const EdgeInsets.only(bottom: 28),
       children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: onBack,
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.textSecondary,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            ),
-            icon: const Icon(Icons.arrow_back_rounded, size: 18),
-            label: const Text('Back to Artists'),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            CoverArt(
-              path: avatarPath,
-              size: 144,
-              borderRadius: 72,
-              iconSize: 52,
-              fallbackIcon: Icons.person_rounded,
-            ),
-            const SizedBox(width: 22),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    detail.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                      letterSpacing: -0.5,
-                    ),
+        TintedBackdrop(
+          tintColor: tintColor,
+          padding: const EdgeInsets.fromLTRB(24, 18, 24, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onBack,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    [
-                      '${detail.albumCount} albums',
-                      '${detail.trackCount} tracks',
-                      if (detail.playCount > BigInt.zero)
-                        '${detail.playCount} plays',
-                    ].join(' · '),
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  if (detail.genres.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final g in detail.genres)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: Text(
-                              g,
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      FilledButton.icon(
-                        onPressed: detail.tracks.isNotEmpty
-                            ? () => controller.playArtist(detail.name)
-                            : null,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.accent,
-                          foregroundColor: AppColors.canvas,
-                        ),
-                        icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                        label: const Text(
-                          'Play',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      OutlinedButton.icon(
-                        onPressed: detail.tracks.isNotEmpty
-                            ? () => controller.playArtist(
-                                  detail.name,
-                                  shuffle: true,
-                                )
-                            : null,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.textPrimary,
-                          side: const BorderSide(color: AppColors.border),
-                        ),
-                        icon: const Icon(Icons.shuffle_rounded, size: 17),
-                        label: const Text('Shuffle'),
-                      ),
-                    ],
-                  ),
-                ],
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: Text(t('Back to Artists')),
+                ),
               ),
-            ),
-          ],
-        ),
-
-        if (detail.popularTracks.isNotEmpty) ...[
-          const SizedBox(height: 28),
-          const Text(
-            'Popular Tracks',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              children: [
-                for (var i = 0; i < detail.popularTracks.take(5).length; i++) ...[
-                  if (i > 0)
-                    const Divider(height: 1, color: AppColors.border),
-                  _ArtistTrackRow(
-                    index: i,
-                    track: detail.popularTracks[i].track,
-                    playCount: detail.popularTracks[i].playCount,
-                    isActive: activePath == detail.popularTracks[i].track.path,
-                    controller: controller,
-                    onPlay: () => controller.playTracks(
-                      detail.popularTracks.map((t) => t.track.path).toList(),
-                      i,
-                      context: 'artist:${detail.name.toLowerCase()}',
-                    ),
-                    onOpenAlbum: onOpenAlbum,
-                    onOpenArtist: onOpenArtist,
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  CoverArt(
+                    path: avatarPath,
+                    size: 144,
+                    borderRadius: 72,
+                    iconSize: 52,
+                    fallbackIcon: Icons.person_rounded,
                   ),
-                ],
-              ],
-            ),
-          ),
-        ],
-
-        if (detail.albums.isNotEmpty) ...[
-          const SizedBox(height: 28),
-          const Text(
-            'Albums',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 224,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: detail.albums.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 14),
-              itemBuilder: (context, index) {
-                final album = detail.albums[index];
-                return SizedBox(
-                  width: 168,
-                  child: Material(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      onTap: () => onOpenAlbum(album.id),
-                      borderRadius: BorderRadius.circular(10),
-                      hoverColor: AppColors.surfaceHover,
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.border),
+                  const SizedBox(width: 22),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          detail.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.5,
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                        const SizedBox(height: 6),
+                        Text(
+                          [
+                            t('{n} albums', {'n': detail.albumCount}),
+                            t('{n} tracks', {'n': detail.trackCount}),
+                            if (detail.playCount > BigInt.zero)
+                              t('{n} plays', {'n': detail.playCount}),
+                          ].join(' · '),
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        if (detail.genres.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final g in detail.genres)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppColors.border),
+                                  ),
+                                  child: Text(
+                                    g,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        Row(
                           children: [
-                            CoverArt(
-                              path: album.cover,
-                              size: 146,
-                              borderRadius: 6,
-                              iconSize: 36,
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              album.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
+                            FilledButton.icon(
+                              onPressed: detail.tracks.isNotEmpty
+                                  ? () => controller.playArtist(detail.name)
+                                  : null,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.accent,
+                                foregroundColor: AppColors.canvas,
+                              ),
+                              icon:
+                                  const Icon(Icons.play_arrow_rounded, size: 18),
+                              label: Text(
+                                t('Play'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              album.year != null
-                                  ? '${album.year} · ${album.trackCount} tracks'
-                                  : '${album.trackCount} tracks',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
+                            const SizedBox(width: 10),
+                            OutlinedButton.icon(
+                              onPressed: detail.tracks.isNotEmpty
+                                  ? () => controller.playArtist(
+                                        detail.name,
+                                        shuffle: true,
+                                      )
+                                  : null,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.textPrimary,
+                                side: const BorderSide(color: AppColors.border),
                               ),
+                              icon: const Icon(Icons.shuffle_rounded, size: 17),
+                              label: Text(t('Shuffle')),
                             ),
                           ],
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-        ],
-
-        const SizedBox(height: 28),
-        const Text(
-          'All Tracks',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border),
-          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (var i = 0; i < detail.tracks.length; i++) ...[
-                if (i > 0) const Divider(height: 1, color: AppColors.border),
-                _ArtistTrackRow(
-                  index: i,
-                  track: detail.tracks[i],
-                  isActive: activePath == detail.tracks[i].path,
-                  controller: controller,
-                  onPlay: () => controller.playArtist(
-                    detail.name,
-                    startIndex: i,
+              if (detail.popularTracks.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Text(
+                  t('Popular Tracks'),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
                   ),
-                  onOpenAlbum: onOpenAlbum,
-                  onOpenArtist: onOpenArtist,
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    children: [
+                      for (var i = 0;
+                          i < detail.popularTracks.take(5).length;
+                          i++) ...[
+                        if (i > 0)
+                          const Divider(height: 1, color: AppColors.border),
+                        _ArtistTrackRow(
+                          index: i,
+                          track: detail.popularTracks[i].track,
+                          playCount: detail.popularTracks[i].playCount,
+                          isActive:
+                              activePath == detail.popularTracks[i].track.path,
+                          controller: controller,
+                          onPlay: () => controller.playTracks(
+                            detail.popularTracks
+                                .map((t) => t.track.path)
+                                .toList(),
+                            i,
+                            context: 'artist:${detail.name.toLowerCase()}',
+                          ),
+                          onOpenAlbum: onOpenAlbum,
+                          onOpenArtist: onOpenArtist,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ],
+              if (detail.albums.isNotEmpty) ...[
+                const SizedBox(height: 28),
+                Text(
+                  t('Albums'),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 224,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: detail.albums.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 14),
+                    itemBuilder: (context, index) {
+                      final album = detail.albums[index];
+                      return SizedBox(
+                        width: 168,
+                        child: Material(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            onTap: () => onOpenAlbum(album.id),
+                            borderRadius: BorderRadius.circular(10),
+                            hoverColor: AppColors.surfaceHover,
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  CoverArt(
+                                    path: album.cover,
+                                    size: 146,
+                                    borderRadius: 6,
+                                    iconSize: 36,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    album.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    album.year != null
+                                        ? '${album.year} · ${t('{n} tracks', {'n': album.trackCount})}'
+                                        : t('{n} tracks',
+                                            {'n': album.trackCount}),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+              const SizedBox(height: 28),
+              Text(
+                t('All Tracks'),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < detail.tracks.length; i++) ...[
+                      if (i > 0)
+                        const Divider(height: 1, color: AppColors.border),
+                      _ArtistTrackRow(
+                        index: i,
+                        track: detail.tracks[i],
+                        isActive: activePath == detail.tracks[i].path,
+                        controller: controller,
+                        onPlay: () => controller.playArtist(
+                          detail.name,
+                          startIndex: i,
+                        ),
+                        onOpenAlbum: onOpenAlbum,
+                        onOpenArtist: onOpenArtist,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),

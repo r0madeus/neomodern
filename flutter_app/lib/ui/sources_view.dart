@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
@@ -119,21 +120,21 @@ class ExternalSourcesSettingsSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'External Sources (HTTP/JSON)',
-                      style: TextStyle(
+                      t('External Sources (HTTP/JSON)'),
+                      style: const TextStyle(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
                     ),
                     Text(
-                      'Optional external catalog and stream providers',
-                      style: TextStyle(
+                      t('Optional external catalog and stream providers'),
+                      style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
@@ -148,20 +149,21 @@ class ExternalSourcesSettingsSection extends StatelessWidget {
                   foregroundColor: AppColors.canvas,
                 ),
                 icon: const Icon(Icons.add_rounded, size: 17),
-                label: const Text(
-                  'Add Source',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                label: Text(
+                  t('Add Source'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
           if (providers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'No external sources configured. Add a neutral HTTP/JSON provider (e.g. self-hosted bridge) to search and stream external catalogs.',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                t('No external sources configured. Add a neutral HTTP/JSON provider (e.g. self-hosted bridge) to search and stream external catalogs.'),
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textSecondary),
               ),
             )
           else
@@ -308,11 +310,11 @@ class _SourcesViewState extends State<SourcesView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Sources',
+                    Text(t('Sources'),
                         style: Theme.of(context).textTheme.headlineSmall),
                     const SizedBox(height: 2),
                     Text(
-                      'Search and stream from configured HTTP/JSON providers',
+                      t('Search and stream from configured HTTP/JSON providers'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -349,9 +351,9 @@ class _SourcesViewState extends State<SourcesView> {
                     controller: _queryCtrl,
                     enabled: activeId != null && !_searching,
                     style: const TextStyle(fontSize: 13),
-                    decoration: const InputDecoration(
-                      hintText: 'Search external catalog...',
-                      prefixIcon: Icon(
+                    decoration: InputDecoration(
+                      hintText: t('Search external catalog...'),
+                      prefixIcon: const Icon(
                         Icons.search_rounded,
                         size: 18,
                         color: AppColors.textMuted,
@@ -372,9 +374,9 @@ class _SourcesViewState extends State<SourcesView> {
                   backgroundColor: AppColors.accent,
                   foregroundColor: AppColors.canvas,
                 ),
-                child: const Text(
-                  'Search',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                child: Text(
+                  t('Search'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -391,27 +393,28 @@ class _SourcesViewState extends State<SourcesView> {
           ),
         Expanded(
           child: activeId == null
-              ? const Center(
+              ? Center(
                   child: Text(
-                    'Enable an external source in Settings to search and stream.',
-                    style: TextStyle(color: AppColors.textSecondary),
+                    t('Enable an external source in Settings to search and stream.'),
+                    style: const TextStyle(color: AppColors.textSecondary),
                   ),
                 )
               : _searching
                   ? const Center(child: CircularProgressIndicator())
                   : !_searchedOnce
-                      ? const Center(
+                      ? Center(
                           child: Text(
-                            'Enter a query above to search this provider.',
-                            style: TextStyle(color: AppColors.textSecondary),
+                            t('Enter a query above to search this provider.'),
+                            style:
+                                const TextStyle(color: AppColors.textSecondary),
                           ),
                         )
                       : _results.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
-                                'No matching tracks found.',
-                                style:
-                                    TextStyle(color: AppColors.textSecondary),
+                                t('No matching tracks found.'),
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary),
                               ),
                             )
                           : ListView.separated(

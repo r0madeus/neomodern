@@ -1,5 +1,6 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
@@ -50,9 +51,9 @@ class _HomeViewState extends State<HomeView> {
   Future<void> _saveMixAsPlaylist(UiDynamicMix mix) async {
     final name = await showTextPromptDialog(
       context: context,
-      title: 'Save Mix as Playlist',
-      hintText: 'Playlist name',
-      confirmLabel: 'Save',
+      title: t('Save Mix as Playlist'),
+      hintText: t('Playlist name'),
+      confirmLabel: t('Save'),
       initialValue: mix.title,
     );
     if (name == null) return;
@@ -60,7 +61,7 @@ class _HomeViewState extends State<HomeView> {
     if (created != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Saved "${created.name}"'),
+          content: Text(t('Saved "{name}"', {'name': created.name})),
           behavior: SnackBarBehavior.floating,
           width: 300,
         ),
@@ -108,18 +109,18 @@ class _HomeViewState extends State<HomeView> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Welcome to NeoModern',
-                style: TextStyle(
+              Text(
+                t('Welcome to NeoModern'),
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Add a music folder in Settings to scan your local collection.',
-                style: TextStyle(
+              Text(
+                t('Add a music folder in Settings to scan your local collection.'),
+                style: const TextStyle(
                   fontSize: 13.5,
                   color: AppColors.textSecondary,
                 ),
@@ -132,9 +133,9 @@ class _HomeViewState extends State<HomeView> {
                   foregroundColor: AppColors.canvas,
                 ),
                 icon: const Icon(Icons.folder_open_rounded, size: 18),
-                label: const Text(
-                  'Open Folder Settings',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                label: Text(
+                  t('Open Folder Settings'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -160,17 +161,21 @@ class _HomeViewState extends State<HomeView> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Home', style: Theme.of(context).textTheme.headlineSmall),
+                Text(t('Home'),
+                    style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 2),
                 Text(
-                  '${ctrl.trackCount} songs · ${ctrl.albumCount} albums',
+                  t('{songs} songs · {albums} albums', {
+                    'songs': ctrl.trackCount,
+                    'albums': ctrl.albumCount,
+                  }),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
             const Spacer(),
             IconButton(
-              tooltip: 'Refresh Home',
+              tooltip: t('Refresh Home'),
               onPressed: ctrl.refreshHome,
               icon: const Icon(
                 Icons.refresh_rounded,
@@ -198,8 +203,8 @@ class _HomeViewState extends State<HomeView> {
               SizedBox(
                 width: cardWidth,
                 child: _QuickAccessCard(
-                  title: 'Favorites',
-                  subtitle: '${ctrl.favoriteCount} starred tracks',
+                  title: t('Favorites'),
+                  subtitle: t('{n} starred tracks', {'n': ctrl.favoriteCount}),
                   icon: Icons.star_rounded,
                   onTap: widget.onOpenFavorites,
                   onPlay: ctrl.favoriteCount > 0
@@ -214,7 +219,7 @@ class _HomeViewState extends State<HomeView> {
                     title: album.title,
                     subtitle: album.albumArtist.isNotEmpty
                         ? album.albumArtist
-                        : 'Album',
+                        : t('Album'),
                     coverPath: album.cover,
                     onTap: () => widget.onOpenAlbum(album.id),
                     onPlay: () => ctrl.playAlbum(album.id, 0),
@@ -232,7 +237,7 @@ class _HomeViewState extends State<HomeView> {
 
         if (mixes.isNotEmpty) ...[
           const SizedBox(height: 28),
-          const _SectionHeader(title: 'Dynamic Mixes'),
+          _SectionHeader(title: t('Dynamic Mixes')),
           const SizedBox(height: 12),
           SizedBox(
             height: 248,
@@ -255,7 +260,7 @@ class _HomeViewState extends State<HomeView> {
 
         if (addedAlbums.isNotEmpty) ...[
           const SizedBox(height: 28),
-          const _SectionHeader(title: 'Recently Added'),
+          _SectionHeader(title: t('Recently Added')),
           const SizedBox(height: 12),
           SizedBox(
             height: 224,
@@ -277,7 +282,7 @@ class _HomeViewState extends State<HomeView> {
 
         if (recentTracks.isNotEmpty) ...[
           const SizedBox(height: 28),
-          const _SectionHeader(title: 'Recently Played'),
+          _SectionHeader(title: t('Recently Played')),
           const SizedBox(height: 10),
           Container(
             decoration: BoxDecoration(

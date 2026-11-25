@@ -52,4 +52,5 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-session:1.8.0")
     implementation("androidx.media3:media3-common:1.8.0")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
@@ -58,7 +59,7 @@ class PlayerBar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        current?.title ?? 'Nothing playing',
+                        current?.title ?? t('Nothing playing'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -74,8 +75,8 @@ class PlayerBar extends StatelessWidget {
                         text: current != null && current.artist.isNotEmpty
                             ? current.artist
                             : (hasTrack
-                                ? 'Unknown Artist'
-                                : 'Pick a track to play'),
+                                ? t('Unknown Artist')
+                                : t('Pick a track to play')),
                         onTap: current != null && current.artist.isNotEmpty
                             ? () => onOpenArtist(current.artist)
                             : null,
@@ -108,7 +109,7 @@ class PlayerBar extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
-                      tooltip: snap.shuffle ? 'Shuffle on' : 'Shuffle off',
+                      tooltip: snap.shuffle ? t('Shuffle on') : t('Shuffle off'),
                       icon: Icon(
                         Icons.shuffle_rounded,
                         size: 18,
@@ -120,7 +121,7 @@ class PlayerBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      tooltip: 'Previous',
+                      tooltip: t('Previous'),
                       icon: const Icon(
                         Icons.skip_previous_rounded,
                         size: 24,
@@ -150,7 +151,7 @@ class PlayerBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     IconButton(
-                      tooltip: 'Next',
+                      tooltip: t('Next'),
                       icon: const Icon(
                         Icons.skip_next_rounded,
                         size: 24,
@@ -160,7 +161,7 @@ class PlayerBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      tooltip: 'Repeat: ${snap.repeat}',
+                      tooltip: t('Repeat: ${snap.repeat}'),
                       icon: Icon(
                         snap.repeat == 'one'
                             ? Icons.repeat_one_rounded
@@ -244,11 +245,11 @@ class PlayerBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (sleepActive)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
                     child: Tooltip(
-                      message: 'Sleep Timer active',
-                      child: Icon(
+                      message: t('Sleep Timer active'),
+                      child: const Icon(
                         Icons.bedtime_rounded,
                         size: 17,
                         color: AppColors.accent,
@@ -256,7 +257,7 @@ class PlayerBar extends StatelessWidget {
                     ),
                   ),
                 IconButton(
-                  tooltip: 'Lyrics',
+                  tooltip: t('Lyrics'),
                   icon: Icon(
                     Icons.lyrics_rounded,
                     size: 19,
@@ -268,7 +269,7 @@ class PlayerBar extends StatelessWidget {
                   onPressed: () => onTogglePanel(RightPanelTab.lyrics),
                 ),
                 IconButton(
-                  tooltip: 'Queue',
+                  tooltip: t('Queue'),
                   icon: Icon(
                     Icons.queue_music_rounded,
                     size: 19,
@@ -281,7 +282,7 @@ class PlayerBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 IconButton(
-                  tooltip: snap.volume == 0 ? 'Unmute' : 'Mute',
+                  tooltip: snap.volume == 0 ? t('Unmute') : t('Mute'),
                   icon: Icon(
                     snap.volume == 0
                         ? Icons.volume_off_rounded

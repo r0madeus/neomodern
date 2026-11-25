@@ -1,8 +1,10 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
+import 'package:neomodern/ui/tinted_backdrop.dart';
 
 enum RightPanelTab { lyrics, queue }
 
@@ -13,17 +15,19 @@ class RightPanel extends StatelessWidget {
     required this.activeTab,
     required this.onTabChanged,
     required this.onClose,
+    this.width = 328,
   });
 
   final PlayerController controller;
   final RightPanelTab activeTab;
   final ValueChanged<RightPanelTab> onTabChanged;
   final VoidCallback onClose;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 328,
+      width: width,
       decoration: const BoxDecoration(
         color: AppColors.sidebar,
         border: Border(left: BorderSide(color: AppColors.border)),
@@ -31,39 +35,44 @@ class RightPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: AppColors.border)),
-            ),
-            child: Row(
-              children: [
-                _PanelTabButton(
-                  icon: Icons.lyrics_rounded,
-                  label: 'Lyrics',
-                  active: activeTab == RightPanelTab.lyrics,
-                  onTap: () => onTabChanged(RightPanelTab.lyrics),
-                ),
-                const SizedBox(width: 4),
-                _PanelTabButton(
-                  icon: Icons.queue_music_rounded,
-                  label: 'Queue',
-                  active: activeTab == RightPanelTab.queue,
-                  onTap: () => onTabChanged(RightPanelTab.queue),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Close panel',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    size: 18,
-                    color: AppColors.textSecondary,
+          TintedBackdrop(
+            tintColor: controller.currentCoverColor,
+            baseColor: AppColors.sidebar,
+            tintAlpha: 64,
+            child: Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.border)),
+              ),
+              child: Row(
+                children: [
+                  _PanelTabButton(
+                    icon: Icons.lyrics_rounded,
+                    label: t('Lyrics'),
+                    active: activeTab == RightPanelTab.lyrics,
+                    onTap: () => onTabChanged(RightPanelTab.lyrics),
                   ),
-                  onPressed: onClose,
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  _PanelTabButton(
+                    icon: Icons.queue_music_rounded,
+                    label: t('Queue'),
+                    active: activeTab == RightPanelTab.queue,
+                    onTap: () => onTabChanged(RightPanelTab.queue),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: t('Close panel'),
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: onClose,
+                  ),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -186,25 +195,82 @@ class _LyricsTabState extends State<_LyricsTab> {
     return active;
   }
 
+  String _formatLrcContent(UiLyrics lyrics) {
+    if (lyrics.syncedLines.isNotEmpty) {
+      final buf = StringBuffer();
+      for (final line in lyrics.syncedLines) {
+        final msTotal = line.timeMs.toInt().clamp(0, 359999999);
+        final mins = msTotal ~/ 60000;
+        final secs = (msTotal % 60000) ~/ 1000;
+        final hundredths = (msTotal % 1000) ~/ 10;
+        buf.writeln(
+          '[${mins.toString().padLeft(2, '0')}:'
+          '${secs.toString().padLeft(2, '0')}.'
+          '${hundredths.toString().padLeft(2, '0')}]${line.text}',
+        );
+      }
+      return buf.toString();
+    }
+    return lyrics.plainText ?? '';
+  }
+
+  Future<void> _saveLrc(
+    BuildContext context,
+    PlayerController ctrl,
+    String trackPath,
+    UiLyrics lyrics,
+  ) async {
+    final content = _formatLrcContent(lyrics).trim();
+    if (content.isEmpty) return;
+    try {
+      final savedPath = await ctrl.saveCurrentLyricsLrc(trackPath, content);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t('Saved .lrc to {path}', {'path': savedPath})),
+          behavior: SnackBarBehavior.floating,
+          width: 360,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+          width: 360,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = widget.controller;
     final current = ctrl.snapshot.current;
 
     if (current == null) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Text(
-            'Play a track to view lyrics.',
+            t('Play a track to view lyrics.'),
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
         ),
       );
     }
 
     final lyrics = ctrl.currentLyrics;
+    final canSaveLrc = lyrics != null &&
+        lyrics.found &&
+        !lyrics.isInstrumental &&
+        lyrics.source != 'Local .lrc' &&
+        (lyrics.syncedLines.isNotEmpty ||
+            (lyrics.plainText?.trim().isNotEmpty ?? false)) &&
+        !current.path.startsWith('http://') &&
+        !current.path.startsWith('https://');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -231,7 +297,7 @@ class _LyricsTabState extends State<_LyricsTab> {
                     Text(
                       current.artist.isNotEmpty
                           ? current.artist
-                          : 'Unknown Artist',
+                          : t('Unknown Artist'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -259,8 +325,28 @@ class _LyricsTabState extends State<_LyricsTab> {
                     ),
                   ),
                 ),
+              if (canSaveLrc)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: TextButton.icon(
+                    onPressed: () => _saveLrc(context, ctrl, current.path, lyrics),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      minimumSize: const Size(0, 28),
+                    ),
+                    icon: const Icon(Icons.save_alt_rounded, size: 14),
+                    label: Text(
+                      t('Save .lrc'),
+                      style: const TextStyle(fontSize: 11.5),
+                    ),
+                  ),
+                ),
               IconButton(
-                tooltip: 'Reload lyrics',
+                tooltip: t('Reload lyrics'),
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(
                   Icons.refresh_rounded,
@@ -304,8 +390,8 @@ class _LyricsTabState extends State<_LyricsTab> {
               const SizedBox(height: 10),
               Text(
                 ctrl.offlineMode
-                    ? 'No local lyrics found (Offline Mode is on).'
-                    : 'No lyrics found for this track.',
+                    ? t('No local lyrics found (Offline Mode is on).')
+                    : t('No lyrics found for this track.'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 13,
@@ -320,7 +406,7 @@ class _LyricsTabState extends State<_LyricsTab> {
                   side: const BorderSide(color: AppColors.border),
                 ),
                 icon: const Icon(Icons.refresh_rounded, size: 15),
-                label: const Text('Retry'),
+                label: Text(t('Retry')),
               ),
             ],
           ),
@@ -329,17 +415,17 @@ class _LyricsTabState extends State<_LyricsTab> {
     }
 
     if (lyrics.isInstrumental) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.piano_rounded, size: 36, color: AppColors.accent),
-              SizedBox(height: 10),
+              const Icon(Icons.piano_rounded, size: 36, color: AppColors.accent),
+              const SizedBox(height: 10),
               Text(
-                'Instrumental',
-                style: TextStyle(
+                t('Instrumental'),
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
@@ -444,64 +530,69 @@ class _QueueTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (snap.current != null)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: AppColors.border)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'NOW PLAYING',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.9,
-                    color: AppColors.textMuted,
+          TintedBackdrop(
+            tintColor: controller.currentCoverColor,
+            baseColor: AppColors.sidebar,
+            tintAlpha: 54,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.border)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t('NOW PLAYING'),
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.9,
+                      color: AppColors.textMuted,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    CoverArt(
-                      path: controller.currentCoverPath,
-                      size: 40,
-                      borderRadius: 5,
-                      iconSize: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            snap.current!.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.accent,
-                            ),
-                          ),
-                          Text(
-                            snap.current!.artist.isNotEmpty
-                                ? snap.current!.artist
-                                : 'Unknown Artist',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      CoverArt(
+                        path: controller.currentCoverPath,
+                        size: 40,
+                        borderRadius: 5,
+                        iconSize: 18,
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              snap.current!.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.accent,
+                              ),
+                            ),
+                            Text(
+                              snap.current!.artist.isNotEmpty
+                                  ? snap.current!.artist
+                                  : t('Unknown Artist'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         Padding(
@@ -509,7 +600,7 @@ class _QueueTab extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                'Queue ($count)',
+                t('Queue ({n})', {'n': count}),
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -525,9 +616,9 @@ class _QueueTab extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: const Size(0, 28),
                   ),
-                  child: const Text(
-                    'Clear Added',
-                    style: TextStyle(fontSize: 11.5),
+                  child: Text(
+                    t('Clear Added'),
+                    style: const TextStyle(fontSize: 11.5),
                   ),
                 ),
             ],
@@ -535,28 +626,33 @@ class _QueueTab extends StatelessWidget {
         ),
         Expanded(
           child: count == 0
-              ? const Center(
+              ? Center(
                   child: Text(
-                    'Queue is empty.',
-                    style: TextStyle(
+                    t('Queue is empty.'),
+                    style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 13,
                     ),
                   ),
                 )
-              : ListView.builder(
+              : ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
                   itemCount: count,
                   itemExtent: 50,
+                  onReorderItem: (oldIndex, newIndex) {
+                    controller.moveQueueItem(oldIndex, newIndex);
+                  },
                   itemBuilder: (context, index) {
                     final item = controller.queueTrackAt(index);
                     if (item == null) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 14),
+                      return Padding(
+                        key: ValueKey('queue-loading-$index'),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            'Loading...',
-                            style: TextStyle(
+                            t('Loading...'),
+                            style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textMuted,
                             ),
@@ -565,104 +661,122 @@ class _QueueTab extends StatelessWidget {
                       );
                     }
                     final isCurrent = currentIndex == index;
-                    return InkWell(
-                      onTap: () => controller.playIndex(index),
-                      hoverColor: AppColors.surfaceHover,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        color: isCurrent
-                            ? AppColors.accentMuted
-                            : Colors.transparent,
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 24,
-                              child: isCurrent
-                                  ? const Icon(
-                                      Icons.graphic_eq_rounded,
-                                      size: 14,
-                                      color: AppColors.accent,
-                                    )
-                                  : Text(
-                                      '${index + 1}',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.textMuted,
-                                        fontFeatures: [
-                                          FontFeature.tabularFigures()
-                                        ],
-                                      ),
-                                    ),
-                            ),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: isCurrent
-                                          ? FontWeight.w600
-                                          : FontWeight.w500,
-                                      color: isCurrent
-                                          ? AppColors.accent
-                                          : AppColors.textPrimary,
-                                    ),
+                    return Material(
+                      key: ValueKey('queue-${item.id}-$index'),
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => controller.playIndex(index),
+                        hoverColor: AppColors.surfaceHover,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          color: isCurrent
+                              ? AppColors.accentMuted
+                              : Colors.transparent,
+                          child: Row(
+                            children: [
+                              ReorderableDragStartListener(
+                                index: index,
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 8,
                                   ),
-                                  if (item.artist.isNotEmpty)
+                                  child: Icon(
+                                    Icons.drag_indicator_rounded,
+                                    size: 15,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 22,
+                                child: isCurrent
+                                    ? const Icon(
+                                        Icons.graphic_eq_rounded,
+                                        size: 14,
+                                        color: AppColors.accent,
+                                      )
+                                    : Text(
+                                        '${index + 1}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.textMuted,
+                                          fontFeatures: [
+                                            FontFeature.tabularFigures()
+                                          ],
+                                        ),
+                                      ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
                                     Text(
-                                      item.artist,
+                                      item.title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.textSecondary,
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: isCurrent
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                        color: isCurrent
+                                            ? AppColors.accent
+                                            : AppColors.textPrimary,
                                       ),
                                     ),
-                                ],
+                                    if (item.artist.isNotEmpty)
+                                      Text(
+                                        item.artist,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            if (item.queued)
-                              Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surface,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: AppColors.border),
-                                ),
-                                child: const Text(
-                                  'Q',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: AppColors.accent,
+                              if (item.queued)
+                                Container(
+                                  margin: const EdgeInsets.only(right: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: AppColors.border),
+                                  ),
+                                  child: const Text(
+                                    'Q',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.accent,
+                                    ),
                                   ),
                                 ),
+                              IconButton(
+                                tooltip: t('Remove from queue'),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 26,
+                                  minHeight: 26,
+                                ),
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  size: 14,
+                                  color: AppColors.textMuted,
+                                ),
+                                onPressed: () =>
+                                    controller.removeFromQueue(index),
                               ),
-                            IconButton(
-                              tooltip: 'Remove from queue',
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 26,
-                                minHeight: 26,
-                              ),
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                size: 14,
-                                color: AppColors.textMuted,
-                              ),
-                              onPressed: () =>
-                                  controller.removeFromQueue(index),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     );

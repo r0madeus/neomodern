@@ -74,7 +74,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiPlayerSnapshot dco_decode_box_autoadd_ui_player_snapshot(dynamic raw);
 
   @protected
+  UiPrefs dco_decode_box_autoadd_ui_prefs(dynamic raw);
+
+  @protected
   UiTrackInfo dco_decode_box_autoadd_ui_track_info(dynamic raw);
+
+  @protected
+  UiTrackTags dco_decode_box_autoadd_ui_track_tags(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
@@ -104,6 +110,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<UiAlbumMatchCandidate> dco_decode_list_ui_album_match_candidate(
+    dynamic raw,
+  );
+
+  @protected
   List<UiAlbumRow> dco_decode_list_ui_album_row(dynamic raw);
 
   @protected
@@ -122,6 +133,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<UiFolderInfo> dco_decode_list_ui_folder_info(dynamic raw);
 
   @protected
+  List<UiMetadataFieldDiff> dco_decode_list_ui_metadata_field_diff(dynamic raw);
+
+  @protected
+  List<UiMetadataTrackDiff> dco_decode_list_ui_metadata_track_diff(dynamic raw);
+
+  @protected
   List<UiPartyGuestInfo> dco_decode_list_ui_party_guest_info(dynamic raw);
 
   @protected
@@ -129,6 +146,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<UiPeerStatus> dco_decode_list_ui_peer_status(dynamic raw);
+
+  @protected
+  List<UiPinnedItem> dco_decode_list_ui_pinned_item(dynamic raw);
 
   @protected
   List<UiPlaylistInfo> dco_decode_list_ui_playlist_info(dynamic raw);
@@ -209,6 +229,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumDetail dco_decode_ui_album_detail(dynamic raw);
 
   @protected
+  UiAlbumMatchCandidate dco_decode_ui_album_match_candidate(dynamic raw);
+
+  @protected
   UiAlbumRow dco_decode_ui_album_row(dynamic raw);
 
   @protected
@@ -248,6 +271,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiLyrics dco_decode_ui_lyrics(dynamic raw);
 
   @protected
+  UiMetadataApplyResult dco_decode_ui_metadata_apply_result(dynamic raw);
+
+  @protected
+  UiMetadataFieldDiff dco_decode_ui_metadata_field_diff(dynamic raw);
+
+  @protected
+  UiMetadataTrackDiff dco_decode_ui_metadata_track_diff(dynamic raw);
+
+  @protected
   UiPairingOpen dco_decode_ui_pairing_open(dynamic raw);
 
   @protected
@@ -263,10 +295,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiPeerStatus dco_decode_ui_peer_status(dynamic raw);
 
   @protected
+  UiPinnedItem dco_decode_ui_pinned_item(dynamic raw);
+
+  @protected
   UiPlayerSnapshot dco_decode_ui_player_snapshot(dynamic raw);
 
   @protected
   UiPlaylistInfo dco_decode_ui_playlist_info(dynamic raw);
+
+  @protected
+  UiPrefs dco_decode_ui_prefs(dynamic raw);
 
   @protected
   UiProfile dco_decode_ui_profile(dynamic raw);
@@ -303,6 +341,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiTrackRow dco_decode_ui_track_row(dynamic raw);
+
+  @protected
+  UiTrackTags dco_decode_ui_track_tags(dynamic raw);
 
   @protected
   void dco_decode_unit(dynamic raw);
@@ -369,7 +410,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  UiPrefs sse_decode_box_autoadd_ui_prefs(SseDeserializer deserializer);
+
+  @protected
   UiTrackInfo sse_decode_box_autoadd_ui_track_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiTrackTags sse_decode_box_autoadd_ui_track_tags(
     SseDeserializer deserializer,
   );
 
@@ -401,6 +450,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<UiAlbumMatchCandidate> sse_decode_list_ui_album_match_candidate(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<UiAlbumRow> sse_decode_list_ui_album_row(SseDeserializer deserializer);
 
   @protected
@@ -427,6 +481,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<UiMetadataFieldDiff> sse_decode_list_ui_metadata_field_diff(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiMetadataTrackDiff> sse_decode_list_ui_metadata_track_diff(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<UiPartyGuestInfo> sse_decode_list_ui_party_guest_info(
     SseDeserializer deserializer,
   );
@@ -438,6 +502,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<UiPeerStatus> sse_decode_list_ui_peer_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UiPinnedItem> sse_decode_list_ui_pinned_item(
     SseDeserializer deserializer,
   );
 
@@ -542,6 +611,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiAlbumDetail sse_decode_ui_album_detail(SseDeserializer deserializer);
 
   @protected
+  UiAlbumMatchCandidate sse_decode_ui_album_match_candidate(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   UiAlbumRow sse_decode_ui_album_row(SseDeserializer deserializer);
 
   @protected
@@ -585,6 +659,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiLyrics sse_decode_ui_lyrics(SseDeserializer deserializer);
 
   @protected
+  UiMetadataApplyResult sse_decode_ui_metadata_apply_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiMetadataFieldDiff sse_decode_ui_metadata_field_diff(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiMetadataTrackDiff sse_decode_ui_metadata_track_diff(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   UiPairingOpen sse_decode_ui_pairing_open(SseDeserializer deserializer);
 
   @protected
@@ -600,10 +689,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiPeerStatus sse_decode_ui_peer_status(SseDeserializer deserializer);
 
   @protected
+  UiPinnedItem sse_decode_ui_pinned_item(SseDeserializer deserializer);
+
+  @protected
   UiPlayerSnapshot sse_decode_ui_player_snapshot(SseDeserializer deserializer);
 
   @protected
   UiPlaylistInfo sse_decode_ui_playlist_info(SseDeserializer deserializer);
+
+  @protected
+  UiPrefs sse_decode_ui_prefs(SseDeserializer deserializer);
 
   @protected
   UiProfile sse_decode_ui_profile(SseDeserializer deserializer);
@@ -640,6 +735,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiTrackRow sse_decode_ui_track_row(SseDeserializer deserializer);
+
+  @protected
+  UiTrackTags sse_decode_ui_track_tags(SseDeserializer deserializer);
 
   @protected
   void sse_decode_unit(SseDeserializer deserializer);
@@ -720,8 +818,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_ui_prefs(UiPrefs self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_ui_track_info(
     UiTrackInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_ui_track_tags(
+    UiTrackTags self,
     SseSerializer serializer,
   );
 
@@ -765,6 +872,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_ui_album_match_candidate(
+    List<UiAlbumMatchCandidate> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_ui_album_row(
     List<UiAlbumRow> self,
     SseSerializer serializer,
@@ -801,6 +914,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_ui_metadata_field_diff(
+    List<UiMetadataFieldDiff> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_metadata_track_diff(
+    List<UiMetadataTrackDiff> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_ui_party_guest_info(
     List<UiPartyGuestInfo> self,
     SseSerializer serializer,
@@ -815,6 +940,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_ui_peer_status(
     List<UiPeerStatus> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ui_pinned_item(
+    List<UiPinnedItem> self,
     SseSerializer serializer,
   );
 
@@ -942,6 +1073,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ui_album_detail(UiAlbumDetail self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_album_match_candidate(
+    UiAlbumMatchCandidate self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ui_album_row(UiAlbumRow self, SseSerializer serializer);
 
   @protected
@@ -999,6 +1136,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ui_lyrics(UiLyrics self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_metadata_apply_result(
+    UiMetadataApplyResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_metadata_field_diff(
+    UiMetadataFieldDiff self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_metadata_track_diff(
+    UiMetadataTrackDiff self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ui_pairing_open(UiPairingOpen self, SseSerializer serializer);
 
   @protected
@@ -1017,6 +1172,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_ui_peer_status(UiPeerStatus self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ui_pinned_item(UiPinnedItem self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ui_player_snapshot(
     UiPlayerSnapshot self,
     SseSerializer serializer,
@@ -1027,6 +1185,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     UiPlaylistInfo self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_ui_prefs(UiPrefs self, SseSerializer serializer);
 
   @protected
   void sse_encode_ui_profile(UiProfile self, SseSerializer serializer);
@@ -1081,6 +1242,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_ui_track_row(UiTrackRow self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_track_tags(UiTrackTags self, SseSerializer serializer);
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);

@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
+import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/profiles_dialog.dart';
@@ -8,7 +10,10 @@ import 'package:neomodern/ui/right_panel.dart';
 import 'package:neomodern/ui/settings_view.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/sync_settings_section.dart';
+import 'package:neomodern/ui/tag_editor_dialog.dart';
+import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/track_menu.dart';
+import 'package:neomodern/ui/welcome_dialog.dart';
 
 void main() {
   test('formatDuration formats seconds cleanly', () {
@@ -264,5 +269,139 @@ void main() {
       find.text('Enable an external source in Settings to search and stream.'),
       findsOneWidget,
     );
+  });
+
+  test('AppStrings resolves EN, TR, and system locale cleanly', () {
+    addTearDown(() => AppStrings.setLanguage('system'));
+
+    AppStrings.setLanguage('en');
+    expect(AppStrings.resolveLanguage(const Locale('tr', 'TR')), 'en');
+    expect(t('Songs'), 'Songs');
+    expect(t('Queue ({n})', {'n': 4}), 'Queue (4)');
+
+    AppStrings.setLanguage('tr');
+    expect(AppStrings.resolveLanguage(const Locale('en', 'US')), 'tr');
+    expect(t('Songs'), 'Şarkılar');
+    expect(t('Queue ({n})', {'n': 4}), 'Sıra (4)');
+
+    AppStrings.setLanguage('system');
+    expect(AppStrings.resolveLanguage(const Locale('tr', 'TR')), 'tr');
+    expect(AppStrings.resolveLanguage(const Locale('en', 'US')), 'en');
+  });
+
+  testWidgets('TintedBackdrop renders AnimatedContainer gradient and child',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: const Scaffold(
+          body: TintedBackdrop(
+            tintColor: Color(0xFF336699),
+            child: Text('Header Content'),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Header Content'), findsOneWidget);
+    final animated =
+        tester.widget<AnimatedContainer>(find.byType(AnimatedContainer));
+    final decoration = animated.decoration as BoxDecoration;
+    expect(decoration.gradient, isA<LinearGradient>());
+  });
+
+  testWidgets('WelcomeDialog shows detected Music folder and handles Add & Scan',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+    String? addedPath;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: WelcomeDialog(
+            controller: ctrl,
+            onFetchDefaultDir: () async => r'C:\Users\Test\Music',
+            onAddAndScan: (path) async => addedPath = path,
+            onDismiss: () async => dismissed = true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome to NeoModern'), findsOneWidget);
+    expect(find.text(r'C:\Users\Test\Music'), findsOneWidget);
+    expect(find.text('Add & Scan'), findsOneWidget);
+
+    await tester.tap(find.text('Add & Scan'));
+    await tester.pumpAndSettle();
+
+    expect(addedPath, r'C:\Users\Test\Music');
+    expect(dismissed, true);
+  });
+
+  testWidgets('TagEditorDialog loads tags, saves edits, and surfaces errors',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+
+    const track = UiTrackRow(
+      id: 1,
+      title: 'Old Title',
+      artist: 'Old Artist',
+      album: 'Old Album',
+      path: r'C:\Music\track.flac',
+      plays: 0,
+    );
+    UiTrackTags? written;
+    var failWrite = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: TagEditorDialog(
+            controller: ctrl,
+            track: track,
+            onReadTags: (_) async => const UiTrackTags(
+              title: 'Old Title',
+              artist: 'Old Artist',
+              album: 'Old Album',
+              albumArtist: 'Album Artist',
+              trackNumber: 3,
+              discNumber: 1,
+              year: 2024,
+              genre: 'Electronic',
+            ),
+            onWriteTags: (_, tags) async {
+              if (failWrite) {
+                throw StateError('Track is currently playing');
+              }
+              written = tags;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Tags'), findsOneWidget);
+    expect(find.text('Old Title'), findsOneWidget);
+    expect(find.text('Electronic'), findsOneWidget);
+
+    failWrite = true;
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Track is currently playing'), findsOneWidget);
+
+    failWrite = false;
+    await tester.enterText(find.byType(TextField).first, 'New Title');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(written?.title, 'New Title');
+    expect(written?.year, 2024);
   });
 }

@@ -10,9 +10,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'neomodern.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `core`, `find_process_hwnd`, `generate_provider_id`, `map_source_configs`, `qr_parts`, `source_label`
+// These functions are ignored because they are not marked as `pub`: `build_profiles_state`, `build_tracks`, `cache_album_proposals`, `cached_cover_color_only`, `compute_and_cache_cover_color`, `core`, `find_process_hwnd`, `find_track_id_for_path`, `generate_provider_id`, `load_ui_prefs`, `map_apply_outcome`, `map_field_diff`, `map_source_configs`, `normalize_language`, `parse_pinned_kind`, `playlist_cover_mode_and_value`, `qr_parts`, `refresh_player_meta`, `rgb_to_argb`, `sanitize_width`, `save_ui_prefs`, `source_label`, `validate_and_normalize_ui_prefs`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreEventSink`, `CoreState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<UiPlayerSnapshot> initCore({
   required String dataDir,
@@ -117,11 +117,17 @@ Future<List<UiTrackInfo>> queuePage({
 Future<UiPlayerSnapshot> queueEnqueue({required List<String> paths}) =>
     RustLib.instance.api.crateApiNeomodernQueueEnqueue(paths: paths);
 
+Future<UiPlayerSnapshot> queueEnqueueMany({required List<String> paths}) =>
+    RustLib.instance.api.crateApiNeomodernQueueEnqueueMany(paths: paths);
+
 Future<UiPlayerSnapshot> queueInsertNext({required List<String> paths}) =>
     RustLib.instance.api.crateApiNeomodernQueueInsertNext(paths: paths);
 
 Future<UiPlayerSnapshot> queueRemove({required int index}) =>
     RustLib.instance.api.crateApiNeomodernQueueRemove(index: index);
+
+Future<UiPlayerSnapshot> queueMove({required int from, required int to}) =>
+    RustLib.instance.api.crateApiNeomodernQueueMove(from: from, to: to);
 
 Future<UiPlayerSnapshot> queueClearQueued() =>
     RustLib.instance.api.crateApiNeomodernQueueClearQueued();
@@ -166,6 +172,9 @@ Future<int> libraryAlbumCount({String? search}) =>
 
 Future<UiAlbumDetail?> libraryAlbumDetail({required PlatformInt64 albumId}) =>
     RustLib.instance.api.crateApiNeomodernLibraryAlbumDetail(albumId: albumId);
+
+Future<int?> coverColorForPath({required String path}) =>
+    RustLib.instance.api.crateApiNeomodernCoverColorForPath(path: path);
 
 Future<int> libraryTrackCount({String? search}) =>
     RustLib.instance.api.crateApiNeomodernLibraryTrackCount(search: search);
@@ -228,6 +237,14 @@ Future<bool> favoritesToggle({required PlatformInt64 trackId}) =>
 Future<bool> favoritesToggleByPath({required String path}) =>
     RustLib.instance.api.crateApiNeomodernFavoritesToggleByPath(path: path);
 
+Future<void> favoritesSetMany({
+  required Int64List trackIds,
+  required bool favorite,
+}) => RustLib.instance.api.crateApiNeomodernFavoritesSetMany(
+  trackIds: trackIds,
+  favorite: favorite,
+);
+
 Future<UiPlayerSnapshot> favoritesPlay({required int startIndex}) =>
     RustLib.instance.api.crateApiNeomodernFavoritesPlay(startIndex: startIndex);
 
@@ -262,6 +279,42 @@ Future<void> playlistsRemoveTrack({
 }) => RustLib.instance.api.crateApiNeomodernPlaylistsRemoveTrack(
   id: id,
   position: position,
+);
+
+Future<void> playlistsMoveTrack({
+  required PlatformInt64 playlistId,
+  required int from,
+  required int to,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsMoveTrack(
+  playlistId: playlistId,
+  from: from,
+  to: to,
+);
+
+Future<void> playlistsSetCover({
+  required PlatformInt64 playlistId,
+  required String mode,
+  String? value,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsSetCover(
+  playlistId: playlistId,
+  mode: mode,
+  value: value,
+);
+
+Future<int> playlistsExportM3U({
+  required PlatformInt64 playlistId,
+  required String destPath,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsExportM3U(
+  playlistId: playlistId,
+  destPath: destPath,
+);
+
+Future<UiPlaylistInfo> playlistsImportM3U({
+  required String srcPath,
+  required String name,
+}) => RustLib.instance.api.crateApiNeomodernPlaylistsImportM3U(
+  srcPath: srcPath,
+  name: name,
 );
 
 Future<UiPlayerSnapshot> playlistsPlay({
@@ -321,6 +374,14 @@ Future<UiLyrics> lyricsForTrack({
   artist: artist,
   album: album,
   durationSecs: durationSecs,
+);
+
+Future<String> lyricsSaveLrc({
+  required String trackPath,
+  required String content,
+}) => RustLib.instance.api.crateApiNeomodernLyricsSaveLrc(
+  trackPath: trackPath,
+  content: content,
 );
 
 Future<UiStatsSummary> listeningStats({int? days}) =>
@@ -438,6 +499,58 @@ Future<UiPlayerSnapshot> sourceProviderPlay({
   artist: artist,
 );
 
+Future<UiTrackTags> trackTagsRead({required String path}) =>
+    RustLib.instance.api.crateApiNeomodernTrackTagsRead(path: path);
+
+Future<void> trackTagsWrite({
+  required String path,
+  required UiTrackTags newTags,
+}) => RustLib.instance.api.crateApiNeomodernTrackTagsWrite(
+  path: path,
+  newTags: newTags,
+);
+
+Future<List<UiAlbumMatchCandidate>> metadataMatchAlbum({
+  required PlatformInt64 albumId,
+}) =>
+    RustLib.instance.api.crateApiNeomodernMetadataMatchAlbum(albumId: albumId);
+
+Future<UiMetadataApplyResult> metadataApplyAlbum({
+  required PlatformInt64 albumId,
+  required String releaseMbid,
+  required bool downloadCover,
+}) => RustLib.instance.api.crateApiNeomodernMetadataApplyAlbum(
+  albumId: albumId,
+  releaseMbid: releaseMbid,
+  downloadCover: downloadCover,
+);
+
+Future<int> metadataUndoLast() =>
+    RustLib.instance.api.crateApiNeomodernMetadataUndoLast();
+
+Future<bool> metadataCanUndo() =>
+    RustLib.instance.api.crateApiNeomodernMetadataCanUndo();
+
+Future<List<UiPinnedItem>> pinnedList() =>
+    RustLib.instance.api.crateApiNeomodernPinnedList();
+
+Future<bool> pinnedToggle({
+  required String kind,
+  required PlatformInt64 targetId,
+}) => RustLib.instance.api.crateApiNeomodernPinnedToggle(
+  kind: kind,
+  targetId: targetId,
+);
+
+Future<UiPrefs> uiPrefsGet() =>
+    RustLib.instance.api.crateApiNeomodernUiPrefsGet();
+
+Future<void> uiPrefsSave({required UiPrefs prefs}) =>
+    RustLib.instance.api.crateApiNeomodernUiPrefsSave(prefs: prefs);
+
+Future<String?> defaultMusicDir() =>
+    RustLib.instance.api.crateApiNeomodernDefaultMusicDir();
+
 class UiAlbumDetail {
   final UiAlbumRow album;
   final List<UiTrackRow> tracks;
@@ -456,6 +569,77 @@ class UiAlbumDetail {
           tracks == other.tracks;
 }
 
+class UiAlbumMatchCandidate {
+  final String releaseMbid;
+  final String releaseGroupMbid;
+  final String title;
+  final String artist;
+  final int? year;
+  final String? country;
+  final String? format;
+  final String? status;
+  final int trackCount;
+  final int score;
+  final String label;
+  final String? coverPreview;
+  final List<UiMetadataFieldDiff> albumFields;
+  final List<UiMetadataTrackDiff> tracks;
+
+  const UiAlbumMatchCandidate({
+    required this.releaseMbid,
+    required this.releaseGroupMbid,
+    required this.title,
+    required this.artist,
+    this.year,
+    this.country,
+    this.format,
+    this.status,
+    required this.trackCount,
+    required this.score,
+    required this.label,
+    this.coverPreview,
+    required this.albumFields,
+    required this.tracks,
+  });
+
+  @override
+  int get hashCode =>
+      releaseMbid.hashCode ^
+      releaseGroupMbid.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      year.hashCode ^
+      country.hashCode ^
+      format.hashCode ^
+      status.hashCode ^
+      trackCount.hashCode ^
+      score.hashCode ^
+      label.hashCode ^
+      coverPreview.hashCode ^
+      albumFields.hashCode ^
+      tracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiAlbumMatchCandidate &&
+          runtimeType == other.runtimeType &&
+          releaseMbid == other.releaseMbid &&
+          releaseGroupMbid == other.releaseGroupMbid &&
+          title == other.title &&
+          artist == other.artist &&
+          year == other.year &&
+          country == other.country &&
+          format == other.format &&
+          status == other.status &&
+          trackCount == other.trackCount &&
+          score == other.score &&
+          label == other.label &&
+          coverPreview == other.coverPreview &&
+          albumFields == other.albumFields &&
+          tracks == other.tracks;
+}
+
 class UiAlbumRow {
   final PlatformInt64 id;
   final String title;
@@ -463,6 +647,7 @@ class UiAlbumRow {
   final int? year;
   final int trackCount;
   final String? cover;
+  final int? coverColor;
 
   const UiAlbumRow({
     required this.id,
@@ -471,6 +656,7 @@ class UiAlbumRow {
     this.year,
     required this.trackCount,
     this.cover,
+    this.coverColor,
   });
 
   @override
@@ -480,7 +666,8 @@ class UiAlbumRow {
       albumArtist.hashCode ^
       year.hashCode ^
       trackCount.hashCode ^
-      cover.hashCode;
+      cover.hashCode ^
+      coverColor.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -492,7 +679,8 @@ class UiAlbumRow {
           albumArtist == other.albumArtist &&
           year == other.year &&
           trackCount == other.trackCount &&
-          cover == other.cover;
+          cover == other.cover &&
+          coverColor == other.coverColor;
 }
 
 class UiArtistDetail {
@@ -830,6 +1018,93 @@ class UiLyrics {
           source == other.source;
 }
 
+class UiMetadataApplyResult {
+  final PlatformInt64 batchId;
+  final int updated;
+  final List<String> failed;
+  final String? cover;
+
+  const UiMetadataApplyResult({
+    required this.batchId,
+    required this.updated,
+    required this.failed,
+    this.cover,
+  });
+
+  @override
+  int get hashCode =>
+      batchId.hashCode ^ updated.hashCode ^ failed.hashCode ^ cover.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiMetadataApplyResult &&
+          runtimeType == other.runtimeType &&
+          batchId == other.batchId &&
+          updated == other.updated &&
+          failed == other.failed &&
+          cover == other.cover;
+}
+
+class UiMetadataFieldDiff {
+  final String field;
+  final String? oldValue;
+  final String? newValue;
+
+  const UiMetadataFieldDiff({
+    required this.field,
+    this.oldValue,
+    this.newValue,
+  });
+
+  @override
+  int get hashCode => field.hashCode ^ oldValue.hashCode ^ newValue.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiMetadataFieldDiff &&
+          runtimeType == other.runtimeType &&
+          field == other.field &&
+          oldValue == other.oldValue &&
+          newValue == other.newValue;
+}
+
+class UiMetadataTrackDiff {
+  final PlatformInt64 trackId;
+  final String path;
+  final String title;
+  final bool matched;
+  final List<UiMetadataFieldDiff> fields;
+
+  const UiMetadataTrackDiff({
+    required this.trackId,
+    required this.path,
+    required this.title,
+    required this.matched,
+    required this.fields,
+  });
+
+  @override
+  int get hashCode =>
+      trackId.hashCode ^
+      path.hashCode ^
+      title.hashCode ^
+      matched.hashCode ^
+      fields.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiMetadataTrackDiff &&
+          runtimeType == other.runtimeType &&
+          trackId == other.trackId &&
+          path == other.path &&
+          title == other.title &&
+          matched == other.matched &&
+          fields == other.fields;
+}
+
 class UiPairingOpen {
   final String code;
   final List<String> addresses;
@@ -1039,6 +1314,41 @@ class UiPeerStatus {
           rounds == other.rounds;
 }
 
+class UiPinnedItem {
+  final String kind;
+  final PlatformInt64 targetId;
+  final String title;
+  final String subtitle;
+  final String? coverPath;
+
+  const UiPinnedItem({
+    required this.kind,
+    required this.targetId,
+    required this.title,
+    required this.subtitle,
+    this.coverPath,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      targetId.hashCode ^
+      title.hashCode ^
+      subtitle.hashCode ^
+      coverPath.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPinnedItem &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          targetId == other.targetId &&
+          title == other.title &&
+          subtitle == other.subtitle &&
+          coverPath == other.coverPath;
+}
+
 class UiPlayerSnapshot {
   final String status;
   final int? currentIndex;
@@ -1148,6 +1458,8 @@ class UiPlaylistInfo {
   final int trackCount;
   final String? cover;
   final List<String> albumCovers;
+  final String coverMode;
+  final String? coverValue;
 
   const UiPlaylistInfo({
     required this.id,
@@ -1155,6 +1467,8 @@ class UiPlaylistInfo {
     required this.trackCount,
     this.cover,
     required this.albumCovers,
+    required this.coverMode,
+    this.coverValue,
   });
 
   @override
@@ -1163,7 +1477,9 @@ class UiPlaylistInfo {
       name.hashCode ^
       trackCount.hashCode ^
       cover.hashCode ^
-      albumCovers.hashCode;
+      albumCovers.hashCode ^
+      coverMode.hashCode ^
+      coverValue.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1174,7 +1490,43 @@ class UiPlaylistInfo {
           name == other.name &&
           trackCount == other.trackCount &&
           cover == other.cover &&
-          albumCovers == other.albumCovers;
+          albumCovers == other.albumCovers &&
+          coverMode == other.coverMode &&
+          coverValue == other.coverValue;
+}
+
+class UiPrefs {
+  final String language;
+  final bool welcomeDismissed;
+  final double sidebarWidth;
+  final double rightPanelWidth;
+
+  const UiPrefs({
+    required this.language,
+    required this.welcomeDismissed,
+    required this.sidebarWidth,
+    required this.rightPanelWidth,
+  });
+
+  static Future<UiPrefs> default_() =>
+      RustLib.instance.api.crateApiNeomodernUiPrefsDefault();
+
+  @override
+  int get hashCode =>
+      language.hashCode ^
+      welcomeDismissed.hashCode ^
+      sidebarWidth.hashCode ^
+      rightPanelWidth.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiPrefs &&
+          runtimeType == other.runtimeType &&
+          language == other.language &&
+          welcomeDismissed == other.welcomeDismissed &&
+          sidebarWidth == other.sidebarWidth &&
+          rightPanelWidth == other.rightPanelWidth;
 }
 
 class UiProfile {
@@ -1650,4 +2002,51 @@ class UiTrackRow {
           path == other.path &&
           cover == other.cover &&
           plays == other.plays;
+}
+
+class UiTrackTags {
+  final String? title;
+  final String? artist;
+  final String? album;
+  final String? albumArtist;
+  final int? trackNumber;
+  final int? discNumber;
+  final int? year;
+  final String? genre;
+
+  const UiTrackTags({
+    this.title,
+    this.artist,
+    this.album,
+    this.albumArtist,
+    this.trackNumber,
+    this.discNumber,
+    this.year,
+    this.genre,
+  });
+
+  @override
+  int get hashCode =>
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      albumArtist.hashCode ^
+      trackNumber.hashCode ^
+      discNumber.hashCode ^
+      year.hashCode ^
+      genre.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiTrackTags &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          albumArtist == other.albumArtist &&
+          trackNumber == other.trackNumber &&
+          discNumber == other.discNumber &&
+          year == other.year &&
+          genre == other.genre;
 }

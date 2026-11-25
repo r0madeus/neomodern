@@ -1,8 +1,10 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/tag_editor_dialog.dart';
 
 class StarFavoriteButton extends StatelessWidget {
   const StarFavoriteButton({
@@ -21,8 +23,8 @@ class StarFavoriteButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip:
-          tooltip ?? (isFavorite ? 'Remove from Favorites' : 'Add to Favorites'),
+      tooltip: tooltip ??
+          (isFavorite ? t('Remove from Favorites') : t('Add to Favorites')),
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -122,60 +124,69 @@ class TrackMenu {
         side: const BorderSide(color: AppColors.border),
       ),
       items: [
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'play',
-          child: _MenuRow(icon: Icons.play_arrow_rounded, label: 'Play'),
+          child: _MenuRow(icon: Icons.play_arrow_rounded, label: t('Play')),
         ),
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'play_next',
           child: _MenuRow(
-              icon: Icons.playlist_play_rounded, label: 'Play Next'),
+              icon: Icons.playlist_play_rounded, label: t('Play Next')),
         ),
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'enqueue',
           child: _MenuRow(
-              icon: Icons.add_to_queue_rounded, label: 'Add to Queue'),
+              icon: Icons.add_to_queue_rounded, label: t('Add to Queue')),
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'favorite',
           child: _MenuRow(
             icon: isFav ? Icons.star_rounded : Icons.star_outline_rounded,
-            label: isFav ? 'Remove from Favorites' : 'Add to Favorites',
+            label: isFav
+                ? t('Remove from Favorites')
+                : t('Add to Favorites'),
             accent: isFav,
           ),
         ),
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'playlist',
           child: _MenuRow(
             icon: Icons.playlist_add_rounded,
-            label: 'Add to Playlist...',
+            label: t('Add to Playlist...'),
           ),
         ),
         if (onRemoveFromPlaylist != null)
-          const PopupMenuItem<String>(
+          PopupMenuItem<String>(
             value: 'remove_playlist',
             child: _MenuRow(
               icon: Icons.remove_circle_outline_rounded,
-              label: 'Remove from Playlist',
+              label: t('Remove from Playlist'),
             ),
           ),
+        PopupMenuItem<String>(
+          value: 'edit_tags',
+          child: _MenuRow(
+            icon: Icons.sell_outlined,
+            label: t('Edit Tags...'),
+          ),
+        ),
         if (track.artist.isNotEmpty && onOpenArtist != null) ...[
           const PopupMenuDivider(),
-          const PopupMenuItem<String>(
+          PopupMenuItem<String>(
             value: 'artist',
             child: _MenuRow(
               icon: Icons.person_rounded,
-              label: 'Go to Artist',
+              label: t('Go to Artist'),
             ),
           ),
         ],
         if (track.albumId != null && onOpenAlbum != null)
-          const PopupMenuItem<String>(
+          PopupMenuItem<String>(
             value: 'album',
             child: _MenuRow(
               icon: Icons.album_rounded,
-              label: 'Go to Album',
+              label: t('Go to Album'),
             ),
           ),
       ],
@@ -205,6 +216,14 @@ class TrackMenu {
         }
       case 'remove_playlist':
         onRemoveFromPlaylist?.call();
+      case 'edit_tags':
+        if (context.mounted) {
+          await showTagEditorDialog(
+            context: context,
+            controller: controller,
+            track: track,
+          );
+        }
       case 'artist':
         if (track.artist.isNotEmpty) {
           onOpenArtist?.call(track.artist);
@@ -238,7 +257,7 @@ class TrackMoreButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: 'More options',
+      tooltip: t('More options'),
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -334,7 +353,7 @@ Future<String?> showTextPromptDialog({
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Cancel'),
+          child: Text(t('Cancel')),
         ),
         FilledButton(
           onPressed: () {
@@ -370,7 +389,7 @@ Future<void> showAddToPlaylistDialog({
         borderRadius: BorderRadius.circular(12),
         side: const BorderSide(color: AppColors.border),
       ),
-      title: const Text('Add to Playlist', style: TextStyle(fontSize: 16)),
+      title: Text(t('Add to Playlist'), style: const TextStyle(fontSize: 16)),
       content: SizedBox(
         width: 340,
         child: Column(
@@ -381,9 +400,9 @@ Future<void> showAddToPlaylistDialog({
               onPressed: () async {
                 final name = await showTextPromptDialog(
                   context: ctx,
-                  title: 'New Playlist',
-                  hintText: 'Playlist name',
-                  confirmLabel: 'Create',
+                  title: t('New Playlist'),
+                  hintText: t('Playlist name'),
+                  confirmLabel: t('Create'),
                 );
                 if (name != null) {
                   final created = await controller.createPlaylist(name);
@@ -398,16 +417,19 @@ Future<void> showAddToPlaylistDialog({
                 side: const BorderSide(color: AppColors.border),
               ),
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Create New Playlist'),
+              label: Text(t('Create New Playlist')),
             ),
             const SizedBox(height: 10),
             if (controller.playlists.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Text(
-                  'No playlists yet.',
+                  t('No playlists yet.'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
                 ),
               )
             else
@@ -434,7 +456,7 @@ Future<void> showAddToPlaylistDialog({
                         overflow: TextOverflow.ellipsis,
                       ),
                       trailing: Text(
-                        '${pl.trackCount} tracks',
+                        t('{n} tracks', {'n': pl.trackCount}),
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textMuted,
@@ -454,7 +476,7 @@ Future<void> showAddToPlaylistDialog({
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Close'),
+          child: Text(t('Close')),
         ),
       ],
     ),

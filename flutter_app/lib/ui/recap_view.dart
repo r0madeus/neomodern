@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
@@ -83,12 +84,12 @@ class _RecapViewState extends State<RecapView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Listening Stats',
+                  t('Listening Stats'),
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Recap of your local listening activity',
+                  t('Recap of your local listening activity'),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -98,18 +99,18 @@ class _RecapViewState extends State<RecapView> {
               children: [
                 SegmentedButton<StatsPeriod>(
                   showSelectedIcon: false,
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: StatsPeriod.sevenDays,
-                      label: Text('7 Days'),
+                      label: Text(t('7 Days')),
                     ),
                     ButtonSegment(
                       value: StatsPeriod.thirtyDays,
-                      label: Text('30 Days'),
+                      label: Text(t('30 Days')),
                     ),
                     ButtonSegment(
                       value: StatsPeriod.allTime,
-                      label: Text('All Time'),
+                      label: Text(t('All Time')),
                     ),
                   ],
                   selected: {_period},
@@ -137,7 +138,7 @@ class _RecapViewState extends State<RecapView> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  tooltip: 'Refresh Stats',
+                  tooltip: t('Refresh Stats'),
                   onPressed: _load,
                   icon: const Icon(
                     Icons.refresh_rounded,
@@ -175,26 +176,26 @@ class _RecapViewState extends State<RecapView> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                Icon(
+                const Icon(
                   Icons.bar_chart_rounded,
                   size: 44,
                   color: AppColors.textMuted,
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 Text(
-                  'No listening history for this period yet.',
-                  style: TextStyle(
+                  t('No listening history for this period yet.'),
+                  style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Play tracks to build up your local listening recap.',
-                  style: TextStyle(
+                  t('Play tracks to build up your local listening recap.'),
+                  style: const TextStyle(
                     fontSize: 13,
                     color: AppColors.textSecondary,
                   ),

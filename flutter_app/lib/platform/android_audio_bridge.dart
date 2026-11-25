@@ -79,6 +79,46 @@ class AndroidAudioBridge {
   }
 }
 
+/// Bridges Android-specific runtime permissions and native QR code scanning
+/// over `io.github.r0madeus.neomodern/platform`.
+///
+/// Safe no-op on non-Android platforms.
+class AndroidPlatformBridge {
+  AndroidPlatformBridge._();
+
+  static const MethodChannel channel = MethodChannel(
+    'io.github.r0madeus.neomodern/platform',
+  );
+
+  /// Allows tests to simulate running on Android without mocking `Platform`.
+  @visibleForTesting
+  static bool? debugIsAndroidOverride;
+
+  /// Whether the current host should be treated as Android.
+  static bool get isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
+
+  /// Returns `true` if audio storage permission is granted (always `true` on non-Android).
+  static Future<bool> checkAudioPermission() async {
+    if (!isAndroid) return true;
+    final granted = await channel.invokeMethod<bool>('checkAudioPermission');
+    return granted ?? false;
+  }
+
+  /// Requests audio storage permission on Android (always `true` on non-Android).
+  static Future<bool> requestAudioPermission() async {
+    if (!isAndroid) return true;
+    final granted = await channel.invokeMethod<bool>('requestAudioPermission');
+    return granted ?? false;
+  }
+
+  /// Launches the native Android QR code scanner and returns the scanned text,
+  /// or `null` if cancelled or called on a non-Android platform.
+  static Future<String?> scanQrCode() async {
+    if (!isAndroid) return null;
+    return channel.invokeMethod<String>('scanQrCode');
+  }
+}
+
 @visibleForTesting
 (String, Map<String, Object?>?) encodeAndroidAudioCmd(UiAndroidAudioCmd cmd) {
   return switch (cmd) {

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
@@ -128,7 +129,7 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SectionCard(
-          title: 'Phone Sync & Remote Control',
+          title: t('Phone Sync & Remote Control'),
           subtitle: allowPhones && sync?.listeningPort != null
               ? 'Listening on port ${sync!.listeningPort}'
               : 'LAN-only encrypted sync and remote control',
@@ -318,7 +319,7 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
         ),
         const SizedBox(height: 20),
         _SectionCard(
-          title: 'Experimental — Party Queue',
+          title: t('Experimental — Party Queue'),
           subtitle: partyRunning
               ? 'Session active (${party?.guests.length ?? 0} guests)'
               : 'Let guests on your local network add tracks to the queue',
@@ -328,9 +329,10 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
           ),
           children: [
             if (!partyEnabled)
-              const Text(
-                'Disabled by default. Turn on to host a local Party Queue session.',
-                style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+              Text(
+                t('Disabled by default. Turn on to host a local Party Queue session.'),
+                style: const TextStyle(
+                    fontSize: 12.5, color: AppColors.textSecondary),
               )
             else if (!partyRunning) ...[
               Row(

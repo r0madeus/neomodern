@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
+import 'package:neomodern/ui/metadata_match_dialog.dart';
+import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/track_menu.dart';
 
 class AlbumsView extends StatefulWidget {
@@ -95,6 +98,7 @@ class _AlbumsViewState extends State<AlbumsView> {
         detail: _selectedAlbum!,
         controller: widget.controller,
         onBack: () => setState(() => _selectedAlbum = null),
+        onReloadAlbum: () => _openAlbum(_selectedAlbum!.album.id),
         onOpenArtist: widget.onOpenArtist,
         onOpenAlbum: widget.onOpenAlbum,
       );
@@ -111,11 +115,11 @@ class _AlbumsViewState extends State<AlbumsView> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Albums',
+                  Text(t('Albums'),
                       style: Theme.of(context).textTheme.headlineSmall),
                   const SizedBox(height: 2),
                   Text(
-                    '${ctrl.albumCount} albums',
+                    t('{n} albums', {'n': ctrl.albumCount}),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -128,7 +132,7 @@ class _AlbumsViewState extends State<AlbumsView> {
                   onChanged: _onSearchChanged,
                   style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: 'Search albums or artists...',
+                    hintText: t('Search albums or artists...'),
                     prefixIcon: const Icon(
                       Icons.search_rounded,
                       size: 18,
@@ -158,8 +162,8 @@ class _AlbumsViewState extends State<AlbumsView> {
                     children: [
                       Text(
                         ctrl.albumSearch.isNotEmpty
-                            ? 'No matching albums found.'
-                            : 'No albums yet.',
+                            ? t('No matching albums found.')
+                            : t('No albums yet.'),
                         style: const TextStyle(color: AppColors.textSecondary),
                       ),
                       if (ctrl.albumSearch.isEmpty) ...[
@@ -171,7 +175,7 @@ class _AlbumsViewState extends State<AlbumsView> {
                             side: const BorderSide(color: AppColors.border),
                           ),
                           icon: const Icon(Icons.folder_open_rounded, size: 17),
-                          label: const Text('Add Music Folder in Settings'),
+                          label: Text(t('Add Music Folder in Settings')),
                         ),
                       ],
                     ],
@@ -198,6 +202,8 @@ class _AlbumsViewState extends State<AlbumsView> {
                     }
                     return _AlbumCard(
                       album: album,
+                      isPinned: ctrl.isPinned('album', album.id),
+                      onTogglePin: () => ctrl.togglePinned('album', album.id),
                       onTap: () => _openAlbum(album.id),
                     );
                   },
@@ -208,59 +214,112 @@ class _AlbumsViewState extends State<AlbumsView> {
   }
 }
 
-class _AlbumCard extends StatelessWidget {
-  const _AlbumCard({required this.album, required this.onTap});
+class _AlbumCard extends StatefulWidget {
+  const _AlbumCard({
+    required this.album,
+    required this.isPinned,
+    required this.onTogglePin,
+    required this.onTap,
+  });
 
   final UiAlbumRow album;
+  final bool isPinned;
+  final VoidCallback onTogglePin;
   final VoidCallback onTap;
 
   @override
+  State<_AlbumCard> createState() => _AlbumCardState();
+}
+
+class _AlbumCardState extends State<_AlbumCard> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final album = widget.album;
     final subtitle = album.year != null
         ? '${album.albumArtist} · ${album.year}'
         : album.albumArtist;
 
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(10),
-        hoverColor: AppColors.surfaceHover,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: CoverArt(
-                  path: album.cover,
-                  borderRadius: 6,
-                  iconSize: 40,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(10),
+          hoverColor: AppColors.surfaceHover,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CoverArt(
+                        path: album.cover,
+                        borderRadius: 6,
+                        iconSize: 40,
+                      ),
+                      if (widget.isPinned || _hovered)
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Material(
+                            color: AppColors.canvas.withAlpha(195),
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: widget.onTogglePin,
+                              child: Tooltip(
+                                message: widget.isPinned ? t('Unpin') : t('Pin'),
+                                child: SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: Icon(
+                                    widget.isPinned
+                                        ? Icons.push_pin_rounded
+                                        : Icons.push_pin_outlined,
+                                    size: 15,
+                                    color: widget.isPinned
+                                        ? AppColors.accent
+                                        : AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                album.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+                const SizedBox(height: 10),
+                Text(
+                  album.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle.isNotEmpty ? subtitle : 'Unknown Artist',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
+                const SizedBox(height: 2),
+                Text(
+                  subtitle.isNotEmpty ? subtitle : t('Unknown Artist'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -273,6 +332,7 @@ class _AlbumDetailView extends StatelessWidget {
     required this.detail,
     required this.controller,
     required this.onBack,
+    required this.onReloadAlbum,
     required this.onOpenArtist,
     required this.onOpenAlbum,
   });
@@ -280,6 +340,7 @@ class _AlbumDetailView extends StatelessWidget {
   final UiAlbumDetail detail;
   final PlayerController controller;
   final VoidCallback onBack;
+  final VoidCallback onReloadAlbum;
   final ValueChanged<String> onOpenArtist;
   final ValueChanged<PlatformInt64> onOpenAlbum;
 
@@ -287,11 +348,16 @@ class _AlbumDetailView extends StatelessWidget {
   Widget build(BuildContext context) {
     final album = detail.album;
     final activePath = controller.snapshot.current?.path;
+    final isPinned = controller.isPinned('album', album.id);
+    final tintColor = album.coverColor != null
+        ? Color(album.coverColor!)
+        : controller.coverColorCached(album.cover);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
+        TintedBackdrop(
+          tintColor: tintColor,
           padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,10 +366,11 @@ class _AlbumDetailView extends StatelessWidget {
                 onPressed: onBack,
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.textSecondary,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 ),
                 icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                label: const Text('Back to Albums'),
+                label: Text(t('Back to Albums')),
               ),
               const SizedBox(height: 14),
               Row(
@@ -355,7 +422,7 @@ class _AlbumDetailView extends StatelessWidget {
                             Text(
                               [
                                 if (album.year != null) '${album.year}',
-                                '${detail.tracks.length} tracks',
+                                t('{n} tracks', {'n': detail.tracks.length}),
                               ].join(' · '),
                               style: const TextStyle(
                                 fontSize: 13.5,
@@ -365,7 +432,9 @@ class _AlbumDetailView extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        Row(
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
                           children: [
                             FilledButton.icon(
                               onPressed: detail.tracks.isNotEmpty
@@ -375,13 +444,15 @@ class _AlbumDetailView extends StatelessWidget {
                                 backgroundColor: AppColors.accent,
                                 foregroundColor: AppColors.canvas,
                               ),
-                              icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                              label: const Text(
-                                'Play',
-                                style: TextStyle(fontWeight: FontWeight.w600),
+                              icon:
+                                  const Icon(Icons.play_arrow_rounded, size: 18),
+                              label: Text(
+                                t('Play'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 10),
                             OutlinedButton.icon(
                               onPressed: detail.tracks.isNotEmpty
                                   ? () => controller.playAlbum(
@@ -395,7 +466,49 @@ class _AlbumDetailView extends StatelessWidget {
                                 side: const BorderSide(color: AppColors.border),
                               ),
                               icon: const Icon(Icons.shuffle_rounded, size: 17),
-                              label: const Text('Shuffle'),
+                              label: Text(t('Shuffle')),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () =>
+                                  controller.togglePinned('album', album.id),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: isPinned
+                                    ? AppColors.accent
+                                    : AppColors.textPrimary,
+                                side: BorderSide(
+                                  color: isPinned
+                                      ? AppColors.accent
+                                      : AppColors.border,
+                                ),
+                              ),
+                              icon: Icon(
+                                isPinned
+                                    ? Icons.push_pin_rounded
+                                    : Icons.push_pin_outlined,
+                                size: 16,
+                              ),
+                              label: Text(isPinned ? t('Unpin') : t('Pin')),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final updated = await showMetadataMatchDialog(
+                                  context: context,
+                                  controller: controller,
+                                  album: album,
+                                );
+                                if (updated == true) {
+                                  onReloadAlbum();
+                                }
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.textSecondary,
+                                side: const BorderSide(color: AppColors.border),
+                              ),
+                              icon: const Icon(
+                                Icons.manage_search_rounded,
+                                size: 17,
+                              ),
+                              label: Text(t('Match Metadata')),
                             ),
                           ],
                         ),

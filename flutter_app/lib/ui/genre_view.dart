@@ -21,6 +21,10 @@ class GenreView extends StatefulWidget {
     required this.onBack,
     required this.onOpenAlbum,
     required this.onOpenArtist,
+    this.showBackButton = true,
+    this.compact = false,
+    this.bottomPadding,
+    this.trackRowBuilder,
     this.onFetchGenreDetail,
     this.onFetchGenreTracksPage,
   });
@@ -30,6 +34,15 @@ class GenreView extends StatefulWidget {
   final VoidCallback onBack;
   final ValueChanged<PlatformInt64> onOpenAlbum;
   final ValueChanged<String> onOpenArtist;
+  final bool showBackButton;
+  final bool compact;
+  final double? bottomPadding;
+  final Widget Function(
+    BuildContext context,
+    int index,
+    UiTrackRow track,
+    VoidCallback onTap,
+  )? trackRowBuilder;
   final Future<UiGenreDetail> Function(String genre)? onFetchGenreDetail;
   final Future<List<UiTrackRow>> Function(String genre, int offset, int limit)?
       onFetchGenreTracksPage;
@@ -171,42 +184,53 @@ class _GenreViewState extends State<GenreView> {
       }
     }
 
+    final hPad = widget.compact ? 16.0 : 24.0;
+    final coverSize = widget.compact ? 112.0 : 160.0;
+    final titleSize = widget.compact ? 28.0 : 40.0;
+
     return SmoothScrollWrapper(
       controller: _scrollCtrl,
       child: ListView(
         controller: _scrollCtrl,
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        padding: EdgeInsets.fromLTRB(
+          hPad,
+          widget.showBackButton ? 16 : 12,
+          hPad,
+          widget.bottomPadding ?? 32,
+        ),
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: widget.onBack,
-              style: TextButton.styleFrom(
-                foregroundColor: AppTheme.zinc300,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          if (widget.showBackButton) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: widget.onBack,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.zinc300,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+                icon: const Icon(Icons.arrow_back_rounded, size: 17),
+                label: Text(t('Search')),
               ),
-              icon: const Icon(Icons.arrow_back_rounded, size: 17),
-              label: Text(t('Search')),
             ),
-          ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 10),
+          ],
           TintedBackdrop.gradient(
             borderRadius: BorderRadius.circular(16),
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(widget.compact ? 16 : 24),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [baseColor, AppTheme.zinc950],
             ),
             child: Wrap(
-              spacing: 24,
-              runSpacing: 16,
+              spacing: widget.compact ? 16 : 24,
+              runSpacing: 14,
               crossAxisAlignment: WrapCrossAlignment.end,
               children: [
                 Container(
-                  width: 160,
-                  height: 160,
+                  width: coverSize,
+                  height: coverSize,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     color: Colors.white.withValues(alpha: 0.15),
@@ -221,20 +245,23 @@ class _GenreViewState extends State<GenreView> {
                   child: heroCover != null && heroCover.isNotEmpty
                       ? CoverArt(
                           path: heroCover,
-                          size: 160,
+                          size: coverSize,
                           borderRadius: 12,
-                          iconSize: 56,
+                          iconSize: widget.compact ? 42 : 56,
                         )
                       : Center(
                           child: Icon(
                             Icons.music_note_rounded,
-                            size: 64,
+                            size: widget.compact ? 48 : 64,
                             color: Colors.white.withValues(alpha: 0.85),
                           ),
                         ),
                 ),
                 ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 260, maxWidth: 680),
+                  constraints: BoxConstraints(
+                    minWidth: widget.compact ? 180 : 260,
+                    maxWidth: 680,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -252,8 +279,8 @@ class _GenreViewState extends State<GenreView> {
                         title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 40,
+                        style: TextStyle(
+                          fontSize: titleSize,
                           fontWeight: FontWeight.w700,
                           letterSpacing: -1.0,
                           height: 1.1,
@@ -409,21 +436,29 @@ class _GenreViewState extends State<GenreView> {
             ),
             const SizedBox(height: 10),
             for (var i = 0; i < _tracks.length; i++)
-              SizedBox(
-                height: 56,
-                child: DesktopTrackRow(
-                  indexLabel: '${i + 1}',
-                  track: _tracks[i],
-                  controller: ctrl,
-                  isActive: activePath == _tracks[i].path,
-                  horizontalPadding: 10,
-                  numberColumnWidth: 36,
-                  onTap: () => ctrl.playGenre(d.name, startIndex: i),
-                  onPlay: () => ctrl.playGenre(d.name, startIndex: i),
-                  onOpenArtist: widget.onOpenArtist,
-                  onOpenAlbum: widget.onOpenAlbum,
+              if (widget.trackRowBuilder != null)
+                widget.trackRowBuilder!(
+                  context,
+                  i,
+                  _tracks[i],
+                  () => ctrl.playGenre(d.name, startIndex: i),
+                )
+              else
+                SizedBox(
+                  height: 56,
+                  child: DesktopTrackRow(
+                    indexLabel: '${i + 1}',
+                    track: _tracks[i],
+                    controller: ctrl,
+                    isActive: activePath == _tracks[i].path,
+                    horizontalPadding: 10,
+                    numberColumnWidth: 36,
+                    onTap: () => ctrl.playGenre(d.name, startIndex: i),
+                    onPlay: () => ctrl.playGenre(d.name, startIndex: i),
+                    onOpenArtist: widget.onOpenArtist,
+                    onOpenAlbum: widget.onOpenAlbum,
+                  ),
                 ),
-              ),
             if (_loadingMore)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),

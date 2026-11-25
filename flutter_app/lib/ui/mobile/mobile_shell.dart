@@ -294,11 +294,18 @@ class _MobileShellState extends State<MobileShell> {
     );
   }
 
-  void _openGenreSearch(String genre) {
-    setState(() {
-      _searchInitialQuery = genre;
-      _tab = MobileNavTab.search;
-    });
+  void _openGenre(String genre) {
+    unawaited(
+      pushMobileSheet<void>(
+        context,
+        builder: (_) => MobileGenrePage(
+          name: genre,
+          controller: widget.controller,
+          onOpenArtist: _openArtist,
+          onOpenAlbum: _openAlbum,
+        ),
+      ),
+    );
   }
 
   void _selectTab(MobileNavTab next) {
@@ -462,7 +469,7 @@ class _MobileShellState extends State<MobileShell> {
                         initialQuery: _searchInitialQuery,
                         onOpenAlbum: _openAlbum,
                         onOpenArtist: _openArtist,
-                        onOpenGenre: _openGenreSearch,
+                        onOpenGenre: _openGenre,
                       ),
                     MobileNavTab.library => _LibraryTab(
                         controller: ctrl,
@@ -1447,12 +1454,21 @@ class _SearchTabState extends State<_SearchTab> {
     text: widget.initialQuery,
   );
   Timer? _debounce;
+  List<UiGenreInfo> _genres = const [];
+  String _loadedQuery = '';
+  List<UiArtistRow> _artists = const [];
+  List<UiAlbumRow> _albums = const [];
+  List<UiTrackRow> _tracks = const [];
+  List<UiExternalTrack> _externalTracks = const [];
+  bool _searchingExternal = false;
+  int _searchEpoch = 0;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadGenres());
     if (widget.initialQuery.isNotEmpty) {
-      _applyQuery(widget.initialQuery);
+      unawaited(_runSearch(widget.initialQuery.trim()));
     }
   }
 
@@ -1462,7 +1478,7 @@ class _SearchTabState extends State<_SearchTab> {
     if (widget.initialQuery != oldWidget.initialQuery &&
         widget.initialQuery != _searchCtrl.text) {
       _searchCtrl.text = widget.initialQuery;
-      _applyQuery(widget.initialQuery);
+      unawaited(_runSearch(widget.initialQuery.trim()));
     }
   }
 
@@ -1473,29 +1489,115 @@ class _SearchTabState extends State<_SearchTab> {
     super.dispose();
   }
 
+  Future<void> _loadGenres() async {
+    if (!widget.controller.initialized) return;
+    try {
+      final rows = await widget.controller.fetchGenres();
+      if (!mounted) return;
+      setState(() => _genres = rows);
+    } catch (_) {}
+  }
+
   void _onChanged(String value) {
+    final trimmed = value.trim();
     setState(() {});
     _debounce?.cancel();
+    if (trimmed.isEmpty) {
+      _searchEpoch++;
+      setState(() {
+        _loadedQuery = '';
+        _artists = const [];
+        _albums = const [];
+        _tracks = const [];
+        _externalTracks = const [];
+        _searchingExternal = false;
+      });
+      return;
+    }
     _debounce = Timer(const Duration(milliseconds: 160), () {
-      _applyQuery(value);
+      if (!mounted) return;
+      unawaited(_runSearch(trimmed));
     });
   }
 
-  void _applyQuery(String query) {
+  Future<void> _runSearch(String query) async {
+    final epoch = ++_searchEpoch;
     final ctrl = widget.controller;
-    unawaited(ctrl.setTrackSearch(query));
-    unawaited(ctrl.setAlbumSearch(query));
-    unawaited(ctrl.setArtistSearch(query));
+    if (query.isEmpty || !ctrl.initialized) {
+      if (!mounted) return;
+      setState(() {
+        _loadedQuery = query;
+        _artists = const [];
+        _albums = const [];
+        _tracks = const [];
+        _externalTracks = const [];
+        _searchingExternal = false;
+      });
+      return;
+    }
+
+    try {
+      final results = await Future.wait([
+        ctrl.searchArtists(query, limit: 12)
+            .catchError((_) => const <UiArtistRow>[]),
+        ctrl.searchAlbums(query, limit: 12)
+            .catchError((_) => const <UiAlbumRow>[]),
+        ctrl.searchTracks(query, limit: 25)
+            .catchError((_) => const <UiTrackRow>[]),
+      ]);
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _artists = results[0] as List<UiArtistRow>;
+        _albums = results[1] as List<UiAlbumRow>;
+        _tracks = results[2] as List<UiTrackRow>;
+        _loadedQuery = query;
+      });
+    } catch (_) {}
+
+    final enabledProviders = ctrl.enabledSourceProviders;
+    if (enabledProviders.isEmpty) return;
+
+    if (mounted && epoch == _searchEpoch) {
+      setState(() => _searchingExternal = true);
+    }
+    try {
+      final extLists = await Future.wait([
+        for (final p in enabledProviders)
+          ctrl
+              .searchExternalSource(p.id, query, limit: 15)
+              .catchError((_) => const <UiExternalTrack>[]),
+      ]);
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _externalTracks = [for (final list in extLists) ...list];
+        _searchingExternal = false;
+      });
+    } catch (_) {
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() => _searchingExternal = false);
+    }
   }
 
   void _clear() {
     _debounce?.cancel();
     _searchCtrl.clear();
-    setState(() {});
-    _applyQuery('');
+    _onChanged('');
   }
 
   List<_BrowseCategory> _buildCategories(PlayerController ctrl) {
+    if (_genres.isNotEmpty) {
+      return [
+        for (final g in _genres)
+          _BrowseCategory(
+            name: g.name,
+            subtitle: g.trackCount == 1
+                ? t('{n} track', {'n': g.trackCount})
+                : t('{n} tracks', {'n': g.trackCount}),
+            coverPath: g.coverPath,
+          ),
+      ];
+    }
+
     final covers = <String>[];
     final feed = ctrl.homeFeed;
     if (feed != null) {
@@ -1517,7 +1619,7 @@ class _SearchTabState extends State<_SearchTab> {
       for (var i = 0; i < _defaultCategories.length; i++)
         _BrowseCategory(
           name: _defaultCategories[i],
-          subtitle: 'Genre',
+          subtitle: t('Genre'),
           coverPath: covers.isNotEmpty ? covers[i % covers.length] : null,
         ),
     ];
@@ -1650,11 +1752,7 @@ class _SearchTabState extends State<_SearchTab> {
             final cat = categories[index];
             return _GenreBrowseCard(
               category: cat,
-              onTap: () {
-                _searchCtrl.text = cat.name;
-                setState(() {});
-                _applyQuery(cat.name);
-              },
+              onTap: () => widget.onOpenGenre(cat.name),
             );
           },
         ),
@@ -1667,11 +1765,13 @@ class _SearchTabState extends State<_SearchTab> {
     PlayerController ctrl,
     String query,
   ) {
-    final artistCount = math.min(ctrl.artistCount, 12);
-    final albumCount = math.min(ctrl.albumCount, 12);
-    final trackCount = math.min(ctrl.trackCount, 30);
+    final hasAnyLocal =
+        _artists.isNotEmpty || _albums.isNotEmpty || _tracks.isNotEmpty;
+    final hasExternalSection = ctrl.hasEnabledSourceProviders ||
+        _externalTracks.isNotEmpty ||
+        _searchingExternal;
 
-    if (artistCount == 0 && albumCount == 0 && trackCount == 0) {
+    if (!hasAnyLocal && !hasExternalSection && _loadedQuery == query) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -1691,7 +1791,18 @@ class _SearchTabState extends State<_SearchTab> {
     return ListView(
       padding: EdgeInsets.only(bottom: mobileBottomClearance(context, ctrl)),
       children: [
-        if (artistCount > 0) ...[
+        if (!hasAnyLocal && _loadedQuery == query)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Text(
+              t('No matches in your library.'),
+              style: const TextStyle(
+                fontSize: 13.5,
+                color: AppTheme.zinc400,
+              ),
+            ),
+          ),
+        if (_artists.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
@@ -1708,11 +1819,10 @@ class _SearchTabState extends State<_SearchTab> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: artistCount,
+              itemCount: _artists.length,
               separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, i) {
-                final ar = ctrl.artistAt(i);
-                if (ar == null) return const SizedBox(width: 96);
+                final ar = _artists[i];
                 return GestureDetector(
                   onTap: () => widget.onOpenArtist(ar.name),
                   child: SizedBox(
@@ -1749,7 +1859,7 @@ class _SearchTabState extends State<_SearchTab> {
           ),
           const SizedBox(height: 12),
         ],
-        if (albumCount > 0) ...[
+        if (_albums.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
@@ -1766,11 +1876,10 @@ class _SearchTabState extends State<_SearchTab> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: albumCount,
+              itemCount: _albums.length,
               separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, i) {
-                final a = ctrl.albumAt(i);
-                if (a == null) return const SizedBox(width: 112);
+                final a = _albums[i];
                 return GestureDetector(
                   onTap: () => widget.onOpenAlbum(a.id),
                   child: SizedBox(
@@ -1813,7 +1922,7 @@ class _SearchTabState extends State<_SearchTab> {
           ),
           const SizedBox(height: 12),
         ],
-        if (trackCount > 0) ...[
+        if (_tracks.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: Text(
@@ -1825,14 +1934,95 @@ class _SearchTabState extends State<_SearchTab> {
               ),
             ),
           ),
-          for (var i = 0; i < trackCount; i++)
-            if (ctrl.trackAt(i) != null)
-              MobileTrackTile(
-                controller: ctrl,
-                track: ctrl.trackAt(i)!,
-                onTap: () => ctrl.playAllFromSearch(i),
-                onOpenArtist: widget.onOpenArtist,
-                onOpenAlbum: widget.onOpenAlbum,
+          for (var i = 0; i < _tracks.length; i++)
+            MobileTrackTile(
+              controller: ctrl,
+              track: _tracks[i],
+              onTap: () => ctrl.playTracks(
+                _tracks.map((tr) => tr.path).toList(),
+                i,
+              ),
+              onOpenArtist: widget.onOpenArtist,
+              onOpenAlbum: widget.onOpenAlbum,
+            ),
+        ],
+        if (hasExternalSection) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+            child: Text(
+              t('External Sources'),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.zinc50,
+              ),
+            ),
+          ),
+          if (_searchingExternal)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                t('Searching...'),
+                style: const TextStyle(fontSize: 13, color: AppTheme.zinc400),
+              ),
+            )
+          else if (_externalTracks.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                t('No matching tracks found.'),
+                style: const TextStyle(fontSize: 13, color: AppTheme.zinc400),
+              ),
+            )
+          else
+            for (final tr in _externalTracks)
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppTheme.zinc900,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppTheme.zinc800),
+                  ),
+                  child: const Icon(
+                    Icons.music_note_rounded,
+                    size: 20,
+                    color: AppTheme.accent400,
+                  ),
+                ),
+                title: Text(
+                  tr.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.zinc100,
+                  ),
+                ),
+                subtitle: Text(
+                  tr.album != null && tr.album!.isNotEmpty
+                      ? '${tr.artist} · ${tr.album}'
+                      : tr.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.zinc400,
+                  ),
+                ),
+                trailing: IconButton(
+                  tooltip: t('Play'),
+                  icon: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: AppTheme.accent400,
+                  ),
+                  onPressed: () => ctrl.playExternalTrack(tr),
+                ),
+                onTap: () => ctrl.playExternalTrack(tr),
               ),
         ],
       ],

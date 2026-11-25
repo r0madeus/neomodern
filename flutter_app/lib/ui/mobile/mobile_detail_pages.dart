@@ -7,6 +7,7 @@ import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
+import 'package:neomodern/ui/genre_view.dart';
 import 'package:neomodern/ui/mobile/sticky_play.dart';
 import 'package:neomodern/ui/recap_view.dart';
 import 'package:neomodern/ui/settings_view.dart';
@@ -1397,6 +1398,45 @@ class MobileSourcesPage extends StatelessWidget {
     return MobileSimplePage(
       title: t('Sources'),
       child: SourcesView(controller: controller),
+    );
+  }
+}
+
+class MobileGenrePage extends StatelessWidget {
+  const MobileGenrePage({
+    super.key,
+    required this.name,
+    required this.controller,
+    required this.onOpenArtist,
+    required this.onOpenAlbum,
+  });
+
+  final String name;
+  final PlayerController controller;
+  final ValueChanged<String> onOpenArtist;
+  final ValueChanged<PlatformInt64> onOpenAlbum;
+
+  @override
+  Widget build(BuildContext context) {
+    return MobileSimplePage(
+      title: name,
+      child: GenreView(
+        name: name,
+        controller: controller,
+        onBack: () => Navigator.of(context).pop(),
+        onOpenArtist: onOpenArtist,
+        onOpenAlbum: onOpenAlbum,
+        showBackButton: false,
+        compact: true,
+        bottomPadding: mobileBottomClearance(context, controller),
+        trackRowBuilder: (context, index, track, onTap) => MobileTrackTile(
+          controller: controller,
+          track: track,
+          onTap: onTap,
+          onOpenArtist: onOpenArtist,
+          onOpenAlbum: onOpenAlbum,
+        ),
+      ),
     );
   }
 }

@@ -1,13 +1,14 @@
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/platform/android_audio_bridge.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/genre_view.dart';
 import 'package:neomodern/ui/mobile/mini_player.dart';
+import 'package:neomodern/ui/mobile/mobile_detail_pages.dart';
 import 'package:neomodern/ui/mobile/mobile_sheet.dart';
 import 'package:neomodern/ui/mobile/mobile_shell.dart';
 import 'package:neomodern/ui/mobile/now_playing_sheet.dart';
@@ -19,6 +20,12 @@ class _FakePlayerController extends PlayerController {
     UiPlayerSnapshot? initialSnapshot,
     bool isFavorite = false,
     UiLyrics? initialLyrics,
+    this.fakeGenres = const [],
+    this.fakeGenreDetail,
+    this.fakeGenreTracks = const [],
+    this.fakeSearchTracks = const [],
+    this.fakeProviders = const [],
+    this.fakeExternalTracks = const [],
   })  : _fakeSnapshot = initialSnapshot ??
             UiPlayerSnapshot(
               status: 'stopped',
@@ -50,6 +57,12 @@ class _FakePlayerController extends PlayerController {
   UiPlayerSnapshot _fakeSnapshot;
   bool _fakeFavorite;
   final UiLyrics? _fakeLyrics;
+  final List<UiGenreInfo> fakeGenres;
+  final UiGenreDetail? fakeGenreDetail;
+  final List<UiTrackRow> fakeGenreTracks;
+  final List<UiTrackRow> fakeSearchTracks;
+  final List<UiSourceProvider> fakeProviders;
+  final List<UiExternalTrack> fakeExternalTracks;
 
   int togglePauseCalls = 0;
   int nextCalls = 0;
@@ -57,6 +70,7 @@ class _FakePlayerController extends PlayerController {
   int toggleFavoriteCalls = 0;
   int rescanCalls = 0;
   final List<double> seekCalls = [];
+  final List<String> playedExternalIds = [];
 
   @override
   bool get initialized => true;
@@ -136,6 +150,72 @@ class _FakePlayerController extends PlayerController {
 
   @override
   Future<void> refreshLyrics() async {}
+
+  @override
+  Future<List<UiGenreInfo>> fetchGenres() async => fakeGenres;
+
+  @override
+  Future<UiGenreDetail> fetchGenreDetail(String genre) async {
+    return fakeGenreDetail ??
+        UiGenreDetail(
+          name: genre,
+          trackCount: fakeGenreTracks.length,
+          albumCount: 0,
+          totalDurationMs: BigInt.zero,
+          coverPath: null,
+          albums: const [],
+        );
+  }
+
+  @override
+  Future<List<UiTrackRow>> fetchGenreTracksPage(
+    String genre, {
+    int offset = 0,
+    int limit = 100,
+  }) async {
+    if (offset >= fakeGenreTracks.length) return const [];
+    return fakeGenreTracks.skip(offset).take(limit).toList();
+  }
+
+  @override
+  Future<List<UiArtistRow>> searchArtists(
+    String query, {
+    int limit = 12,
+  }) async =>
+      const [];
+
+  @override
+  Future<List<UiAlbumRow>> searchAlbums(
+    String query, {
+    int limit = 12,
+  }) async =>
+      const [];
+
+  @override
+  Future<List<UiTrackRow>> searchTracks(
+    String query, {
+    int limit = 25,
+  }) async =>
+      fakeSearchTracks;
+
+  @override
+  List<UiSourceProvider> get enabledSourceProviders => fakeProviders;
+
+  @override
+  bool get hasEnabledSourceProviders => fakeProviders.isNotEmpty;
+
+  @override
+  Future<List<UiExternalTrack>> searchExternalSource(
+    String providerId,
+    String query, {
+    int limit = 15,
+  }) async =>
+      fakeExternalTracks;
+
+  @override
+  Future<void> playExternalTrack(UiExternalTrack track) async {
+    playedExternalIds.add(track.externalId);
+  }
 
   @override
   UiTrackInfo? queueTrackAt(int index) {
@@ -616,5 +696,107 @@ void main() {
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(find.text('Scanned QR Code'), findsNothing);
+  });
+
+  testWidgets(
+      'MobileShell Search opens real library genres in MobileGenrePage and searches external sources',
+      (WidgetTester tester) async {
+    final genreTrack = UiTrackRow(
+      id: PlatformInt64Util.from(11),
+      path: '/music/nightcall.flac',
+      title: 'Nightcall',
+      artist: 'Kavinsky',
+      album: 'OutRun',
+      albumId: PlatformInt64Util.from(7),
+      trackNo: 1,
+      durationMs: BigInt.from(258000),
+      cover: null,
+      plays: 0,
+    );
+    final extTrack = UiExternalTrack(
+      providerId: 'demo-ext',
+      externalId: 'ext-42',
+      title: 'Pacific Coast Highway',
+      artist: 'Kavinsky',
+      album: 'OutRun',
+      durationMs: BigInt.from(379000),
+      coverUrl: null,
+    );
+    final ctrl = _FakePlayerController(
+      fakeGenres: const [
+        UiGenreInfo(
+          name: 'Synthwave',
+          trackCount: 2,
+          albumCount: 1,
+          coverPath: null,
+        ),
+      ],
+      fakeGenreDetail: UiGenreDetail(
+        name: 'Synthwave',
+        trackCount: 1,
+        albumCount: 0,
+        totalDurationMs: BigInt.from(258000),
+        coverPath: null,
+        albums: const [],
+      ),
+      fakeGenreTracks: [genreTrack],
+      fakeSearchTracks: [genreTrack],
+      fakeProviders: const [
+        UiSourceProvider(
+          id: 'demo-ext',
+          name: 'Demo Source',
+          baseUrl: 'https://example.test',
+          enabled: true,
+        ),
+      ],
+      fakeExternalTracks: [extTrack],
+    );
+    addTearDown(ctrl.dispose);
+
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: MobileShell(controller: ctrl),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final bottomNav = find.byKey(const ValueKey('mobile_bottom_nav'));
+    await tester.tap(find.descendant(of: bottomNav, matching: find.text('Search')));
+    await tester.pumpAndSettle();
+
+    // Real library genre card appears with track count
+    expect(find.text('Synthwave'), findsOneWidget);
+    expect(find.text('2 tracks'), findsOneWidget);
+
+    // Tapping a genre opens MobileGenrePage (GenreView) with MobileTrackTile
+    await tester.tap(find.text('Synthwave'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileGenrePage), findsOneWidget);
+    expect(find.byType(GenreView), findsOneWidget);
+    expect(find.text('Nightcall'), findsOneWidget);
+
+    // Pop back to Search tab
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileGenrePage), findsNothing);
+
+    // Typing a query renders both local and external results
+    await tester.enterText(find.byType(TextField), 'kavinsky');
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nightcall'), findsOneWidget);
+    expect(find.text('External Sources'), findsOneWidget);
+    expect(find.text('Pacific Coast Highway'), findsOneWidget);
+
+    await tester.tap(find.text('Pacific Coast Highway'));
+    await tester.pump();
+    expect(ctrl.playedExternalIds, ['ext-42']);
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
@@ -6,6 +8,9 @@ import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/track_menu.dart';
+import 'package:neomodern/ui/widgets/collection_header.dart';
+import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/track_row.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({
@@ -15,6 +20,7 @@ class HomeView extends StatefulWidget {
     required this.onOpenArtist,
     required this.onOpenFavorites,
     required this.onOpenSettings,
+    this.onOpenRecap,
   });
 
   final PlayerController controller;
@@ -22,6 +28,7 @@ class HomeView extends StatefulWidget {
   final ValueChanged<String> onOpenArtist;
   final VoidCallback onOpenFavorites;
   final VoidCallback onOpenSettings;
+  final VoidCallback? onOpenRecap;
 
   @override
   State<HomeView> createState() => _HomeViewState();
@@ -30,6 +37,14 @@ class HomeView extends StatefulWidget {
 class _HomeViewState extends State<HomeView> {
   UiHomeMixDetail? _selectedMix;
   bool _loadingMix = false;
+
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return t('Good morning');
+    if (hour >= 12 && hour < 17) return t('Good afternoon');
+    if (hour >= 17 && hour < 22) return t('Good evening');
+    return t('Good night');
+  }
 
   Future<void> _openMix(String mixId) async {
     setState(() => _loadingMix = true);
@@ -69,6 +84,15 @@ class _HomeViewState extends State<HomeView> {
     }
   }
 
+  Future<void> _shuffleLibrary(PlayerController ctrl) async {
+    if (ctrl.trackCount <= 0) return;
+    if (!ctrl.snapshot.shuffle) {
+      await ctrl.toggleShuffle();
+    }
+    final startIdx = math.Random().nextInt(ctrl.trackCount);
+    await ctrl.playAllFromSearch(startIdx);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loadingMix) {
@@ -99,13 +123,13 @@ class _HomeViewState extends State<HomeView> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: AppColors.accentMuted,
+                  color: AppTheme.accent950.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(
                   Icons.library_music_rounded,
                   size: 32,
-                  color: AppColors.accent,
+                  color: AppTheme.accent400,
                 ),
               ),
               const SizedBox(height: 16),
@@ -114,7 +138,7 @@ class _HomeViewState extends State<HomeView> {
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: AppTheme.zinc100,
                 ),
               ),
               const SizedBox(height: 6),
@@ -122,15 +146,15 @@ class _HomeViewState extends State<HomeView> {
                 t('Add a music folder in Settings to scan your local collection.'),
                 style: const TextStyle(
                   fontSize: 13.5,
-                  color: AppColors.textSecondary,
+                  color: AppTheme.zinc400,
                 ),
               ),
               const SizedBox(height: 18),
               FilledButton.icon(
                 onPressed: widget.onOpenSettings,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                  foregroundColor: AppColors.canvas,
+                  backgroundColor: AppTheme.accent500,
+                  foregroundColor: AppTheme.zinc950,
                 ),
                 icon: const Icon(Icons.folder_open_rounded, size: 18),
                 label: Text(
@@ -154,48 +178,117 @@ class _HomeViewState extends State<HomeView> {
     final mixes = feed.mixes;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 28),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
       children: [
-        Row(
+        // Greeting & toolbar pills
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          spacing: 16,
+          runSpacing: 12,
           children: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(t('Home'),
-                    style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 2),
+                Text(
+                  _greeting(),
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.6,
+                    color: AppTheme.zinc50,
+                  ),
+                ),
+                const SizedBox(height: 3),
                 Text(
                   t('{songs} songs · {albums} albums', {
                     'songs': ctrl.trackCount,
                     'albums': ctrl.albumCount,
                   }),
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    color: AppTheme.zinc400,
+                  ),
                 ),
               ],
             ),
-            const Spacer(),
-            IconButton(
-              tooltip: t('Refresh Home'),
-              onPressed: ctrl.refreshHome,
-              icon: const Icon(
-                Icons.refresh_rounded,
-                size: 19,
-                color: AppColors.textSecondary,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  onPressed:
+                      ctrl.trackCount > 0 ? () => _shuffleLibrary(ctrl) : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.accent600,
+                    foregroundColor: Colors.white,
+                    shape: const StadiumBorder(),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                  ),
+                  icon: const Icon(Icons.shuffle_rounded, size: 16),
+                  label: Text(
+                    t('Shuffle'),
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (widget.onOpenRecap != null) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: widget.onOpenRecap,
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: AppTheme.zinc900.withValues(alpha: 0.70),
+                      foregroundColor: AppTheme.zinc200,
+                      side: const BorderSide(color: AppTheme.zinc800),
+                      shape: const StadiumBorder(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.bar_chart_rounded,
+                      size: 16,
+                      color: AppTheme.accent400,
+                    ),
+                    label: Text(
+                      t('Listening Stats'),
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: t('Refresh Home'),
+                  onPressed: ctrl.refreshHome,
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    size: 18,
+                    color: AppTheme.zinc400,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 22),
 
-        // Quick Access Grid
+        // Quick-Access Grid (4 cols on wide desktop, 56px tall cards)
         LayoutBuilder(
           builder: (context, constraints) {
-            final cols = constraints.maxWidth >= 900
-                ? 3
+            final cols = constraints.maxWidth >= 960
+                ? 4
                 : constraints.maxWidth >= 560
                     ? 2
                     : 1;
-            const spacing = 12.0;
+            const spacing = 10.0;
             final cardWidth =
                 (constraints.maxWidth - spacing * (cols - 1)) / cols;
 
@@ -205,14 +298,14 @@ class _HomeViewState extends State<HomeView> {
                 child: _QuickAccessCard(
                   title: t('Favorites'),
                   subtitle: t('{n} starred tracks', {'n': ctrl.favoriteCount}),
-                  icon: Icons.star_rounded,
+                  isFavorites: true,
                   onTap: widget.onOpenFavorites,
                   onPlay: ctrl.favoriteCount > 0
                       ? () => ctrl.playFavorites(0)
                       : null,
                 ),
               ),
-              for (final album in recentAlbums.take(5))
+              for (final album in recentAlbums.take(7))
                 SizedBox(
                   width: cardWidth,
                   child: _QuickAccessCard(
@@ -235,12 +328,13 @@ class _HomeViewState extends State<HomeView> {
           },
         ),
 
+        // Daily Mixes Shelf
         if (mixes.isNotEmpty) ...[
           const SizedBox(height: 28),
-          _SectionHeader(title: t('Dynamic Mixes')),
+          _SectionHeader(title: t('Daily Mixes')),
           const SizedBox(height: 12),
           SizedBox(
-            height: 248,
+            height: 244,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: mixes.length,
@@ -258,12 +352,36 @@ class _HomeViewState extends State<HomeView> {
           ),
         ],
 
+        // Recently Played Albums Shelf (160px wide cards)
+        if (recentAlbums.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          _SectionHeader(title: t('Recently Played')),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 214,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: recentAlbums.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 14),
+              itemBuilder: (context, index) {
+                final album = recentAlbums[index];
+                return _HomeAlbumCard(
+                  album: album,
+                  onTap: () => widget.onOpenAlbum(album.id),
+                  onPlay: () => ctrl.playAlbum(album.id, 0),
+                );
+              },
+            ),
+          ),
+        ],
+
+        // Recently Added Albums Shelf (160px wide cards)
         if (addedAlbums.isNotEmpty) ...[
           const SizedBox(height: 28),
           _SectionHeader(title: t('Recently Added')),
           const SizedBox(height: 12),
           SizedBox(
-            height: 224,
+            height: 214,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: addedAlbums.length,
@@ -280,31 +398,45 @@ class _HomeViewState extends State<HomeView> {
           ),
         ],
 
+        // Recently Played Tracks
         if (recentTracks.isNotEmpty) ...[
           const SizedBox(height: 28),
           _SectionHeader(title: t('Recently Played')),
           const SizedBox(height: 10),
           Container(
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
+              color: AppTheme.zinc900.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.zinc800),
             ),
             child: Column(
               children: [
                 for (var i = 0; i < recentTracks.length; i++) ...[
                   if (i > 0)
-                    const Divider(height: 1, color: AppColors.border),
-                  _RecentTrackRow(
-                    track: recentTracks[i].track,
-                    controller: ctrl,
-                    onPlay: () => ctrl.playTracks(
-                      recentTracks.map((r) => r.track.path).toList(),
-                      i,
-                      context: 'recent',
+                    const Divider(height: 1, color: AppTheme.zinc800),
+                  SizedBox(
+                    height: 54,
+                    child: DesktopTrackRow(
+                      indexLabel: '${i + 1}',
+                      track: recentTracks[i].track,
+                      controller: ctrl,
+                      isActive: ctrl.snapshot.current?.path ==
+                          recentTracks[i].track.path,
+                      horizontalPadding: 14,
+                      numberColumnWidth: 32,
+                      onTap: () => ctrl.playTracks(
+                        recentTracks.map((r) => r.track.path).toList(),
+                        i,
+                        context: 'recent',
+                      ),
+                      onPlay: () => ctrl.playTracks(
+                        recentTracks.map((r) => r.track.path).toList(),
+                        i,
+                        context: 'recent',
+                      ),
+                      onOpenArtist: widget.onOpenArtist,
+                      onOpenAlbum: widget.onOpenAlbum,
                     ),
-                    onOpenArtist: widget.onOpenArtist,
-                    onOpenAlbum: widget.onOpenAlbum,
                   ),
                 ],
               ],
@@ -326,10 +458,10 @@ class _SectionHeader extends StatelessWidget {
     return Text(
       title,
       style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textPrimary,
-        letterSpacing: -0.2,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: AppTheme.zinc50,
+        letterSpacing: -0.3,
       ),
     );
   }
@@ -340,7 +472,7 @@ class _QuickAccessCard extends StatefulWidget {
     required this.title,
     required this.subtitle,
     this.coverPath,
-    this.icon,
+    this.isFavorites = false,
     required this.onTap,
     this.onPlay,
   });
@@ -348,7 +480,7 @@ class _QuickAccessCard extends StatefulWidget {
   final String title;
   final String subtitle;
   final String? coverPath;
-  final IconData? icon;
+  final bool isFavorites;
   final VoidCallback onTap;
   final VoidCallback? onPlay;
 
@@ -362,92 +494,91 @@ class _QuickAccessCardState extends State<_QuickAccessCard> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: _hovered ? AppColors.surfaceHover : AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            height: 62,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.border),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          height: 56,
+          decoration: BoxDecoration(
+            color: _hovered
+                ? AppTheme.zinc800.withValues(alpha: 0.80)
+                : AppTheme.zinc900.withValues(alpha: 0.70),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: AppTheme.zinc800.withValues(alpha: 0.80),
             ),
-            child: Row(
-              children: [
-                if (widget.icon != null)
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: const BoxDecoration(
-                      color: AppColors.accentMuted,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(7),
-                        bottomLeft: Radius.circular(7),
-                      ),
-                    ),
-                    child: Icon(widget.icon, color: AppColors.accent, size: 24),
-                  )
-                else
-                  ClipRRect(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(7),
-                      bottomLeft: Radius.circular(7),
-                    ),
-                    child: CoverArt(
-                      path: widget.coverPath,
-                      size: 60,
-                      borderRadius: 0,
-                      iconSize: 22,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              if (widget.isFavorites)
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppTheme.accent400, Color(0xFF4F46E5)],
                     ),
                   ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.star_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                )
+              else
+                CoverArt(
+                  path: widget.coverPath,
+                  size: 56,
+                  borderRadius: 0,
+                  iconSize: 22,
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.zinc50,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        widget.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: AppColors.textSecondary,
-                        ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      widget.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.zinc400,
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.onPlay != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: HoverPlayButton(
+                    size: 36,
+                    reveal: true,
+                    isParentHovered: _hovered,
+                    onPressed: widget.onPlay,
                   ),
                 ),
-                if (_hovered && widget.onPlay != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: IconButton(
-                      tooltip: 'Play',
-                      style: IconButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: AppColors.canvas,
-                      ),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                      onPressed: widget.onPlay,
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
@@ -455,7 +586,7 @@ class _QuickAccessCardState extends State<_QuickAccessCard> {
   }
 }
 
-class _MixCard extends StatelessWidget {
+class _MixCard extends StatefulWidget {
   const _MixCard({
     required this.mix,
     required this.onTap,
@@ -469,97 +600,109 @@ class _MixCard extends StatelessWidget {
   final VoidCallback onSave;
 
   @override
+  State<_MixCard> createState() => _MixCardState();
+}
+
+class _MixCardState extends State<_MixCard> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 186,
-      child: Material(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          hoverColor: AppColors.surfaceHover,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
+    final mix = widget.mix;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: 184,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? AppTheme.zinc800.withValues(alpha: 0.70)
+                : AppTheme.zinc900.withValues(alpha: 0.50),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AppTheme.zinc800.withValues(alpha: 0.70),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Stack(
-                  children: [
-                    CollageCover(
-                      coverPaths: mix.coverPaths,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.30),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: MixCoverArt(
+                      mix: mix,
                       size: 160,
-                      borderRadius: 6,
+                      borderRadius: 10,
                     ),
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: Material(
-                        color: AppColors.accent,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: onPlay,
-                          child: const SizedBox(
-                            width: 34,
-                            height: 34,
-                            child: Icon(
-                              Icons.play_arrow_rounded,
-                              size: 20,
-                              color: AppColors.canvas,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        mix.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Save as Playlist',
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 26, minHeight: 26),
-                      icon: const Icon(
-                        Icons.playlist_add_rounded,
-                        size: 17,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: onSave,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${mix.trackCount} tracks · ${mix.subtitle}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: AppColors.textSecondary,
                   ),
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: HoverPlayButton(
+                      size: 40,
+                      reveal: true,
+                      isParentHovered: _hovered,
+                      onPressed: widget.onPlay,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      mix.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.zinc50,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: t('Save as Playlist'),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
+                    icon: const Icon(
+                      Icons.playlist_add_rounded,
+                      size: 16,
+                      color: AppTheme.zinc400,
+                    ),
+                    onPressed: widget.onSave,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${mix.trackCount} tracks · ${mix.subtitle}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppTheme.zinc400,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -567,7 +710,7 @@ class _MixCard extends StatelessWidget {
   }
 }
 
-class _HomeAlbumCard extends StatelessWidget {
+class _HomeAlbumCard extends StatefulWidget {
   const _HomeAlbumCard({
     required this.album,
     required this.onTap,
@@ -579,193 +722,88 @@ class _HomeAlbumCard extends StatelessWidget {
   final VoidCallback onPlay;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 168,
-      child: Material(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          hoverColor: AppColors.surfaceHover,
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Stack(
-                  children: [
-                    CoverArt(
-                      path: album.cover,
-                      size: 146,
-                      borderRadius: 6,
-                      iconSize: 38,
-                    ),
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: Material(
-                        color: AppColors.accent,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: onPlay,
-                          child: const SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: Icon(
-                              Icons.play_arrow_rounded,
-                              size: 18,
-                              color: AppColors.canvas,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  album.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  album.albumArtist.isNotEmpty
-                      ? album.albumArtist
-                      : 'Unknown Artist',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  State<_HomeAlbumCard> createState() => _HomeAlbumCardState();
 }
 
-class _RecentTrackRow extends StatelessWidget {
-  const _RecentTrackRow({
-    required this.track,
-    required this.controller,
-    required this.onPlay,
-    required this.onOpenArtist,
-    required this.onOpenAlbum,
-  });
-
-  final UiTrackRow track;
-  final PlayerController controller;
-  final VoidCallback onPlay;
-  final ValueChanged<String> onOpenArtist;
-  final ValueChanged<PlatformInt64> onOpenAlbum;
+class _HomeAlbumCardState extends State<_HomeAlbumCard> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final isActive = controller.snapshot.current?.path == track.path;
-    final isFav = controller.isFavorite(track.id);
-
-    return GestureDetector(
-      onSecondaryTapDown: (d) => TrackMenu.show(
-        context: context,
-        globalPosition: d.globalPosition,
-        track: track,
-        controller: controller,
-        onPlay: onPlay,
-        onOpenArtist: onOpenArtist,
-        onOpenAlbum: onOpenAlbum,
-      ),
-      child: InkWell(
-        onTap: onPlay,
-        hoverColor: AppColors.surfaceHover,
-        child: Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          color: isActive ? AppColors.accentMuted : Colors.transparent,
-          child: Row(
+    final album = widget.album;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: 160,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? AppTheme.zinc800.withValues(alpha: 0.60)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              CoverArt(
-                path: track.cover,
-                size: 36,
-                borderRadius: 4,
-                iconSize: 16,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 4,
-                child: Text(
-                  track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                    color: isActive ? AppColors.accent : AppColors.textPrimary,
+              Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.30),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: CoverArt(
+                      path: album.cover,
+                      size: 144,
+                      borderRadius: 8,
+                      iconSize: 38,
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 3,
-                child: HoverLinkText(
-                  text: track.artist.isNotEmpty
-                      ? track.artist
-                      : 'Unknown Artist',
-                  onTap: track.artist.isNotEmpty
-                      ? () => onOpenArtist(track.artist)
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 3,
-                child: HoverLinkText(
-                  text:
-                      track.album.isNotEmpty ? track.album : 'Unknown Album',
-                  onTap: track.albumId != null
-                      ? () => onOpenAlbum(track.albumId!)
-                      : null,
-                ),
-              ),
-              StarFavoriteButton(
-                isFavorite: isFav,
-                onPressed: () => controller.toggleFavorite(track.id),
-              ),
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 48,
-                child: Text(
-                  formatDurationMs(track.durationMs),
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: HoverPlayButton(
+                      size: 36,
+                      reveal: true,
+                      isParentHovered: _hovered,
+                      onPressed: widget.onPlay,
+                    ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                album.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.zinc50,
                 ),
               ),
-              TrackMoreButton(
-                track: track,
-                controller: controller,
-                onPlay: onPlay,
-                onOpenArtist: onOpenArtist,
-                onOpenAlbum: onOpenAlbum,
+              const SizedBox(height: 2),
+              Text(
+                album.albumArtist.isNotEmpty
+                    ? album.albumArtist
+                    : t('Unknown Artist'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.zinc400,
+                ),
               ),
             ],
           ),
@@ -796,216 +834,63 @@ class _MixDetailView extends StatelessWidget {
   Widget build(BuildContext context) {
     final mix = detail.mix;
     final activePath = controller.snapshot.current?.path;
+    final firstCover =
+        mix.coverPaths.isNotEmpty ? mix.coverPaths.first : null;
+    final tint = tintFromColor(controller.coverColorCached(firstCover));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextButton.icon(
-                onPressed: onBack,
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: CollectionHeader(
+            tint: tint,
+            label: t('Dynamic Mixes'),
+            titleText: mix.title,
+            onBack: onBack,
+            backLabel: t('Back to Home'),
+            cover: MixCoverArt(
+              mix: mix,
+              size: 208,
+              borderRadius: 6,
+            ),
+            meta: Text('${mix.subtitle} • ${t('{n} tracks', {'n': detail.tracks.length})}'),
+            playEnabled: detail.tracks.isNotEmpty,
+            onPlay: () => controller.playHomeMix(mix.id),
+            extraActions: [
+              OutlinedButton.icon(
+                onPressed: onSavePlaylist,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+                  shape: const StadiumBorder(),
                 ),
-                icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                label: const Text('Back to Home'),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  CollageCover(
-                    coverPaths: mix.coverPaths,
-                    size: 140,
-                    borderRadius: 10,
-                  ),
-                  const SizedBox(width: 22),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          mix.title,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${mix.subtitle} · ${detail.tracks.length} tracks',
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            FilledButton.icon(
-                              onPressed: detail.tracks.isNotEmpty
-                                  ? () => controller.playHomeMix(mix.id)
-                                  : null,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.accent,
-                                foregroundColor: AppColors.canvas,
-                              ),
-                              icon: const Icon(Icons.play_arrow_rounded,
-                                  size: 18),
-                              label: const Text(
-                                'Play Mix',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            OutlinedButton.icon(
-                              onPressed: onSavePlaylist,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textPrimary,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(Icons.playlist_add_rounded,
-                                  size: 18),
-                              label: const Text('Save as Playlist'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                label: Text(t('Save as Playlist')),
               ),
             ],
           ),
         ),
-        const Divider(height: 1, color: AppColors.border),
-        Expanded(
-          child: ListView.builder(
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+          sliver: SliverFixedExtentList.builder(
             itemCount: detail.tracks.length,
-            itemExtent: 54,
+            itemExtent: 56,
             itemBuilder: (context, index) {
               final track = detail.tracks[index];
               final isActive = activePath == track.path;
-              final isFav = controller.isFavorite(track.id);
               void playHere() =>
                   controller.playHomeMix(mix.id, startPath: track.path);
 
-              return GestureDetector(
-                onSecondaryTapDown: (d) => TrackMenu.show(
-                  context: context,
-                  globalPosition: d.globalPosition,
-                  track: track,
-                  controller: controller,
-                  onPlay: playHere,
-                  onOpenArtist: onOpenArtist,
-                  onOpenAlbum: onOpenAlbum,
-                ),
-                child: InkWell(
-                  onTap: playHere,
-                  hoverColor: AppColors.surfaceHover,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    color:
-                        isActive ? AppColors.accentMuted : Colors.transparent,
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 36,
-                          child: isActive
-                              ? const Icon(Icons.graphic_eq_rounded,
-                                  size: 16, color: AppColors.accent)
-                              : Text(
-                                  '${index + 1}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textMuted,
-                                    fontFeatures: [
-                                      FontFeature.tabularFigures()
-                                    ],
-                                  ),
-                                ),
-                        ),
-                        CoverArt(
-                          path: track.cover,
-                          size: 36,
-                          borderRadius: 4,
-                          iconSize: 16,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 4,
-                          child: Text(
-                            track.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight:
-                                  isActive ? FontWeight.w600 : FontWeight.w500,
-                              color: isActive
-                                  ? AppColors.accent
-                                  : AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 3,
-                          child: HoverLinkText(
-                            text: track.artist.isNotEmpty
-                                ? track.artist
-                                : 'Unknown Artist',
-                            onTap: track.artist.isNotEmpty
-                                ? () => onOpenArtist(track.artist)
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 3,
-                          child: HoverLinkText(
-                            text: track.album.isNotEmpty
-                                ? track.album
-                                : 'Unknown Album',
-                            onTap: track.albumId != null
-                                ? () => onOpenAlbum(track.albumId!)
-                                : null,
-                          ),
-                        ),
-                        StarFavoriteButton(
-                          isFavorite: isFav,
-                          onPressed: () => controller.toggleFavorite(track.id),
-                        ),
-                        const SizedBox(width: 6),
-                        SizedBox(
-                          width: 50,
-                          child: Text(
-                            formatDurationMs(track.durationMs),
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                        ),
-                        TrackMoreButton(
-                          track: track,
-                          controller: controller,
-                          onPlay: playHere,
-                          onOpenArtist: onOpenArtist,
-                          onOpenAlbum: onOpenAlbum,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              return DesktopTrackRow(
+                indexLabel: '${index + 1}',
+                track: track,
+                controller: controller,
+                isActive: isActive,
+                horizontalPadding: 14,
+                numberColumnWidth: 36,
+                onTap: playHere,
+                onPlay: playHere,
+                onOpenArtist: onOpenArtist,
+                onOpenAlbum: onOpenAlbum,
               );
             },
           ),

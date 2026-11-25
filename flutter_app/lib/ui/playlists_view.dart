@@ -11,8 +11,9 @@ import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/playlist_cover_dialog.dart';
 import 'package:neomodern/ui/selection_bar.dart';
-import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/track_menu.dart';
+import 'package:neomodern/ui/widgets/collection_header.dart';
+import 'package:neomodern/ui/widgets/track_row.dart';
 
 class PlaylistsView extends StatefulWidget {
   const PlaylistsView({
@@ -92,10 +93,10 @@ class _PlaylistsViewState extends State<PlaylistsView> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
+        backgroundColor: AppTheme.zinc900,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppColors.border),
+          side: const BorderSide(color: AppTheme.zinc800),
         ),
         title: Text(t('Delete Playlist'), style: const TextStyle(fontSize: 16)),
         content: Text(
@@ -110,8 +111,8 @@ class _PlaylistsViewState extends State<PlaylistsView> {
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(
-              backgroundColor: AppColors.danger,
-              foregroundColor: AppColors.canvas,
+              backgroundColor: AppTheme.danger,
+              foregroundColor: AppTheme.zinc950,
             ),
             child: Text(t('Delete')),
           ),
@@ -224,15 +225,34 @@ class _PlaylistsViewState extends State<PlaylistsView> {
     unawaited(widget.controller.playPlaylist(pl.id, index));
   }
 
-  Color? _headerTint(PlayerController ctrl, UiPlaylistInfo pl) {
-    final preset = parsePlaylistCoverPreset(pl.cover ?? pl.coverValue);
-    if (preset != null) return preset.palette.heroTop;
+  CoverTint _headerTint(PlayerController ctrl, UiPlaylistInfo pl) {
+    final preset = parsePlaylistCoverPreset(
+      pl.cover ?? (pl.coverMode == 'gradient' ? pl.coverValue : null),
+    );
+    if (preset != null) {
+      return CoverTint(
+        top: preset.palette.heroTop,
+        surface: preset.palette.colors[1],
+        dim: AppTheme.zinc300,
+      );
+    }
     final path = pl.cover != null &&
             !pl.cover!.startsWith('preset:') &&
             pl.cover!.isNotEmpty
         ? pl.cover!
         : (pl.albumCovers.isNotEmpty ? pl.albumCovers.first : null);
-    return ctrl.coverColorCached(path);
+    return tintFromColor(ctrl.coverColorCached(path));
+  }
+
+  String _formatTotalDuration(List<UiTrackRow> tracks) {
+    var totalMs = 0;
+    for (final tr in tracks) {
+      if (tr.durationMs != null) {
+        totalMs += tr.durationMs!.toInt();
+      }
+    }
+    if (totalMs <= 0) return '';
+    return formatListeningDuration(BigInt.from(totalMs));
   }
 
   @override
@@ -247,13 +267,16 @@ class _PlaylistsViewState extends State<PlaylistsView> {
       return Center(
         child: Text(
           t('Playlist not found.'),
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: const TextStyle(color: AppTheme.zinc400),
         ),
       );
     }
 
     final activePath = ctrl.snapshot.current?.path;
     final isPinned = ctrl.isPinned('playlist', pl.id);
+    final isPlayingContext =
+        ctrl.isPlaying && ctrl.snapshot.context == 'playlist:${pl.id}';
+    final totalDuration = _formatTotalDuration(_tracks);
     final selectedTracks = _selectedIndices
         .where((i) => i >= 0 && i < _tracks.length)
         .map((i) => _tracks[i])
@@ -266,161 +289,197 @@ class _PlaylistsViewState extends State<PlaylistsView> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TintedBackdrop(
-              tintColor: _headerTint(ctrl, pl),
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  PlaylistCoverWidget(
-                    playlist: pl,
-                    size: 132,
-                    borderRadius: 10,
+            CollectionHeader(
+              tint: _headerTint(ctrl, pl),
+              label: t('PLAYLIST'),
+              titleText: pl.name,
+              cover: PlaylistCoverWidget(
+                playlist: pl,
+                size: 208,
+                borderRadius: 6,
+              ),
+              onCoverTap: () => showPlaylistCoverDialog(
+                context: context,
+                controller: ctrl,
+                playlist: pl,
+              ),
+              meta: Text(
+                totalDuration.isNotEmpty
+                    ? '${_tracks.length == 1 ? t('{n} track', {'n': _tracks.length}) : t('{n} tracks', {'n': _tracks.length})}, $totalDuration'
+                    : (_tracks.length == 1
+                        ? t('{n} track', {'n': _tracks.length})
+                        : t('{n} tracks', {'n': _tracks.length})),
+              ),
+              isPlaying: isPlayingContext,
+              playEnabled: _tracks.isNotEmpty,
+              onPlay: () {
+                if (ctrl.snapshot.context == 'playlist:${pl.id}') {
+                  ctrl.togglePause();
+                } else {
+                  ctrl.playPlaylist(pl.id, 0);
+                }
+              },
+              shuffleActive: ctrl.snapshot.shuffle,
+              onShuffle: () => ctrl.playPlaylist(pl.id, 0, shuffle: true),
+              isPinned: isPinned,
+              onTogglePin: () => ctrl.togglePinned('playlist', pl.id),
+              extraActions: [
+                PopupMenuButton<String>(
+                  tooltip: t('More options'),
+                  color: AppTheme.zinc900,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: const BorderSide(color: AppTheme.zinc700),
                   ),
-                  const SizedBox(width: 22),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          t('PLAYLIST'),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1.0,
-                            color: AppColors.textMuted,
+                  icon: Icon(
+                    Icons.more_horiz_rounded,
+                    size: 28,
+                    color: Colors.white.withValues(alpha: 0.70),
+                  ),
+                  onSelected: (value) async {
+                    switch (value) {
+                      case 'cover':
+                        await showPlaylistCoverDialog(
+                          context: context,
+                          controller: ctrl,
+                          playlist: pl,
+                        );
+                      case 'rename':
+                        await _rename(pl);
+                      case 'export':
+                        await _exportM3u(pl);
+                      case 'delete':
+                        await _delete(pl);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem<String>(
+                      value: 'cover',
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.image_outlined,
+                            size: 17,
+                            color: AppTheme.zinc400,
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          pl.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                            letterSpacing: -0.4,
+                          const SizedBox(width: 10),
+                          Text(t('Change Cover')),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'rename',
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.edit_rounded,
+                            size: 17,
+                            color: AppTheme.zinc400,
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _tracks.length == 1
-                              ? t('{n} track', {'n': _tracks.length})
-                              : t('{n} tracks', {'n': _tracks.length}),
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 8,
+                          const SizedBox(width: 10),
+                          Text(t('Rename')),
+                        ],
+                      ),
+                    ),
+                    if (_tracks.isNotEmpty)
+                      PopupMenuItem<String>(
+                        value: 'export',
+                        child: Row(
                           children: [
-                            FilledButton.icon(
-                              onPressed: _tracks.isNotEmpty
-                                  ? () => ctrl.playPlaylist(pl.id, 0)
-                                  : null,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.accent,
-                                foregroundColor: AppColors.canvas,
-                              ),
-                              icon:
-                                  const Icon(Icons.play_arrow_rounded, size: 18),
-                              label: Text(
-                                t('Play'),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                            const Icon(
+                              Icons.ios_share_rounded,
+                              size: 17,
+                              color: AppTheme.zinc400,
                             ),
-                            OutlinedButton.icon(
-                              onPressed: _tracks.isNotEmpty
-                                  ? () =>
-                                      ctrl.playPlaylist(pl.id, 0, shuffle: true)
-                                  : null,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textPrimary,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(Icons.shuffle_rounded, size: 17),
-                              label: Text(t('Shuffle')),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () =>
-                                  ctrl.togglePinned('playlist', pl.id),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: isPinned
-                                    ? AppColors.accent
-                                    : AppColors.textPrimary,
-                                side: BorderSide(
-                                  color: isPinned
-                                      ? AppColors.accent
-                                      : AppColors.border,
-                                ),
-                              ),
-                              icon: Icon(
-                                isPinned
-                                    ? Icons.push_pin_rounded
-                                    : Icons.push_pin_outlined,
-                                size: 16,
-                              ),
-                              label: Text(isPinned ? t('Unpin') : t('Pin')),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () => showPlaylistCoverDialog(
-                                context: context,
-                                controller: ctrl,
-                                playlist: pl,
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textSecondary,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(Icons.image_outlined, size: 16),
-                              label: Text(t('Change Cover')),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed:
-                                  _tracks.isNotEmpty ? () => _exportM3u(pl) : null,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textSecondary,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(Icons.ios_share_rounded, size: 16),
-                              label: Text(t('Export M3U')),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () => _rename(pl),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textSecondary,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(Icons.edit_rounded, size: 16),
-                              label: Text(t('Rename')),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () => _delete(pl),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.danger,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(
-                                Icons.delete_outline_rounded,
-                                size: 17,
-                              ),
-                              label: Text(t('Delete')),
-                            ),
+                            const SizedBox(width: 10),
+                            Text(t('Export M3U')),
                           ],
                         ),
-                      ],
+                      ),
+                    const PopupMenuDivider(),
+                    PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 17,
+                            color: AppTheme.danger,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            t('Delete'),
+                            style: const TextStyle(color: AppTheme.danger),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppTheme.zinc800)),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 28),
+                  const SizedBox(
+                    width: 34,
+                    child: Text(
+                      '#',
+                      style: TextStyle(fontSize: 11.5, color: AppTheme.zinc500),
                     ),
                   ),
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      t('Title'),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.zinc500,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      t('Artist'),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.zinc500,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      t('Album'),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.zinc500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 36),
+                  SizedBox(
+                    width: 52,
+                    child: Text(
+                      t('Time'),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.zinc500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 60),
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.border),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -428,18 +487,19 @@ class _PlaylistsViewState extends State<PlaylistsView> {
                       ? Center(
                           child: Text(
                             t('This playlist is empty. Right-click any song or use ... to add tracks.'),
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                            ),
+                            style: const TextStyle(color: AppTheme.zinc400),
                           ),
                         )
                       : ReorderableListView.builder(
                           buildDefaultDragHandles: false,
-                          padding: EdgeInsets.only(
-                            bottom: selectedTracks.isNotEmpty ? 76 : 0,
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            4,
+                            16,
+                            selectedTracks.isNotEmpty ? 84 : 16,
                           ),
                           itemCount: _tracks.length,
-                          itemExtent: 54,
+                          itemExtent: 56,
                           onReorderItem: (oldIndex, newIndex) =>
                               unawaited(_reorderTrack(oldIndex, newIndex)),
                           itemBuilder: (context, index) {
@@ -447,180 +507,54 @@ class _PlaylistsViewState extends State<PlaylistsView> {
                             final isActive = activePath == track.path;
                             final isSelected =
                                 _selectedIndices.contains(index);
-                            final isFav = ctrl.isFavorite(track.id);
                             void playHere() => ctrl.playPlaylist(pl.id, index);
 
                             return Material(
                               key: ValueKey('pl-${pl.id}-${track.id}-$index'),
                               color: Colors.transparent,
-                              child: GestureDetector(
-                                onSecondaryTapDown: (d) => TrackMenu.show(
-                                  context: context,
-                                  globalPosition: d.globalPosition,
-                                  track: track,
-                                  controller: ctrl,
-                                  onPlay: playHere,
-                                  onOpenArtist: widget.onOpenArtist,
-                                  onOpenAlbum: widget.onOpenAlbum,
-                                  onRemoveFromPlaylist: () =>
-                                      _removeTrackAt(index),
-                                ),
-                                child: InkWell(
-                                  onTap: () => _handleRowTap(pl, index),
-                                  hoverColor: AppColors.surfaceHover,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    color: isSelected
-                                        ? AppColors.accent.withAlpha(42)
-                                        : isActive
-                                            ? AppColors.accentMuted
-                                            : Colors.transparent,
-                                    child: Row(
-                                      children: [
-                                        ReorderableDragStartListener(
-                                          index: index,
-                                          child: const Padding(
-                                            padding: EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 12,
-                                            ),
-                                            child: Icon(
-                                              Icons.drag_indicator_rounded,
-                                              size: 16,
-                                              color: AppColors.textMuted,
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(
-                                          width: 34,
-                                          child: isActive
-                                              ? const Icon(
-                                                  Icons.graphic_eq_rounded,
-                                                  size: 16,
-                                                  color: AppColors.accent,
-                                                )
-                                              : Text(
-                                                  '${index + 1}',
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: AppColors.textMuted,
-                                                    fontFeatures: [
-                                                      FontFeature
-                                                          .tabularFigures()
-                                                    ],
-                                                  ),
-                                                ),
-                                        ),
-                                        Expanded(
-                                          flex: 4,
-                                          child: Row(
-                                            children: [
-                                              CoverArt(
-                                                path: track.cover,
-                                                size: 36,
-                                                borderRadius: 4,
-                                                iconSize: 16,
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Text(
-                                                  track.title,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 13.5,
-                                                    fontWeight: isActive
-                                                        ? FontWeight.w600
-                                                        : FontWeight.w500,
-                                                    color: isActive
-                                                        ? AppColors.accent
-                                                        : AppColors.textPrimary,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          flex: 3,
-                                          child: HoverLinkText(
-                                            text: track.artist.isNotEmpty
-                                                ? track.artist
-                                                : t('Unknown Artist'),
-                                            onTap: track.artist.isNotEmpty
-                                                ? () => widget.onOpenArtist(
-                                                      track.artist,
-                                                    )
-                                                : null,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          flex: 3,
-                                          child: HoverLinkText(
-                                            text: track.album.isNotEmpty
-                                                ? track.album
-                                                : t('Unknown Album'),
-                                            onTap: track.albumId != null
-                                                ? () => widget.onOpenAlbum(
-                                                      track.albumId!,
-                                                    )
-                                                : null,
-                                          ),
-                                        ),
-                                        StarFavoriteButton(
-                                          isFavorite: isFav,
-                                          onPressed: () =>
-                                              ctrl.toggleFavorite(track.id),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        SizedBox(
-                                          width: 52,
-                                          child: Text(
-                                            formatDurationMs(track.durationMs),
-                                            textAlign: TextAlign.right,
-                                            style: const TextStyle(
-                                              fontSize: 12.5,
-                                              color: AppColors.textMuted,
-                                              fontFeatures: [
-                                                FontFeature.tabularFigures()
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: t('Remove from Playlist'),
-                                          visualDensity: VisualDensity.compact,
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(
-                                            minWidth: 30,
-                                            minHeight: 30,
-                                          ),
-                                          icon: const Icon(
-                                            Icons.close_rounded,
-                                            size: 16,
-                                            color: AppColors.textMuted,
-                                          ),
-                                          onPressed: () =>
-                                              _removeTrackAt(index),
-                                        ),
-                                        TrackMoreButton(
-                                          track: track,
-                                          controller: ctrl,
-                                          onPlay: playHere,
-                                          onOpenArtist: widget.onOpenArtist,
-                                          onOpenAlbum: widget.onOpenAlbum,
-                                          onRemoveFromPlaylist: () =>
-                                              _removeTrackAt(index),
-                                        ),
-                                      ],
+                              child: DesktopTrackRow(
+                                indexLabel: '${index + 1}',
+                                track: track,
+                                controller: ctrl,
+                                isActive: isActive,
+                                isSelected: isSelected,
+                                horizontalPadding: 14,
+                                numberColumnWidth: 34,
+                                leadingDragHandle: ReorderableDragStartListener(
+                                  index: index,
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(right: 10),
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.grab,
+                                      child: Icon(
+                                        Icons.drag_indicator_rounded,
+                                        size: 16,
+                                        color: AppTheme.zinc500,
+                                      ),
                                     ),
                                   ),
                                 ),
+                                trailingAction: IconButton(
+                                  tooltip: t('Remove from Playlist'),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 30,
+                                    minHeight: 30,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                    color: AppTheme.zinc400,
+                                  ),
+                                  onPressed: () => _removeTrackAt(index),
+                                ),
+                                onTap: () => _handleRowTap(pl, index),
+                                onPlay: playHere,
+                                onOpenArtist: widget.onOpenArtist,
+                                onOpenAlbum: widget.onOpenAlbum,
+                                onRemoveFromPlaylist: () =>
+                                    _removeTrackAt(index),
                               ),
                             );
                           },

@@ -7,9 +7,9 @@ import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
-import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/selection_bar.dart';
 import 'package:neomodern/ui/track_menu.dart';
+import 'package:neomodern/ui/widgets/track_row.dart';
 
 class SongsView extends StatefulWidget {
   const SongsView({
@@ -132,8 +132,8 @@ class _SongsViewState extends State<SongsView> {
                         ? () => ctrl.playAllFromSearch(0)
                         : null,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      foregroundColor: AppColors.canvas,
+                      backgroundColor: AppTheme.accent500,
+                      foregroundColor: AppTheme.zinc950,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 10,
@@ -160,7 +160,7 @@ class _SongsViewState extends State<SongsView> {
                         prefixIcon: const Icon(
                           Icons.search_rounded,
                           size: 18,
-                          color: AppColors.textMuted,
+                          color: AppTheme.zinc500,
                         ),
                         suffixIcon: _searchCtrl.text.isNotEmpty
                             ? IconButton(
@@ -184,42 +184,42 @@ class _SongsViewState extends State<SongsView> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppColors.border)),
+                border: Border(bottom: BorderSide(color: AppTheme.zinc800)),
               ),
               child: Row(
                 children: [
                   const SizedBox(
                     width: 40,
                     child: Text('#',
-                        style: TextStyle(
-                            fontSize: 11.5, color: AppColors.textMuted)),
+                        style:
+                            TextStyle(fontSize: 11.5, color: AppTheme.zinc500)),
                   ),
                   Expanded(
                     flex: 4,
                     child: Text(t('Title'),
                         style: const TextStyle(
-                            fontSize: 11.5, color: AppColors.textMuted)),
+                            fontSize: 11.5, color: AppTheme.zinc500)),
                   ),
                   Expanded(
                     flex: 3,
                     child: Text(t('Artist'),
                         style: const TextStyle(
-                            fontSize: 11.5, color: AppColors.textMuted)),
+                            fontSize: 11.5, color: AppTheme.zinc500)),
                   ),
                   Expanded(
                     flex: 3,
                     child: Text(t('Album'),
                         style: const TextStyle(
-                            fontSize: 11.5, color: AppColors.textMuted)),
+                            fontSize: 11.5, color: AppTheme.zinc500)),
                   ),
                   const SizedBox(width: 36),
                   SizedBox(
-                    width: 54,
+                    width: 52,
                     child: Text(
                       t('Time'),
                       textAlign: TextAlign.right,
                       style: const TextStyle(
-                          fontSize: 11.5, color: AppColors.textMuted),
+                          fontSize: 11.5, color: AppTheme.zinc500),
                     ),
                   ),
                   const SizedBox(width: 30),
@@ -236,16 +236,15 @@ class _SongsViewState extends State<SongsView> {
                             ctrl.trackSearch.isNotEmpty
                                 ? t('No matching songs found.')
                                 : t('No songs in library yet.'),
-                            style: const TextStyle(
-                                color: AppColors.textSecondary),
+                            style: const TextStyle(color: AppTheme.zinc400),
                           ),
                           if (ctrl.trackSearch.isEmpty) ...[
                             const SizedBox(height: 12),
                             OutlinedButton.icon(
                               onPressed: widget.onOpenSettings,
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.accent,
-                                side: const BorderSide(color: AppColors.border),
+                                foregroundColor: AppTheme.accent400,
+                                side: const BorderSide(color: AppTheme.zinc800),
                               ),
                               icon: const Icon(Icons.folder_open_rounded,
                                   size: 17),
@@ -257,10 +256,10 @@ class _SongsViewState extends State<SongsView> {
                     )
                   : ListView.builder(
                       padding: EdgeInsets.only(
-                        bottom: selectedTracks.isNotEmpty ? 76 : 0,
+                        bottom: selectedTracks.isNotEmpty ? 76 : 12,
                       ),
                       itemCount: ctrl.trackCount,
-                      itemExtent: 54,
+                      itemExtent: 56,
                       itemBuilder: (context, index) {
                         final track = ctrl.trackAt(index);
                         if (track == null) {
@@ -268,138 +267,18 @@ class _SongsViewState extends State<SongsView> {
                         }
                         final isActive = activePath == track.path;
                         final isSelected = _selectedIndices.contains(index);
-                        final isFav = ctrl.isFavorite(track.id);
                         void playHere() => ctrl.playAllFromSearch(index);
 
-                        return GestureDetector(
-                          onSecondaryTapDown: (d) => TrackMenu.show(
-                            context: context,
-                            globalPosition: d.globalPosition,
-                            track: track,
-                            controller: ctrl,
-                            onPlay: playHere,
-                            onOpenArtist: widget.onOpenArtist,
-                            onOpenAlbum: widget.onOpenAlbum,
-                          ),
-                          child: InkWell(
-                            onTap: () => _handleRowTap(index),
-                            hoverColor: AppColors.surfaceHover,
-                            child: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 24),
-                              color: isSelected
-                                  ? AppColors.accent.withAlpha(42)
-                                  : isActive
-                                      ? AppColors.accentMuted
-                                      : Colors.transparent,
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    width: 40,
-                                    child: isActive
-                                        ? const Icon(
-                                            Icons.graphic_eq_rounded,
-                                            size: 16,
-                                            color: AppColors.accent,
-                                          )
-                                        : Text(
-                                            '${index + 1}',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textMuted,
-                                              fontFeatures: [
-                                                FontFeature.tabularFigures()
-                                              ],
-                                            ),
-                                          ),
-                                  ),
-                                  Expanded(
-                                    flex: 4,
-                                    child: Row(
-                                      children: [
-                                        CoverArt(
-                                          path: track.cover,
-                                          size: 36,
-                                          borderRadius: 4,
-                                          iconSize: 16,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            track.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 13.5,
-                                              fontWeight: isActive
-                                                  ? FontWeight.w600
-                                                  : FontWeight.w500,
-                                              color: isActive
-                                                  ? AppColors.accent
-                                                  : AppColors.textPrimary,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 3,
-                                    child: HoverLinkText(
-                                      text: track.artist.isNotEmpty
-                                          ? track.artist
-                                          : t('Unknown Artist'),
-                                      onTap: track.artist.isNotEmpty
-                                          ? () =>
-                                              widget.onOpenArtist(track.artist)
-                                          : null,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 3,
-                                    child: HoverLinkText(
-                                      text: track.album.isNotEmpty
-                                          ? track.album
-                                          : t('Unknown Album'),
-                                      onTap: track.albumId != null
-                                          ? () =>
-                                              widget.onOpenAlbum(track.albumId!)
-                                          : null,
-                                    ),
-                                  ),
-                                  StarFavoriteButton(
-                                    isFavorite: isFav,
-                                    onPressed: () =>
-                                        ctrl.toggleFavorite(track.id),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  SizedBox(
-                                    width: 54,
-                                    child: Text(
-                                      formatDurationMs(track.durationMs),
-                                      textAlign: TextAlign.right,
-                                      style: const TextStyle(
-                                        fontSize: 12.5,
-                                        color: AppColors.textMuted,
-                                        fontFeatures: [
-                                          FontFeature.tabularFigures()
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  TrackMoreButton(
-                                    track: track,
-                                    controller: ctrl,
-                                    onPlay: playHere,
-                                    onOpenArtist: widget.onOpenArtist,
-                                    onOpenAlbum: widget.onOpenAlbum,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                        return DesktopTrackRow(
+                          indexLabel: '${index + 1}',
+                          track: track,
+                          controller: ctrl,
+                          isActive: isActive,
+                          isSelected: isSelected,
+                          onTap: () => _handleRowTap(index),
+                          onPlay: playHere,
+                          onOpenArtist: widget.onOpenArtist,
+                          onOpenAlbum: widget.onOpenAlbum,
                         );
                       },
                     ),
@@ -452,7 +331,7 @@ class _TrackRowSkeleton extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: Text(
           t('Loading...'),
-          style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+          style: const TextStyle(fontSize: 12.5, color: AppTheme.zinc500),
         ),
       ),
     );

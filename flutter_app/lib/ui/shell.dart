@@ -25,6 +25,7 @@ import 'package:neomodern/ui/songs_view.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/track_menu.dart';
 import 'package:neomodern/ui/welcome_dialog.dart';
+import 'package:neomodern/ui/widgets/motion_primitives.dart';
 
 enum NavTab {
   home,
@@ -50,6 +51,9 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  static const double _collapsedWidth = 68.0;
+  static const double _collapseThreshold = 125.0;
+
   NavTab _tab = NavTab.home;
   PlatformInt64? _selectedPlaylistId;
 
@@ -59,8 +63,12 @@ class _AppShellState extends State<AppShell> {
   String? _externalArtistName;
   int _externalArtistNonce = 0;
 
+  bool _sidebarCollapsed = false;
+  bool _draggingSidebar = false;
+  double? _sidebarDragRawWidth;
+
   bool _rightPanelOpen = false;
-  RightPanelTab _rightPanelTab = RightPanelTab.lyrics;
+  RightPanelTab _rightPanelTab = RightPanelTab.nowPlaying;
   bool _welcomeChecked = false;
 
   @override
@@ -149,6 +157,10 @@ class _AppShellState extends State<AppShell> {
     setState(() => _tab = NavTab.favorites);
   }
 
+  void _openRecap() {
+    setState(() => _tab = NavTab.recap);
+  }
+
   void _toggleRightPanel(RightPanelTab tab) {
     setState(() {
       if (_rightPanelOpen && _rightPanelTab == tab) {
@@ -199,6 +211,98 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  void _handleSidebarDragStart() {
+    final ctrl = widget.controller;
+    setState(() {
+      _draggingSidebar = true;
+      _sidebarDragRawWidth = _sidebarCollapsed
+          ? _collapsedWidth
+          : ctrl.sidebarWidth.clamp(176.0, 380.0);
+    });
+  }
+
+  void _handleSidebarDragDelta(double dx) {
+    final ctrl = widget.controller;
+    final nextRaw = (_sidebarDragRawWidth ?? ctrl.sidebarWidth) + dx;
+    _sidebarDragRawWidth = nextRaw.clamp(40.0, 380.0);
+    if (_sidebarDragRawWidth! < _collapseThreshold) {
+      if (!_sidebarCollapsed) {
+        setState(() => _sidebarCollapsed = true);
+      }
+    } else {
+      if (_sidebarCollapsed) {
+        setState(() => _sidebarCollapsed = false);
+      }
+      ctrl.previewSidebarWidth(_sidebarDragRawWidth!.clamp(176.0, 380.0));
+    }
+  }
+
+  void _handleSidebarDragEnd() {
+    setState(() {
+      _draggingSidebar = false;
+      _sidebarDragRawWidth = null;
+    });
+    unawaited(widget.controller.saveUiPrefs());
+  }
+
+  Widget _buildActiveView(NavTab activeTab, PlayerController ctrl) {
+    return switch (activeTab) {
+      NavTab.home => HomeView(
+          controller: ctrl,
+          onOpenAlbum: _openAlbum,
+          onOpenArtist: _openArtist,
+          onOpenFavorites: _openFavorites,
+          onOpenSettings: _openSettings,
+          onOpenRecap: _openRecap,
+        ),
+      NavTab.songs => SongsView(
+          controller: ctrl,
+          onOpenArtist: _openArtist,
+          onOpenAlbum: _openAlbum,
+          onOpenSettings: _openSettings,
+        ),
+      NavTab.albums => AlbumsView(
+          controller: ctrl,
+          externalAlbumId: _externalAlbumId,
+          externalSelectionNonce: _externalAlbumNonce,
+          onOpenArtist: _openArtist,
+          onOpenAlbum: _openAlbum,
+          onOpenSettings: _openSettings,
+        ),
+      NavTab.artists => ArtistsView(
+          controller: ctrl,
+          externalArtistName: _externalArtistName,
+          externalSelectionNonce: _externalArtistNonce,
+          onOpenAlbum: _openAlbum,
+          onOpenArtist: _openArtist,
+        ),
+      NavTab.sources => SourcesView(controller: ctrl),
+      NavTab.recap => RecapView(
+          controller: ctrl,
+          onOpenArtist: _openArtist,
+          onOpenAlbum: _openAlbum,
+        ),
+      NavTab.settings => SettingsView(controller: ctrl),
+      NavTab.favorites => FavoritesView(
+          controller: ctrl,
+          onOpenArtist: _openArtist,
+          onOpenAlbum: _openAlbum,
+        ),
+      NavTab.playlist => _selectedPlaylistId != null
+          ? PlaylistsView(
+              playlistId: _selectedPlaylistId!,
+              controller: ctrl,
+              onPlaylistDeleted: () => setState(() {
+                _selectedPlaylistId = null;
+                _tab = NavTab.home;
+              }),
+              onOpenArtist: _openArtist,
+              onOpenAlbum: _openAlbum,
+            )
+          : const SizedBox.shrink(),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -215,21 +319,21 @@ class _AppShellState extends State<AppShell> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.error_outline_rounded,
-                        size: 44, color: AppColors.danger),
+                        size: 44, color: AppTheme.danger),
                     const SizedBox(height: 12),
                     Text(
                       t('Failed to initialize NeoModern core'),
                       style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                        color: AppTheme.zinc100,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       ctrl.initError!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.textSecondary),
+                      style: const TextStyle(color: AppTheme.zinc400),
                     ),
                   ],
                 ),
@@ -248,7 +352,7 @@ class _AppShellState extends State<AppShell> {
                   const SizedBox(height: 14),
                   Text(
                     t('Starting NeoModern...'),
-                    style: const TextStyle(color: AppColors.textSecondary),
+                    style: const TextStyle(color: AppTheme.zinc400),
                   ),
                 ],
               ),
@@ -261,17 +365,13 @@ class _AppShellState extends State<AppShell> {
                 ? NavTab.home
                 : _tab;
 
-        final mainIndex = switch (activeTab) {
-          NavTab.home => 0,
-          NavTab.songs => 1,
-          NavTab.albums => 2,
-          NavTab.artists => 3,
-          NavTab.sources => 4,
-          NavTab.recap => 5,
-          NavTab.settings => 6,
-          NavTab.favorites => 7,
-          NavTab.playlist => 8,
-        };
+        final routeKey = activeTab == NavTab.playlist
+            ? 'playlist:${_selectedPlaylistId ?? ''}'
+            : activeTab.name;
+
+        final sidebarWidth = _sidebarCollapsed
+            ? _collapsedWidth
+            : ctrl.sidebarWidth.clamp(176.0, 380.0);
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -283,6 +383,7 @@ class _AppShellState extends State<AppShell> {
               autofocus: true,
               onKeyEvent: _handleKeyEvent,
               child: Scaffold(
+                backgroundColor: AppTheme.zinc950,
                 body: Stack(
                   children: [
                     Column(
@@ -292,11 +393,11 @@ class _AppShellState extends State<AppShell> {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 8),
-                            color: AppColors.danger.withAlpha(36),
+                            color: AppTheme.danger.withValues(alpha: 0.14),
                             child: Row(
                               children: [
                                 const Icon(Icons.warning_amber_rounded,
-                                    size: 16, color: AppColors.danger),
+                                    size: 16, color: AppTheme.danger),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -305,7 +406,7 @@ class _AppShellState extends State<AppShell> {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontSize: 12.5,
-                                      color: AppColors.textPrimary,
+                                      color: AppTheme.zinc100,
                                     ),
                                   ),
                                 ),
@@ -323,11 +424,25 @@ class _AppShellState extends State<AppShell> {
                           child: Row(
                             children: [
                               _Sidebar(
-                                width: ctrl.sidebarWidth.clamp(190.0, 340.0),
+                                width: sidebarWidth,
+                                collapsed: _sidebarCollapsed,
+                                dragging: _draggingSidebar,
                                 selected: activeTab,
                                 selectedPlaylistId: _selectedPlaylistId,
+                                externalAlbumId: _externalAlbumId,
                                 controller: ctrl,
-                                onSelect: (t) => setState(() => _tab = t),
+                                onToggleCollapse: () => setState(
+                                  () => _sidebarCollapsed = !_sidebarCollapsed,
+                                ),
+                                onSelect: (nav) => setState(() {
+                                  if (nav == NavTab.albums) {
+                                    _externalAlbumId = null;
+                                  }
+                                  if (nav == NavTab.artists) {
+                                    _externalArtistName = null;
+                                  }
+                                  _tab = nav;
+                                }),
                                 onSelectPlaylist: _openPlaylist,
                                 onOpenAlbum: _openAlbum,
                                 onCreatePlaylist: _createPlaylist,
@@ -337,71 +452,14 @@ class _AppShellState extends State<AppShell> {
                               ),
                               _ResizeHandle(
                                 tooltip: t('Resize sidebar'),
-                                onDragDelta: (dx) => ctrl.previewSidebarWidth(
-                                  ctrl.sidebarWidth + dx,
-                                ),
-                                onDragEnd: () => unawaited(ctrl.saveUiPrefs()),
+                                onDragStart: _handleSidebarDragStart,
+                                onDragDelta: _handleSidebarDragDelta,
+                                onDragEnd: _handleSidebarDragEnd,
                               ),
                               Expanded(
-                                child: IndexedStack(
-                                  index: mainIndex,
-                                  children: [
-                                    HomeView(
-                                      controller: ctrl,
-                                      onOpenAlbum: _openAlbum,
-                                      onOpenArtist: _openArtist,
-                                      onOpenFavorites: _openFavorites,
-                                      onOpenSettings: _openSettings,
-                                    ),
-                                    SongsView(
-                                      controller: ctrl,
-                                      onOpenArtist: _openArtist,
-                                      onOpenAlbum: _openAlbum,
-                                      onOpenSettings: _openSettings,
-                                    ),
-                                    AlbumsView(
-                                      controller: ctrl,
-                                      externalAlbumId: _externalAlbumId,
-                                      externalSelectionNonce:
-                                          _externalAlbumNonce,
-                                      onOpenArtist: _openArtist,
-                                      onOpenAlbum: _openAlbum,
-                                      onOpenSettings: _openSettings,
-                                    ),
-                                    ArtistsView(
-                                      controller: ctrl,
-                                      externalArtistName: _externalArtistName,
-                                      externalSelectionNonce:
-                                          _externalArtistNonce,
-                                      onOpenAlbum: _openAlbum,
-                                      onOpenArtist: _openArtist,
-                                    ),
-                                    SourcesView(controller: ctrl),
-                                    RecapView(
-                                      controller: ctrl,
-                                      onOpenArtist: _openArtist,
-                                      onOpenAlbum: _openAlbum,
-                                    ),
-                                    SettingsView(controller: ctrl),
-                                    FavoritesView(
-                                      controller: ctrl,
-                                      onOpenArtist: _openArtist,
-                                      onOpenAlbum: _openAlbum,
-                                    ),
-                                    _selectedPlaylistId != null
-                                        ? PlaylistsView(
-                                            playlistId: _selectedPlaylistId!,
-                                            controller: ctrl,
-                                            onPlaylistDeleted: () =>
-                                                setState(() {
-                                              _selectedPlaylistId = null;
-                                              _tab = NavTab.home;
-                                            }),
-                                            onOpenArtist: _openArtist,
-                                            onOpenAlbum: _openAlbum,
-                                          )
-                                        : const SizedBox.shrink(),
-                                  ],
+                                child: ViewFadeIn(
+                                  key: ValueKey(routeKey),
+                                  child: _buildActiveView(activeTab, ctrl),
                                 ),
                               ),
                               if (_rightPanelOpen) ...[
@@ -415,13 +473,15 @@ class _AppShellState extends State<AppShell> {
                                 ),
                                 RightPanel(
                                   width:
-                                      ctrl.rightPanelWidth.clamp(280.0, 480.0),
+                                      ctrl.rightPanelWidth.clamp(270.0, 480.0),
                                   controller: ctrl,
                                   activeTab: _rightPanelTab,
                                   onTabChanged: (t) =>
                                       setState(() => _rightPanelTab = t),
                                   onClose: () =>
                                       setState(() => _rightPanelOpen = false),
+                                  onOpenArtist: _openArtist,
+                                  onOpenAlbum: _openAlbum,
                                 ),
                               ],
                             ],
@@ -433,6 +493,7 @@ class _AppShellState extends State<AppShell> {
                           rightPanelTab: _rightPanelTab,
                           onTogglePanel: _toggleRightPanel,
                           onOpenArtist: _openArtist,
+                          onOpenAlbum: _openAlbum,
                         ),
                       ],
                     ),
@@ -454,9 +515,11 @@ class _ResizeHandle extends StatefulWidget {
     required this.tooltip,
     required this.onDragDelta,
     required this.onDragEnd,
+    this.onDragStart,
   });
 
   final String tooltip;
+  final VoidCallback? onDragStart;
   final ValueChanged<double> onDragDelta;
   final VoidCallback onDragEnd;
 
@@ -477,7 +540,10 @@ class _ResizeHandleState extends State<_ResizeHandle> {
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onHorizontalDragStart: (_) => setState(() => _dragging = true),
+        onHorizontalDragStart: (_) {
+          setState(() => _dragging = true);
+          widget.onDragStart?.call();
+        },
         onHorizontalDragUpdate: (details) =>
             widget.onDragDelta(details.delta.dx),
         onHorizontalDragEnd: (_) {
@@ -498,7 +564,9 @@ class _ResizeHandleState extends State<_ResizeHandle> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
                 width: active ? 2 : 1,
-                color: active ? AppColors.accent : AppColors.border,
+                color: active
+                    ? AppTheme.accent500
+                    : AppTheme.zinc800.withValues(alpha: 0.80),
               ),
             ),
           ),
@@ -511,9 +579,13 @@ class _ResizeHandleState extends State<_ResizeHandle> {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.width,
+    required this.collapsed,
+    required this.dragging,
     required this.selected,
     required this.selectedPlaylistId,
+    required this.externalAlbumId,
     required this.controller,
+    required this.onToggleCollapse,
     required this.onSelect,
     required this.onSelectPlaylist,
     required this.onOpenAlbum,
@@ -523,9 +595,13 @@ class _Sidebar extends StatelessWidget {
   });
 
   final double width;
+  final bool collapsed;
+  final bool dragging;
   final NavTab selected;
   final PlatformInt64? selectedPlaylistId;
+  final PlatformInt64? externalAlbumId;
   final PlayerController controller;
+  final VoidCallback onToggleCollapse;
   final ValueChanged<NavTab> onSelect;
   final ValueChanged<PlatformInt64> onSelectPlaylist;
   final ValueChanged<PlatformInt64> onOpenAlbum;
@@ -537,309 +613,494 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final playlists = controller.playlists;
     final pinned = controller.pinnedItems;
+    final unpinnedPlaylists = playlists
+        .where((p) => !controller.isPinned('playlist', p.id))
+        .toList();
+    final activeContext = controller.snapshot.context;
 
-    return Container(
+    return AnimatedContainer(
+      duration: dragging ? Duration.zero : const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
       width: width,
-      color: AppColors.sidebar,
+      padding: EdgeInsets.symmetric(
+        horizontal: collapsed ? 8 : 12,
+        vertical: 16,
+      ),
+      color: AppTheme.zinc900.withValues(alpha: 0.50),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
-            child: Row(
+          // Top Header
+          if (collapsed)
+            Column(
               children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: AppColors.accentMuted,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.headphones_rounded,
-                    size: 18,
-                    color: AppColors.accent,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  'NeoModern',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.2,
-                  ),
+                const _LogoBadge(),
+                const SizedBox(height: 10),
+                _CollapseButton(
+                  collapsed: true,
+                  onPressed: onToggleCollapse,
                 ),
               ],
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(
+                children: [
+                  const _LogoBadge(),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'NeoModern',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.zinc100,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                  _CollapseButton(
+                    collapsed: false,
+                    onPressed: onToggleCollapse,
+                  ),
+                ],
+              ),
             ),
-          ),
+
+          const SizedBox(height: 16),
+
+          // Primary Nav
           _NavItem(
             icon: Icons.home_rounded,
             label: t('Home'),
+            collapsed: collapsed,
             active: selected == NavTab.home,
             onTap: () => onSelect(NavTab.home),
           ),
+          const SizedBox(height: 2),
           _NavItem(
             icon: Icons.music_note_rounded,
             label: t('Songs'),
+            collapsed: collapsed,
             active: selected == NavTab.songs,
+            trailing:
+                controller.trackCount > 0 ? '${controller.trackCount}' : null,
             onTap: () => onSelect(NavTab.songs),
           ),
+          const SizedBox(height: 2),
           _NavItem(
             icon: Icons.album_rounded,
             label: t('Albums'),
-            active: selected == NavTab.albums,
+            collapsed: collapsed,
+            active: selected == NavTab.albums && externalAlbumId == null,
+            trailing:
+                controller.albumCount > 0 ? '${controller.albumCount}' : null,
             onTap: () => onSelect(NavTab.albums),
           ),
+          const SizedBox(height: 2),
           _NavItem(
             icon: Icons.person_rounded,
             label: t('Artists'),
+            collapsed: collapsed,
             active: selected == NavTab.artists,
             onTap: () => onSelect(NavTab.artists),
           ),
-          if (controller.hasEnabledSourceProviders)
-            _NavItem(
-              icon: Icons.hub_rounded,
-              label: t('Sources'),
-              active: selected == NavTab.sources,
-              onTap: () => onSelect(NavTab.sources),
-            ),
+          const SizedBox(height: 2),
           _NavItem(
             icon: Icons.bar_chart_rounded,
             label: t('Recap'),
+            collapsed: collapsed,
             active: selected == NavTab.recap,
             onTap: () => onSelect(NavTab.recap),
           ),
-          _NavItem(
-            icon: Icons.settings_rounded,
-            label: t('Settings'),
-            active: selected == NavTab.settings,
-            onTap: () => onSelect(NavTab.settings),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
-            child: Divider(height: 1, color: AppColors.border),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 10, 4),
-            child: Row(
+          if (controller.hasEnabledSourceProviders) ...[
+            const SizedBox(height: 2),
+            _NavItem(
+              icon: Icons.hub_rounded,
+              label: t('Sources'),
+              collapsed: collapsed,
+              active: selected == NavTab.sources,
+              onTap: () => onSelect(NavTab.sources),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          // YOUR LIBRARY header
+          if (!collapsed)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 2, 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      t('YOUR LIBRARY'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.7,
+                        color: AppTheme.zinc400,
+                      ),
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: t('Create'),
+                    padding: EdgeInsets.zero,
+                    color: AppTheme.zinc900,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: const BorderSide(color: AppTheme.zinc700),
+                    ),
+                    onSelected: (val) {
+                      if (val == 'new') {
+                        onCreatePlaylist();
+                      } else if (val == 'import') {
+                        onImportM3u();
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem<String>(
+                        value: 'new',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.queue_music_rounded,
+                              size: 16,
+                              color: AppTheme.zinc400,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(t('Create Playlist')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'import',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.file_open_outlined,
+                              size: 16,
+                              color: AppTheme.zinc400,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(t('Import M3U Playlist')),
+                          ],
+                        ),
+                      ),
+                    ],
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.add_rounded,
+                        size: 18,
+                        color: AppTheme.zinc400,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Spotify-style library list
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 8),
               children: [
-                Expanded(
-                  child: Text(
-                    t('YOUR LIBRARY'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.9,
-                      color: AppColors.textMuted,
+                _SidebarLibraryRow(
+                  title: t('Favorites'),
+                  subtitle: controller.favoriteCount > 0
+                      ? '${t('Playlist')} · ${controller.favoriteCount}'
+                      : t('Playlist'),
+                  collapsed: collapsed,
+                  active: selected == NavTab.favorites,
+                  isPlayingContext: activeContext == 'favorites',
+                  isGlobalPlaying: controller.isPlaying,
+                  onTap: () => onSelect(NavTab.favorites),
+                  onPlayToggle: () {
+                    if (activeContext == 'favorites') {
+                      controller.togglePause();
+                    } else if (controller.favoriteCount > 0) {
+                      controller.playFavorites(0);
+                    } else {
+                      onSelect(NavTab.favorites);
+                    }
+                  },
+                  cover: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.accent400,
+                          Color(0xFF4F46E5),
+                        ],
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.star_rounded,
+                      size: 20,
+                      color: Colors.white,
                     ),
                   ),
                 ),
-                IconButton(
-                  tooltip: t('Import M3U Playlist'),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 26, minHeight: 26),
-                  icon: const Icon(
-                    Icons.file_open_outlined,
-                    size: 15,
-                    color: AppColors.textSecondary,
+                for (final item in pinned)
+                  _buildPinnedRow(
+                    item: item,
+                    playlists: playlists,
+                    activeContext: activeContext,
                   ),
-                  onPressed: onImportM3u,
-                ),
-                IconButton(
-                  tooltip: t('Create Playlist'),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 26, minHeight: 26),
-                  icon: const Icon(
-                    Icons.add_rounded,
-                    size: 17,
-                    color: AppColors.textSecondary,
+                for (final pl in unpinnedPlaylists)
+                  _SidebarLibraryRow(
+                    title: pl.name,
+                    subtitle: pl.trackCount > 0
+                        ? '${t('Playlist')} · ${pl.trackCount}'
+                        : t('Playlist'),
+                    collapsed: collapsed,
+                    active: selected == NavTab.playlist &&
+                        selectedPlaylistId == pl.id,
+                    isPlayingContext: activeContext == 'playlist:${pl.id}',
+                    isGlobalPlaying: controller.isPlaying,
+                    onTap: () => onSelectPlaylist(pl.id),
+                    onPlayToggle: () {
+                      if (activeContext == 'playlist:${pl.id}') {
+                        controller.togglePause();
+                      } else {
+                        controller.playPlaylist(pl.id, 0);
+                      }
+                    },
+                    cover: PlaylistCoverWidget(
+                      playlist: pl,
+                      size: 48,
+                      borderRadius: 6,
+                    ),
                   ),
-                  onPressed: onCreatePlaylist,
-                ),
               ],
             ),
           ),
-          _NavItem(
-            icon: Icons.star_rounded,
-            label: t('Favorites'),
-            active: selected == NavTab.favorites,
-            trailing: controller.favoriteCount > 0
-                ? '${controller.favoriteCount}'
-                : null,
-            onTap: () => onSelect(NavTab.favorites),
-          ),
-          if (pinned.isNotEmpty) ...[
-            for (final item in pinned)
-              _PinnedSidebarItem(
-                item: item,
-                active: item.kind == 'playlist' &&
-                    selected == NavTab.playlist &&
-                    selectedPlaylistId == item.targetId,
-                onTap: () {
-                  if (item.kind == 'album') {
-                    onOpenAlbum(item.targetId);
-                  } else {
-                    onSelectPlaylist(item.targetId);
-                  }
-                },
-              ),
-          ],
-          Expanded(
-            child: ListView.builder(
+
+          // Footer: scan status, Profile, Settings
+          if (controller.isScanning)
+            Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              itemCount: playlists.length,
-              itemBuilder: (context, index) {
-                final pl = playlists[index];
-                final active = selected == NavTab.playlist &&
-                    selectedPlaylistId == pl.id;
-                return _NavItem(
-                  icon: Icons.queue_music_rounded,
-                  label: pl.name,
-                  active: active,
-                  trailing: pl.trackCount > 0 ? '${pl.trackCount}' : null,
-                  onTap: () => onSelectPlaylist(pl.id),
-                );
-              },
-            ),
-          ),
-          InkWell(
-            onTap: controller.folders.isEmpty
-                ? () => onSelect(NavTab.settings)
-                : null,
-            child: Container(
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: controller.isScanning
-                  ? Row(
-                      children: [
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.accent,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            t('Scanning ({n})', {'n': controller.scannedCount}),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        const Icon(
-                          Icons.library_music_rounded,
-                          size: 15,
-                          color: AppColors.textMuted,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            controller.folders.isEmpty
-                                ? t('Add folder in Settings')
-                                : t('{songs} songs · {albums} albums', {
-                                    'songs': controller.trackCount,
-                                    'albums': controller.albumCount,
-                                  }),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ],
+              child: Row(
+                mainAxisAlignment: collapsed
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
+                children: [
+                  const SizedBox(
+                    width: 8,
+                    height: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent500,
+                        shape: BoxShape.circle,
+                      ),
                     ),
+                  ),
+                  if (!collapsed) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        t('Scanning ({n})', {'n': controller.scannedCount}),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.accent400,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-          ProfileBadgeButton(
-            controller: controller,
-            onTap: onOpenProfiles,
+
+          if (!collapsed)
+            ProfileBadgeButton(
+              controller: controller,
+              onTap: onOpenProfiles,
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Tooltip(
+                message: controller.activeProfile?.name ?? t('Profile'),
+                child: Center(
+                  child: InkWell(
+                    onTap: onOpenProfiles,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: controller.activeProfile != null
+                              ? parseProfileColor(
+                                  controller.activeProfile!.color)
+                              : AppTheme.accent500,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          _NavItem(
+            icon: Icons.tune_rounded,
+            label: t('Settings'),
+            collapsed: collapsed,
+            active: selected == NavTab.settings,
+            onTap: () => onSelect(NavTab.settings),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildPinnedRow({
+    required UiPinnedItem item,
+    required List<UiPlaylistInfo> playlists,
+    required String? activeContext,
+  }) {
+    final isAlbum = item.kind == 'album';
+    final contextKey = '${item.kind}:${item.targetId}';
+    final matchingPlaylist = isAlbum
+        ? null
+        : playlists.cast<UiPlaylistInfo?>().firstWhere(
+              (p) => p?.id == item.targetId,
+              orElse: () => null,
+            );
+
+    final Widget coverWidget = matchingPlaylist != null
+        ? PlaylistCoverWidget(
+            playlist: matchingPlaylist,
+            size: 48,
+            borderRadius: 6,
+          )
+        : CoverArt(
+            path: item.coverPath,
+            size: 48,
+            borderRadius: 6,
+            iconSize: 20,
+            fallbackIcon:
+                isAlbum ? Icons.album_rounded : Icons.queue_music_rounded,
+          );
+
+    final active = isAlbum
+        ? (selected == NavTab.albums && externalAlbumId == item.targetId)
+        : (selected == NavTab.playlist && selectedPlaylistId == item.targetId);
+
+    final subtitle = isAlbum
+        ? (item.subtitle.isNotEmpty
+            ? '${t('Album')} · ${item.subtitle}'
+            : t('Album'))
+        : t('Playlist');
+
+    return _SidebarLibraryRow(
+      title: item.title,
+      subtitle: subtitle,
+      collapsed: collapsed,
+      active: active,
+      isPinned: true,
+      isPlayingContext: activeContext == contextKey,
+      isGlobalPlaying: controller.isPlaying,
+      onTap: () {
+        if (isAlbum) {
+          onOpenAlbum(item.targetId);
+        } else {
+          onSelectPlaylist(item.targetId);
+        }
+      },
+      onPlayToggle: () {
+        if (activeContext == contextKey) {
+          controller.togglePause();
+        } else if (isAlbum) {
+          controller.playAlbum(item.targetId, 0);
+        } else {
+          controller.playPlaylist(item.targetId, 0);
+        }
+      },
+      cover: coverWidget,
+    );
+  }
 }
 
-class _PinnedSidebarItem extends StatelessWidget {
-  const _PinnedSidebarItem({
-    required this.item,
-    required this.active,
-    required this.onTap,
-  });
-
-  final UiPinnedItem item;
-  final bool active;
-  final VoidCallback onTap;
+class _LogoBadge extends StatelessWidget {
+  const _LogoBadge();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1.5),
-      child: Material(
-        color: active ? AppColors.accentMuted : Colors.transparent,
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          hoverColor: active ? AppColors.accentMuted : AppColors.surfaceHover,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
-              children: [
-                CoverArt(
-                  path: item.coverPath,
-                  size: 24,
-                  borderRadius: 4,
-                  iconSize: 13,
-                  fallbackIcon: item.kind == 'album'
-                      ? Icons.album_rounded
-                      : Icons.queue_music_rounded,
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      color: active ? AppColors.accent : AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.push_pin_rounded,
-                  size: 12,
-                  color: AppColors.accent,
-                ),
-              ],
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.accent400, AppTheme.accent700],
+        ),
+      ),
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.headphones_rounded,
+        size: 16,
+        color: Colors.white,
+      ),
+    );
+  }
+}
+
+class _CollapseButton extends StatefulWidget {
+  const _CollapseButton({
+    required this.collapsed,
+    required this.onPressed,
+  });
+
+  final bool collapsed;
+  final VoidCallback onPressed;
+
+  @override
+  State<_CollapseButton> createState() => _CollapseButtonState();
+}
+
+class _CollapseButtonState extends State<_CollapseButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: widget.collapsed ? t('Expand sidebar') : t('Collapse sidebar'),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: _hovered ? AppTheme.zinc800 : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              widget.collapsed
+                  ? Icons.chevron_right_rounded
+                  : Icons.view_sidebar_outlined,
+              size: 16,
+              color: _hovered ? AppTheme.zinc100 : AppTheme.zinc400,
             ),
           ),
         ),
@@ -848,10 +1109,11 @@ class _PinnedSidebarItem extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   const _NavItem({
     required this.icon,
     required this.label,
+    required this.collapsed,
     required this.active,
     required this.onTap,
     this.trailing,
@@ -859,57 +1121,249 @@ class _NavItem extends StatelessWidget {
 
   final IconData icon;
   final String label;
+  final bool collapsed;
   final bool active;
   final VoidCallback onTap;
   final String? trailing;
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-      child: Material(
-        color: active ? AppColors.accentMuted : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          hoverColor: active ? AppColors.accentMuted : AppColors.surfaceHover,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 18,
-                  color: active ? AppColors.accent : AppColors.textSecondary,
-                ),
-                const SizedBox(width: 11),
+    final bg = widget.active
+        ? AppTheme.accent950.withValues(alpha: 0.50)
+        : (_hovered
+            ? AppTheme.zinc800.withValues(alpha: 0.70)
+            : Colors.transparent);
+    final fg = widget.active ? AppTheme.accent100 : AppTheme.zinc300;
+
+    Widget tile = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: widget.collapsed
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
+            children: [
+              Icon(
+                widget.icon,
+                size: 18,
+                color: fg.withValues(alpha: 0.90),
+              ),
+              if (!widget.collapsed) ...[
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    label,
+                    widget.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      color: active ? AppColors.accent : AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight:
+                          widget.active ? FontWeight.w500 : FontWeight.w400,
+                      color: fg,
                     ),
                   ),
                 ),
-                if (trailing != null)
+                if (widget.trailing != null)
                   Text(
-                    trailing!,
+                    widget.trailing!,
                     style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.textMuted,
+                      fontSize: 12,
+                      color: AppTheme.zinc400,
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
               ],
-            ),
+            ],
           ),
         ),
       ),
     );
+
+    if (widget.collapsed) {
+      tile = Tooltip(message: widget.label, child: tile);
+    }
+
+    return tile;
+  }
+}
+
+class _SidebarLibraryRow extends StatefulWidget {
+  const _SidebarLibraryRow({
+    required this.title,
+    required this.subtitle,
+    required this.collapsed,
+    required this.active,
+    required this.cover,
+    required this.onTap,
+    required this.onPlayToggle,
+    this.isPinned = false,
+    this.isPlayingContext = false,
+    this.isGlobalPlaying = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool collapsed;
+  final bool active;
+  final Widget cover;
+  final VoidCallback onTap;
+  final VoidCallback onPlayToggle;
+  final bool isPinned;
+  final bool isPlayingContext;
+  final bool isGlobalPlaying;
+
+  @override
+  State<_SidebarLibraryRow> createState() => _SidebarLibraryRowState();
+}
+
+class _SidebarLibraryRowState extends State<_SidebarLibraryRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.active
+        ? AppTheme.zinc800
+        : (_hovered
+            ? AppTheme.zinc800.withValues(alpha: 0.60)
+            : Colors.transparent);
+
+    final showPause = widget.isPlayingContext && widget.isGlobalPlaying;
+
+    Widget coverWithOverlay = SizedBox(
+      width: 48,
+      height: 48,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          widget.cover,
+          IgnorePointer(
+            ignoring: !_hovered,
+            child: AnimatedOpacity(
+              opacity: _hovered ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 150),
+              child: GestureDetector(
+                onTap: widget.onPlayToggle,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    showPause ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    size: 24,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Widget row = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: widget.collapsed
+              ? Center(child: coverWithOverlay)
+              : Row(
+                  children: [
+                    coverWithOverlay,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 15,
+                              height: 1.3,
+                              fontWeight: widget.isPlayingContext
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
+                              color: widget.isPlayingContext
+                                  ? AppTheme.accent400
+                                  : AppTheme.zinc50,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              if (widget.isPinned) ...[
+                                const Icon(
+                                  Icons.push_pin_rounded,
+                                  size: 14,
+                                  color: AppTheme.accent400,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  widget.subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    height: 1.3,
+                                    color: AppTheme.zinc400,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (widget.isPlayingContext) ...[
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.volume_up_rounded,
+                        size: 16,
+                        color: AppTheme.accent400,
+                      ),
+                    ],
+                  ],
+                ),
+        ),
+      ),
+    );
+
+    if (widget.collapsed) {
+      row = Tooltip(message: widget.title, child: row);
+    }
+
+    return row;
   }
 }

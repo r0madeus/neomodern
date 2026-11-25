@@ -8,10 +8,11 @@ import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/mobile/mini_player.dart';
+import 'package:neomodern/ui/mobile/mobile_sheet.dart';
 import 'package:neomodern/ui/mobile/mobile_shell.dart';
 import 'package:neomodern/ui/mobile/now_playing_sheet.dart';
-import 'package:neomodern/ui/player_bar.dart';
-import 'package:neomodern/ui/shell.dart';
+import 'package:neomodern/ui/mobile/sticky_play.dart';
+import 'package:neomodern/ui/widgets/motion_primitives.dart';
 
 class _FakePlayerController extends PlayerController {
   _FakePlayerController({
@@ -135,24 +136,38 @@ class _FakePlayerController extends PlayerController {
 
   @override
   Future<void> refreshLyrics() async {}
+
+  @override
+  UiTrackInfo? queueTrackAt(int index) {
+    final tracks = [
+      _fakeSnapshot.previousTrack,
+      _fakeSnapshot.current,
+      _fakeSnapshot.nextTrack,
+    ].whereType<UiTrackInfo>().toList();
+    if (index >= 0 && index < tracks.length) {
+      return tracks[index];
+    }
+    return null;
+  }
 }
 
 UiPlayerSnapshot _playingSnapshot({
   String status = 'playing',
   String title = 'Midnight City',
   String artist = 'M83',
+  bool withNeighbors = true,
 }) {
   return UiPlayerSnapshot(
     status: status,
-    currentIndex: 0,
+    currentIndex: withNeighbors ? 1 : 0,
     current: UiTrackInfo(
-      id: BigInt.one,
+      id: BigInt.from(2),
       path: '/music/midnight_city.flac',
       title: title,
       artist: artist,
       queued: false,
     ),
-    queueLength: 1,
+    queueLength: withNeighbors ? 3 : 1,
     queueVersion: BigInt.one,
     positionSeconds: 42,
     durationSeconds: 243,
@@ -168,15 +183,31 @@ UiPlayerSnapshot _playingSnapshot({
     crossfadeSeconds: 0,
     sleepEndsAt: null,
     sleepEndOfTrack: false,
-    previousTrack: null,
-    nextTrack: null,
-    context: 'Library',
+    previousTrack: withNeighbors
+        ? UiTrackInfo(
+            id: BigInt.one,
+            path: '/music/intro.flac',
+            title: 'Intro',
+            artist: 'M83',
+            queued: false,
+          )
+        : null,
+    nextTrack: withNeighbors
+        ? UiTrackInfo(
+            id: BigInt.from(3),
+            path: '/music/reunion.flac',
+            title: 'Reunion',
+            artist: 'M83',
+            queued: false,
+          )
+        : null,
+    context: 'Hurry Up, We\'re Dreaming',
   );
 }
 
 void main() {
   testWidgets(
-      'NeoModernShell renders MobileShell at 390x844 phone viewport with bottom nav tabs',
+      'MobileShell renders 3-tab nav (Home, Search, Library), Browse all genres, and Your Library',
       (WidgetTester tester) async {
     final ctrl = _FakePlayerController();
     addTearDown(ctrl.dispose);
@@ -189,57 +220,47 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.dark(),
-        home: NeoModernShell(controller: ctrl),
+        home: MobileShell(controller: ctrl),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.byType(MobileShell), findsOneWidget);
-    expect(find.byType(PlayerBar), findsNothing);
-
-    final bottomNav = find.byType(BottomNavigationBar);
+    final bottomNav = find.byKey(const ValueKey('mobile_bottom_nav'));
     expect(bottomNav, findsOneWidget);
     expect(find.descendant(of: bottomNav, matching: find.text('Home')),
+        findsOneWidget);
+    expect(find.descendant(of: bottomNav, matching: find.text('Search')),
         findsOneWidget);
     expect(find.descendant(of: bottomNav, matching: find.text('Library')),
         findsOneWidget);
     expect(find.descendant(of: bottomNav, matching: find.text('Recap')),
-        findsOneWidget);
+        findsNothing);
     expect(find.descendant(of: bottomNav, matching: find.text('Settings')),
-        findsOneWidget);
-  });
+        findsNothing);
 
-  testWidgets(
-      'NeoModernShell renders desktop sidebar layout at 1280x800 viewport',
-      (WidgetTester tester) async {
-    final ctrl = _FakePlayerController();
-    addTearDown(ctrl.dispose);
+    // Switch to Search tab -> light search bar + Browse all colored genre cards
+    await tester.tap(find.descendant(of: bottomNav, matching: find.text('Search')));
+    await tester.pumpAndSettle();
+    expect(find.text('Browse all'), findsOneWidget);
+    expect(find.text('Electronic'), findsOneWidget);
+    expect(find.text('Rock'), findsOneWidget);
 
-    tester.view.physicalSize = const Size(1280, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.dark(),
-        home: NeoModernShell(controller: ctrl),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byType(MobileShell), findsNothing);
-    expect(find.byType(PlayerBar), findsOneWidget);
-    expect(find.text('YOUR LIBRARY'), findsOneWidget);
-    expect(find.text('Songs'), findsOneWidget);
+    // Switch to Library tab -> Your Library header + filter chips
+    await tester.tap(find.descendant(of: bottomNav, matching: find.text('Library')));
+    await tester.pumpAndSettle();
+    expect(find.text('Your Library'), findsOneWidget);
+    expect(find.text('Playlists'), findsOneWidget);
     expect(find.text('Albums'), findsOneWidget);
+    expect(find.text('Artists'), findsOneWidget);
+    expect(find.text('Songs'), findsOneWidget);
+    expect(find.text('Favorites'), findsNWidgets(2));
   });
 
   testWidgets(
-      'MiniPlayer renders track info, play/pause button, star favorite button, and handles interactions',
+      'MiniPlayer renders 3-panel swipe strip, AnimatedSaveButton, Play/Pause, and rubber-band edge behavior',
       (WidgetTester tester) async {
     final ctrl = _FakePlayerController(
-      initialSnapshot: _playingSnapshot(),
+      initialSnapshot: _playingSnapshot(withNeighbors: true),
       isFavorite: false,
     );
     ctrl.positionNotifier.value = 42;
@@ -266,27 +287,30 @@ void main() {
     );
 
     expect(find.text('Midnight City'), findsOneWidget);
-    expect(find.text('M83'), findsOneWidget);
+    expect(find.text('M83'), findsWidgets);
     expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.star_outline_rounded), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(AnimatedSaveButton), findsOneWidget);
+    expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
 
+    // Play/Pause
     await tester.tap(find.byIcon(Icons.pause_rounded));
     await tester.pump();
     expect(ctrl.togglePauseCalls, 1);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.star_outline_rounded));
+    // Save button
+    await tester.tap(find.byType(AnimatedSaveButton));
     await tester.pump();
     expect(ctrl.toggleFavoriteCalls, 1);
-    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
 
+    // Horizontal swipe next & previous
     await tester.fling(
       find.byType(MiniPlayer),
       const Offset(-200, 0),
       800,
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(ctrl.nextCalls, 1);
 
     await tester.fling(
@@ -294,18 +318,53 @@ void main() {
       const Offset(200, 0),
       800,
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(ctrl.previousCalls, 1);
 
+    // Tap center panel -> opens NowPlayingSheet with 260ms slide-up
     await tester.tap(find.text('Midnight City'));
     await tester.pumpAndSettle();
     expect(find.byType(NowPlayingSheet), findsOneWidget);
-    expect(find.text('Lyrics'), findsWidgets);
-    expect(find.text('Queue'), findsOneWidget);
+    expect(find.text('NOW PLAYING'), findsOneWidget);
+    expect(find.text('2 of 3'), findsOneWidget);
+    expect(find.text('Lyrics'), findsOneWidget);
+  });
+
+  testWidgets('MiniPlayer blocks swipe when no adjacent tracks exist',
+      (WidgetTester tester) async {
+    final ctrl = _FakePlayerController(
+      initialSnapshot: _playingSnapshot(withNeighbors: false),
+    );
+    addTearDown(ctrl.dispose);
+
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: MiniPlayer(controller: ctrl),
+          ),
+        ),
+      ),
+    );
+
+    await tester.fling(find.byType(MiniPlayer), const Offset(-200, 0), 800);
+    await tester.pumpAndSettle();
+    expect(ctrl.nextCalls, 0);
+
+    await tester.fling(find.byType(MiniPlayer), const Offset(200, 0), 800);
+    await tester.pumpAndSettle();
+    expect(ctrl.previousCalls, 0);
   });
 
   testWidgets(
-      'NowPlayingSheet supports 3-panel cover carousel swipe and full-screen lyrics mode',
+      'NowPlayingSheet supports 3-panel cover carousel, CurrentLine, below-the-fold lyrics card, FullScreenLyricsPage, and QueueSheet',
       (WidgetTester tester) async {
     final lyrics = UiLyrics(
       found: true,
@@ -319,51 +378,8 @@ void main() {
       plainText: null,
     );
 
-    final snap = UiPlayerSnapshot(
-      status: 'playing',
-      currentIndex: 1,
-      current: UiTrackInfo(
-        id: BigInt.from(2),
-        path: '/music/midnight_city.flac',
-        title: 'Midnight City',
-        artist: 'M83',
-        queued: false,
-      ),
-      queueLength: 3,
-      queueVersion: BigInt.one,
-      positionSeconds: 42,
-      durationSeconds: 243,
-      volume: 85,
-      shuffle: false,
-      repeat: 'off',
-      replaygain: 'album',
-      gapless: true,
-      wasapiExclusive: false,
-      eqEnabled: false,
-      eqPreampDb: 0,
-      eqGainsDb: Float64List(10),
-      crossfadeSeconds: 0,
-      sleepEndsAt: null,
-      sleepEndOfTrack: false,
-      previousTrack: UiTrackInfo(
-        id: BigInt.one,
-        path: '/music/intro.flac',
-        title: 'Intro',
-        artist: 'M83',
-        queued: false,
-      ),
-      nextTrack: UiTrackInfo(
-        id: BigInt.from(3),
-        path: '/music/reunion.flac',
-        title: 'Reunion',
-        artist: 'M83',
-        queued: false,
-      ),
-      context: 'Hurry Up, We\'re Dreaming',
-    );
-
     final ctrl = _FakePlayerController(
-      initialSnapshot: snap,
+      initialSnapshot: _playingSnapshot(withNeighbors: true),
       initialLyrics: lyrics,
     );
     ctrl.positionNotifier.value = 42;
@@ -384,26 +400,43 @@ void main() {
     );
     await tester.pump();
 
+    // CurrentLine single-line preview under the cover shows active lyric
+    expect(find.text('Waiting for a ride in the dark'), findsWidgets);
+
+    // 3-panel cover carousel
     final carousel = find.byKey(const ValueKey('now_playing_cover_carousel'));
     expect(carousel, findsOneWidget);
     final pageView = tester.widget<PageView>(carousel);
     expect(pageView.controller?.initialPage, 1);
 
-    // Swipe left to page 2 -> triggers next() and snaps back to page 1
     await tester.fling(carousel, const Offset(-300, 0), 1000);
     await tester.pumpAndSettle();
     expect(ctrl.nextCalls, 1);
     expect(pageView.controller?.page?.round(), 1);
 
-    // Swipe right to page 0 -> triggers previous() and snaps back to page 1
     await tester.fling(carousel, const Offset(300, 0), 1000);
     await tester.pumpAndSettle();
     expect(ctrl.previousCalls, 1);
     expect(pageView.controller?.page?.round(), 1);
 
-    // Open full-screen lyrics mode
-    expect(find.text('Expand Lyrics'), findsOneWidget);
-    await tester.tap(find.text('Expand Lyrics'));
+    // Open QueueSheet
+    await tester.tap(find.byTooltip('Queue'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(QueueSheet), findsOneWidget);
+    expect(find.byType(EqualizerIndicator), findsOneWidget);
+
+    // Dismiss QueueSheet
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(QueueSheet), findsNothing);
+
+    // Scroll down to below-the-fold lyrics card and open FullScreenLyricsPage
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Expand Lyrics'), findsOneWidget);
+    await tester.tap(find.byTooltip('Expand Lyrics'));
     await tester.pumpAndSettle();
 
     expect(find.byType(FullScreenLyricsPage), findsOneWidget);
@@ -419,11 +452,101 @@ void main() {
     await tester.pump();
     expect(ctrl.togglePauseCalls, 1);
 
-    // Close full-screen lyrics
-    await tester.tap(find.text('Close'));
+    // Close full-screen lyrics via header down chevron
+    await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
     expect(find.byType(FullScreenLyricsPage), findsNothing);
     expect(find.byType(NowPlayingSheet), findsOneWidget);
+  });
+
+  testWidgets('StickyPlayButton scales to 0.79 when docked and handles tap',
+      (WidgetTester tester) async {
+    var tapped = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Center(
+            child: StickyPlayButton(
+              playing: false,
+              docked: false,
+              onPressed: () => tapped++,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final animatedScale =
+        tester.widget<AnimatedScale>(find.byType(AnimatedScale));
+    expect(animatedScale.scale, 1.0);
+
+    await tester.tap(find.byType(StickyPlayButton));
+    expect(tapped, 1);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Center(
+            child: StickyPlayButton(
+              playing: true,
+              docked: true,
+              dockShift: 24,
+              onPressed: () => tapped++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dockedScale =
+        tester.widget<AnimatedScale>(find.byType(AnimatedScale));
+    expect(dockedScale.scale, 0.79);
+  });
+
+  testWidgets('MobileSheetRoute supports left-edge swipe back (> 90px dismiss)',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () => pushMobileSheet<void>(
+                  context,
+                  builder: (_) => const Scaffold(
+                    body: Center(child: Text('Pushed Sheet')),
+                  ),
+                ),
+                child: const Text('Push'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pushed Sheet'), findsOneWidget);
+
+    // Small edge drag (<= 90px) snaps back
+    await tester.dragFrom(const Offset(12, 300), const Offset(50, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Pushed Sheet'), findsOneWidget);
+
+    // Edge drag (> 90px) dismisses
+    await tester.dragFrom(const Offset(12, 300), const Offset(150, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Pushed Sheet'), findsNothing);
   });
 
   testWidgets(

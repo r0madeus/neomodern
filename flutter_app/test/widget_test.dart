@@ -289,7 +289,7 @@ void main() {
     expect(AppStrings.resolveLanguage(const Locale('en', 'US')), 'en');
   });
 
-  testWidgets('TintedBackdrop renders AnimatedContainer gradient and child',
+  testWidgets('TintedBackdrop renders two ping-pong AnimatedOpacity layers and child',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -304,10 +304,14 @@ void main() {
     );
 
     expect(find.text('Header Content'), findsOneWidget);
-    final animated =
-        tester.widget<AnimatedContainer>(find.byType(AnimatedContainer));
-    final decoration = animated.decoration as BoxDecoration;
-    expect(decoration.gradient, isA<LinearGradient>());
+    expect(find.byType(AnimatedOpacity), findsOneWidget);
+    final boxes = tester.widgetList<DecoratedBox>(find.byType(DecoratedBox));
+    expect(
+      boxes.any((b) =>
+          b.decoration is BoxDecoration &&
+          (b.decoration as BoxDecoration).gradient is LinearGradient),
+      isTrue,
+    );
   });
 
   testWidgets('WelcomeDialog shows detected Music folder and handles Add & Scan',

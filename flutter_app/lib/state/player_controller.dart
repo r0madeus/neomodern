@@ -110,11 +110,15 @@ class PlayerController extends ChangeNotifier {
   UiPrefs _uiPrefs = const UiPrefs(
     language: 'system',
     welcomeDismissed: false,
-    sidebarWidth: 228.0,
-    rightPanelWidth: 328.0,
+    sidebarWidth: 224.0,
+    rightPanelWidth: 340.0,
   );
   final Map<String, Color?> _coverColorCache = {};
   final Set<String> _coverColorLoading = {};
+  final Map<String, String?> _trackCoverCache = {};
+  final Set<String> _trackCoverLoading = {};
+  UiTrackRow? _currentTrackRow;
+  String? _currentTrackRowPath;
   List<UiPinnedItem> _pinnedItems = const [];
 
   bool get initialized => _initialized;
@@ -123,6 +127,8 @@ class PlayerController extends ChangeNotifier {
   UiPlayerSnapshot get snapshot => _snapshot;
   String? get currentCoverPath => _currentCoverPath;
   Color? get currentCoverColor => coverColorCached(_currentCoverPath);
+  UiTrackRow? get currentTrackRow =>
+      _currentTrackRowPath == _snapshot.current?.path ? _currentTrackRow : null;
   UiPrefs get uiPrefs => _uiPrefs;
   String get language => _uiPrefs.language;
   bool get welcomeDismissed => _uiPrefs.welcomeDismissed;
@@ -305,6 +311,10 @@ class PlayerController extends ChangeNotifier {
       _isScanning = await libraryIsScanning();
       _coverColorCache.clear();
       _coverColorLoading.clear();
+      _trackCoverCache.clear();
+      _trackCoverLoading.clear();
+      _currentTrackRow = null;
+      _currentTrackRowPath = null;
       await Future.wait([
         _refreshTracks(),
         _refreshAlbums(),
@@ -383,15 +393,49 @@ class PlayerController extends ChangeNotifier {
     if (path == null) {
       _coverLookupPath = null;
       _currentCoverPath = null;
+      _currentTrackRow = null;
+      _currentTrackRowPath = null;
       return;
     }
     if (!force && path == _coverLookupPath) return;
     _coverLookupPath = path;
+    _resolveCurrentTrackRow(path);
     unawaited(
       libraryTrackCover(path: path).then((cover) {
         if (_coverLookupPath == path && cover != _currentCoverPath) {
           _currentCoverPath = cover;
           notifyListeners();
+        }
+      }).catchError((_) {}),
+    );
+  }
+
+  void _resolveCurrentTrackRow(String path) {
+    _currentTrackRowPath = path;
+    for (final row in _trackCache.values) {
+      if (row.path == path) {
+        _currentTrackRow = row;
+        return;
+      }
+    }
+    for (final row in _favoriteTracks) {
+      if (row.path == path) {
+        _currentTrackRow = row;
+        return;
+      }
+    }
+    _currentTrackRow = null;
+    final title = _snapshot.current?.title.trim();
+    if (title == null || title.isEmpty || !_initialized) return;
+    unawaited(
+      libraryTracksPage(offset: 0, limit: 25, search: title).then((rows) {
+        if (_currentTrackRowPath != path) return;
+        for (final row in rows) {
+          if (row.path == path) {
+            _currentTrackRow = row;
+            notifyListeners();
+            break;
+          }
         }
       }).catchError((_) {}),
     );
@@ -806,6 +850,10 @@ class PlayerController extends ChangeNotifier {
       await Future.wait([_refreshPlaylists(), _refreshPinned()]);
       _coverColorCache.clear();
       _coverColorLoading.clear();
+      _trackCoverCache.clear();
+      _trackCoverLoading.clear();
+      _currentTrackRow = null;
+      _currentTrackRowPath = null;
       notifyListeners();
     } catch (e) {
       _lastError = e.toString();
@@ -1416,7 +1464,29 @@ class PlayerController extends ChangeNotifier {
     );
   }
 
-  // Cover Color Cache
+  // Cover Path & Color Cache
+  String? trackCoverCached(String? path) {
+    final key = path?.trim();
+    if (key == null || key.isEmpty) return null;
+    if (_trackCoverCache.containsKey(key)) {
+      return _trackCoverCache[key];
+    }
+    if (_initialized && !_trackCoverLoading.contains(key)) {
+      _trackCoverLoading.add(key);
+      unawaited(
+        libraryTrackCover(path: key).then((cover) {
+          _trackCoverCache[key] = cover;
+          notifyListeners();
+        }).catchError((_) {
+          _trackCoverCache[key] = null;
+        }).whenComplete(() {
+          _trackCoverLoading.remove(key);
+        }),
+      );
+    }
+    return null;
+  }
+
   Color? coverColorCached(String? path) {
     final key = path?.trim();
     if (key == null || key.isEmpty) return null;
@@ -1463,7 +1533,7 @@ class PlayerController extends ChangeNotifier {
 
   // UI Preferences & Welcome
   void previewSidebarWidth(double width) {
-    final clamped = width.clamp(190.0, 340.0);
+    final clamped = width.clamp(176.0, 380.0);
     if ((_uiPrefs.sidebarWidth - clamped).abs() < 0.5) return;
     _uiPrefs = UiPrefs(
       language: _uiPrefs.language,
@@ -1475,7 +1545,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   void previewRightPanelWidth(double width) {
-    final clamped = width.clamp(280.0, 480.0);
+    final clamped = width.clamp(270.0, 480.0);
     if ((_uiPrefs.rightPanelWidth - clamped).abs() < 0.5) return;
     _uiPrefs = UiPrefs(
       language: _uiPrefs.language,

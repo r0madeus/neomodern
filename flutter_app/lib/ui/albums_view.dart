@@ -8,8 +8,10 @@ import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/metadata_match_dialog.dart';
-import 'package:neomodern/ui/tinted_backdrop.dart';
 import 'package:neomodern/ui/track_menu.dart';
+import 'package:neomodern/ui/widgets/collection_header.dart';
+import 'package:neomodern/ui/widgets/motion_primitives.dart';
+import 'package:neomodern/ui/widgets/track_row.dart';
 
 class AlbumsView extends StatefulWidget {
   const AlbumsView({
@@ -50,7 +52,9 @@ class _AlbumsViewState extends State<AlbumsView> {
   @override
   void didUpdateWidget(covariant AlbumsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.externalAlbumId != null &&
+    if (widget.externalAlbumId == null && oldWidget.externalAlbumId != null) {
+      setState(() => _selectedAlbum = null);
+    } else if (widget.externalAlbumId != null &&
         (widget.externalAlbumId != oldWidget.externalAlbumId ||
             widget.externalSelectionNonce != oldWidget.externalSelectionNonce)) {
       unawaited(_openAlbum(widget.externalAlbumId!));
@@ -136,7 +140,7 @@ class _AlbumsViewState extends State<AlbumsView> {
                     prefixIcon: const Icon(
                       Icons.search_rounded,
                       size: 18,
-                      color: AppColors.textMuted,
+                      color: AppTheme.zinc500,
                     ),
                     suffixIcon: _searchCtrl.text.isNotEmpty
                         ? IconButton(
@@ -164,15 +168,15 @@ class _AlbumsViewState extends State<AlbumsView> {
                         ctrl.albumSearch.isNotEmpty
                             ? t('No matching albums found.')
                             : t('No albums yet.'),
-                        style: const TextStyle(color: AppColors.textSecondary),
+                        style: const TextStyle(color: AppTheme.zinc400),
                       ),
                       if (ctrl.albumSearch.isEmpty) ...[
                         const SizedBox(height: 12),
                         OutlinedButton.icon(
                           onPressed: widget.onOpenSettings,
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.accent,
-                            side: const BorderSide(color: AppColors.border),
+                            foregroundColor: AppTheme.accent400,
+                            side: const BorderSide(color: AppTheme.zinc800),
                           ),
                           icon: const Icon(Icons.folder_open_rounded, size: 17),
                           label: Text(t('Add Music Folder in Settings')),
@@ -195,7 +199,7 @@ class _AlbumsViewState extends State<AlbumsView> {
                     if (album == null) {
                       return Container(
                         decoration: BoxDecoration(
-                          color: AppColors.surface,
+                          color: AppTheme.zinc900,
                           borderRadius: BorderRadius.circular(10),
                         ),
                       );
@@ -205,6 +209,7 @@ class _AlbumsViewState extends State<AlbumsView> {
                       isPinned: ctrl.isPinned('album', album.id),
                       onTogglePin: () => ctrl.togglePinned('album', album.id),
                       onTap: () => _openAlbum(album.id),
+                      onPlay: () => ctrl.playAlbum(album.id, 0),
                     );
                   },
                 ),
@@ -220,12 +225,14 @@ class _AlbumCard extends StatefulWidget {
     required this.isPinned,
     required this.onTogglePin,
     required this.onTap,
+    required this.onPlay,
   });
 
   final UiAlbumRow album;
   final bool isPinned;
   final VoidCallback onTogglePin;
   final VoidCallback onTap;
+  final VoidCallback onPlay;
 
   @override
   State<_AlbumCard> createState() => _AlbumCardState();
@@ -242,15 +249,17 @@ class _AlbumCardState extends State<_AlbumCard> {
         : album.albumArtist;
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Material(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
+        color: _hovered
+            ? AppTheme.zinc800.withValues(alpha: 0.75)
+            : AppTheme.zinc900.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(10),
-          hoverColor: AppColors.surfaceHover,
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.all(10),
             child: Column(
@@ -262,7 +271,7 @@ class _AlbumCardState extends State<_AlbumCard> {
                     children: [
                       CoverArt(
                         path: album.cover,
-                        borderRadius: 6,
+                        borderRadius: 8,
                         iconSize: 40,
                       ),
                       if (widget.isPinned || _hovered)
@@ -270,7 +279,7 @@ class _AlbumCardState extends State<_AlbumCard> {
                           top: 6,
                           right: 6,
                           child: Material(
-                            color: AppColors.canvas.withAlpha(195),
+                            color: AppTheme.zinc950.withValues(alpha: 0.78),
                             shape: const CircleBorder(),
                             child: InkWell(
                               customBorder: const CircleBorder(),
@@ -286,14 +295,24 @@ class _AlbumCardState extends State<_AlbumCard> {
                                         : Icons.push_pin_outlined,
                                     size: 15,
                                     color: widget.isPinned
-                                        ? AppColors.accent
-                                        : AppColors.textPrimary,
+                                        ? AppTheme.accent400
+                                        : AppTheme.zinc100,
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
+                      Positioned(
+                        right: 6,
+                        bottom: 6,
+                        child: HoverPlayButton(
+                          size: 38,
+                          reveal: true,
+                          isParentHovered: _hovered,
+                          onPressed: widget.onPlay,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -305,7 +324,7 @@ class _AlbumCardState extends State<_AlbumCard> {
                   style: const TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    color: AppTheme.zinc100,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -315,7 +334,7 @@ class _AlbumCardState extends State<_AlbumCard> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12,
-                    color: AppColors.textSecondary,
+                    color: AppTheme.zinc400,
                   ),
                 ),
               ],
@@ -344,6 +363,17 @@ class _AlbumDetailView extends StatelessWidget {
   final ValueChanged<String> onOpenArtist;
   final ValueChanged<PlatformInt64> onOpenAlbum;
 
+  String _formatTotalDuration(List<UiTrackRow> tracks) {
+    var totalMs = 0;
+    for (final tr in tracks) {
+      if (tr.durationMs != null) {
+        totalMs += tr.durationMs!.toInt();
+      }
+    }
+    if (totalMs <= 0) return '';
+    return formatListeningDuration(BigInt.from(totalMs));
+  }
+
   @override
   Widget build(BuildContext context) {
     final album = detail.album;
@@ -352,166 +382,123 @@ class _AlbumDetailView extends StatelessWidget {
     final tintColor = album.coverColor != null
         ? Color(album.coverColor!)
         : controller.coverColorCached(album.cover);
+    final tint = tintFromColor(tintColor);
+    final isAlbumPlaying = controller.isPlaying &&
+        controller.snapshot.context == 'album:${album.id}';
+    final totalDuration = _formatTotalDuration(detail.tracks);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TintedBackdrop(
-          tintColor: tintColor,
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextButton.icon(
-                onPressed: onBack,
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                ),
-                icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                label: Text(t('Back to Albums')),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  CoverArt(
-                    path: album.cover,
-                    size: 148,
-                    borderRadius: 10,
-                    iconSize: 48,
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: CollectionHeader(
+            tint: tint,
+            label: t('Album'),
+            titleText: album.title,
+            onBack: onBack,
+            backLabel: t('Back to Albums'),
+            cover: CoverArt(
+              path: album.cover,
+              size: 208,
+              borderRadius: 6,
+              iconSize: 60,
+            ),
+            meta: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (album.albumArtist.isNotEmpty) ...[
+                  HoverLinkText(
+                    text: album.albumArtist,
+                    onTap: () => onOpenArtist(album.albumArtist),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
                   ),
-                  const SizedBox(width: 22),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  const Text(' • '),
+                ],
+                if (album.year != null) ...[
+                  Text('${album.year}'),
+                  const Text(' • '),
+                ],
+                Text(
+                  totalDuration.isNotEmpty
+                      ? '${t('{n} tracks', {'n': detail.tracks.length})}, $totalDuration'
+                      : t('{n} tracks', {'n': detail.tracks.length}),
+                ),
+              ],
+            ),
+            isPlaying: isAlbumPlaying,
+            playEnabled: detail.tracks.isNotEmpty,
+            onPlay: () {
+              if (controller.snapshot.context == 'album:${album.id}') {
+                controller.togglePause();
+              } else {
+                controller.playAlbum(album.id, 0);
+              }
+            },
+            shuffleActive: controller.snapshot.shuffle,
+            onShuffle: () =>
+                controller.playAlbum(album.id, 0, shuffle: true),
+            isPinned: isPinned,
+            onTogglePin: () => controller.togglePinned('album', album.id),
+            extraActions: [
+              PopupMenuButton<String>(
+                tooltip: t('More options'),
+                color: AppTheme.zinc900,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: AppTheme.zinc700),
+                ),
+                icon: Icon(
+                  Icons.more_horiz_rounded,
+                  size: 28,
+                  color: Colors.white.withValues(alpha: 0.70),
+                ),
+                onSelected: (value) async {
+                  if (value == 'playlist') {
+                    await showAddToPlaylistDialog(
+                      context: context,
+                      controller: controller,
+                      trackIds: detail.tracks.map((tr) => tr.id).toList(),
+                    );
+                  } else if (value == 'match') {
+                    final updated = await showMetadataMatchDialog(
+                      context: context,
+                      controller: controller,
+                      album: album,
+                    );
+                    if (updated == true) {
+                      onReloadAlbum();
+                    }
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem<String>(
+                    value: 'playlist',
+                    child: Row(
                       children: [
-                        Text(
-                          album.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                            letterSpacing: -0.4,
-                          ),
+                        const Icon(
+                          Icons.playlist_add_rounded,
+                          size: 17,
+                          color: AppTheme.zinc400,
                         ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            if (album.albumArtist.isNotEmpty) ...[
-                              HoverLinkText(
-                                text: album.albumArtist,
-                                onTap: () => onOpenArtist(album.albumArtist),
-                                style: const TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const Text(
-                                ' · ',
-                                style: TextStyle(
-                                  fontSize: 13.5,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                            Text(
-                              [
-                                if (album.year != null) '${album.year}',
-                                t('{n} tracks', {'n': detail.tracks.length}),
-                              ].join(' · '),
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
+                        const SizedBox(width: 10),
+                        Text(t('Add to Playlist...')),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'match',
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.manage_search_rounded,
+                          size: 17,
+                          color: AppTheme.zinc400,
                         ),
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 8,
-                          children: [
-                            FilledButton.icon(
-                              onPressed: detail.tracks.isNotEmpty
-                                  ? () => controller.playAlbum(album.id, 0)
-                                  : null,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.accent,
-                                foregroundColor: AppColors.canvas,
-                              ),
-                              icon:
-                                  const Icon(Icons.play_arrow_rounded, size: 18),
-                              label: Text(
-                                t('Play'),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: detail.tracks.isNotEmpty
-                                  ? () => controller.playAlbum(
-                                        album.id,
-                                        0,
-                                        shuffle: true,
-                                      )
-                                  : null,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textPrimary,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(Icons.shuffle_rounded, size: 17),
-                              label: Text(t('Shuffle')),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () =>
-                                  controller.togglePinned('album', album.id),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: isPinned
-                                    ? AppColors.accent
-                                    : AppColors.textPrimary,
-                                side: BorderSide(
-                                  color: isPinned
-                                      ? AppColors.accent
-                                      : AppColors.border,
-                                ),
-                              ),
-                              icon: Icon(
-                                isPinned
-                                    ? Icons.push_pin_rounded
-                                    : Icons.push_pin_outlined,
-                                size: 16,
-                              ),
-                              label: Text(isPinned ? t('Unpin') : t('Pin')),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final updated = await showMetadataMatchDialog(
-                                  context: context,
-                                  controller: controller,
-                                  album: album,
-                                );
-                                if (updated == true) {
-                                  onReloadAlbum();
-                                }
-                              },
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textSecondary,
-                                side: const BorderSide(color: AppColors.border),
-                              ),
-                              icon: const Icon(
-                                Icons.manage_search_rounded,
-                                size: 17,
-                              ),
-                              label: Text(t('Match Metadata')),
-                            ),
-                          ],
-                        ),
+                        const SizedBox(width: 10),
+                        Text(t('Match Metadata')),
                       ],
                     ),
                   ),
@@ -520,112 +507,76 @@ class _AlbumDetailView extends StatelessWidget {
             ],
           ),
         ),
-        const Divider(height: 1, color: AppColors.border),
-        Expanded(
-          child: ListView.builder(
-            itemCount: detail.tracks.length,
-            itemExtent: 50,
-            itemBuilder: (context, index) {
-              final track = detail.tracks[index];
-              final isActive = activePath == track.path;
-              final isFav = controller.isFavorite(track.id);
-              final trackNo = track.trackNo ?? (index + 1);
-              void playHere() => controller.playAlbum(album.id, index);
-
-              return GestureDetector(
-                onSecondaryTapDown: (d) => TrackMenu.show(
-                  context: context,
-                  globalPosition: d.globalPosition,
-                  track: track,
-                  controller: controller,
-                  onPlay: playHere,
-                  onOpenArtist: onOpenArtist,
-                  onOpenAlbum: onOpenAlbum,
+        SliverToBoxAdapter(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppTheme.zinc800)),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 38,
+                  child: Text(
+                    '#',
+                    style: TextStyle(fontSize: 11.5, color: AppTheme.zinc500),
+                  ),
                 ),
-                child: InkWell(
-                  onTap: playHere,
-                  hoverColor: AppColors.surfaceHover,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    color: isActive ? AppColors.accentMuted : Colors.transparent,
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 40,
-                          child: isActive
-                              ? const Icon(
-                                  Icons.graphic_eq_rounded,
-                                  size: 16,
-                                  color: AppColors.accent,
-                                )
-                              : Text(
-                                  '$trackNo',
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    color: AppColors.textMuted,
-                                    fontFeatures: [FontFeature.tabularFigures()],
-                                  ),
-                                ),
-                        ),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                track.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: isActive
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                                  color: isActive
-                                      ? AppColors.accent
-                                      : AppColors.textPrimary,
-                                ),
-                              ),
-                              if (track.artist.isNotEmpty)
-                                HoverLinkText(
-                                  text: track.artist,
-                                  onTap: () => onOpenArtist(track.artist),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        StarFavoriteButton(
-                          isFavorite: isFav,
-                          onPressed: () => controller.toggleFavorite(track.id),
-                        ),
-                        const SizedBox(width: 6),
-                        SizedBox(
-                          width: 54,
-                          child: Text(
-                            formatDurationMs(track.durationMs),
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              color: AppColors.textMuted,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                        ),
-                        TrackMoreButton(
-                          track: track,
-                          controller: controller,
-                          onPlay: playHere,
-                          onOpenArtist: onOpenArtist,
-                          onOpenAlbum: onOpenAlbum,
-                        ),
-                      ],
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    t('Title'),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppTheme.zinc500,
                     ),
                   ),
                 ),
+                const SizedBox(width: 110),
+                SizedBox(
+                  width: 52,
+                  child: Text(
+                    t('Time'),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppTheme.zinc500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 30),
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          sliver: SliverFixedExtentList.builder(
+            itemCount: detail.tracks.length,
+            itemExtent: 56,
+            itemBuilder: (context, index) {
+              final track = detail.tracks[index];
+              final isActive = activePath == track.path;
+              final trackNo = track.trackNo ?? (index + 1);
+              void playHere() => controller.playAlbum(album.id, index);
+
+              return DesktopTrackRow(
+                indexLabel: '$trackNo',
+                track: track,
+                controller: controller,
+                isActive: isActive,
+                showCover: false,
+                showArtist: false,
+                showArtistUnderTitle: true,
+                showAlbum: false,
+                playCount: BigInt.from(track.plays),
+                horizontalPadding: 14,
+                numberColumnWidth: 38,
+                onTap: playHere,
+                onPlay: playHere,
+                onOpenArtist: onOpenArtist,
+                onOpenAlbum: onOpenAlbum,
               );
             },
           ),

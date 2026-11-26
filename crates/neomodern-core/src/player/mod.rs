@@ -744,6 +744,17 @@ impl Player {
         changed
     }
 
+    /// Rewrites queue entry paths under `old_root` to `new_root` (when a
+    /// music folder is relocated) and publishes the updated state.
+    pub fn rebase_paths(&self, old_root: &str, new_root: &str) -> usize {
+        let mut changed = 0;
+        let _ = self.run(|s| {
+            changed = s.queue.rebase_paths(old_root, new_root);
+            Ok(())
+        });
+        changed
+    }
+
     /// The entries that play after the current one, in play order (the
     /// shuffle order when shuffle is on), as (queue index, track), plus how
     /// many there are in all. Read under one lock, so index and track agree.

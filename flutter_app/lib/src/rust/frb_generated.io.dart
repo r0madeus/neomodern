@@ -288,6 +288,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiArtistTopTrack dco_decode_ui_artist_top_track(dynamic raw);
 
   @protected
+  UiAutoBackupStatus dco_decode_ui_auto_backup_status(dynamic raw);
+
+  @protected
+  UiBackupExportResult dco_decode_ui_backup_export_result(dynamic raw);
+
+  @protected
+  UiBackupImportResult dco_decode_ui_backup_import_result(dynamic raw);
+
+  @protected
+  UiBackupPreview dco_decode_ui_backup_preview(dynamic raw);
+
+  @protected
   UiBulkSaveOutcome dco_decode_ui_bulk_save_outcome(dynamic raw);
 
   @protected
@@ -397,6 +409,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiRecentTrack dco_decode_ui_recent_track(dynamic raw);
+
+  @protected
+  UiRelocatePreview dco_decode_ui_relocate_preview(dynamic raw);
+
+  @protected
+  UiRelocateResult dco_decode_ui_relocate_result(dynamic raw);
 
   @protected
   UiSourceProvider dco_decode_ui_source_provider(dynamic raw);
@@ -781,6 +799,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UiArtistTopTrack sse_decode_ui_artist_top_track(SseDeserializer deserializer);
 
   @protected
+  UiAutoBackupStatus sse_decode_ui_auto_backup_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiBackupExportResult sse_decode_ui_backup_export_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiBackupImportResult sse_decode_ui_backup_import_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiBackupPreview sse_decode_ui_backup_preview(SseDeserializer deserializer);
+
+  @protected
   UiBulkSaveOutcome sse_decode_ui_bulk_save_outcome(
     SseDeserializer deserializer,
   );
@@ -906,6 +942,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UiRecentTrack sse_decode_ui_recent_track(SseDeserializer deserializer);
+
+  @protected
+  UiRelocatePreview sse_decode_ui_relocate_preview(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UiRelocateResult sse_decode_ui_relocate_result(SseDeserializer deserializer);
 
   @protected
   UiSourceProvider sse_decode_ui_source_provider(SseDeserializer deserializer);
@@ -1387,6 +1431,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_ui_auto_backup_status(
+    UiAutoBackupStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_backup_export_result(
+    UiBackupExportResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_backup_import_result(
+    UiBackupImportResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_backup_preview(
+    UiBackupPreview self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ui_bulk_save_outcome(
     UiBulkSaveOutcome self,
     SseSerializer serializer,
@@ -1544,6 +1612,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_ui_recent_track(UiRecentTrack self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ui_relocate_preview(
+    UiRelocatePreview self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ui_relocate_result(
+    UiRelocateResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_ui_source_provider(

@@ -2,6 +2,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod audio;
 pub mod autoplay;
+pub mod backup;
 pub mod diagnostics;
 pub mod library;
 pub mod lyrics;

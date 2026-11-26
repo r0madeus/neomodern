@@ -3,6 +3,7 @@ use crate::frb_generated::StreamSink;
 #[cfg(not(target_os = "android"))]
 use neomodern_core::audio::mpv::{MpvEngine, MpvOptions};
 use neomodern_core::audio::{AudioEngine, Equalizer, NetGuardedEngine, ReplayGain};
+use neomodern_core::backup::{self, BackupState, auto as backup_auto, swap as backup_swap};
 use neomodern_core::library::{
     AlbumDetail, AlbumRow, ArtistProfile, ArtistRow, ArtistTopTrack, BucketStat, DynamicMix,
     FolderInfo, GenreRow, HomeFeed, HomeMixDetail, Hooks, Library, ListeningStats, MAX_PROFILES,
@@ -27,7 +28,7 @@ use neomodern_core::online::{
 };
 use neomodern_core::player::{Player, PlayerEvent, PlayerSnapshot, Status, TrackInfo};
 use neomodern_core::queue::{RepeatMode, Track};
-use neomodern_core::session::{PinnedKind, PinnedRef, SessionStore, is_stream_url};
+use neomodern_core::session::{BackupInterval, PinnedKind, PinnedRef, SessionStore, is_stream_url};
 use neomodern_core::source_provider::{
     ExternalTrack, HttpJsonProvider, ProviderConfig, ProviderKind, ProviderRegistry,
     load_provider_configs, save_provider_configs, validate_base_url,
@@ -59,9 +60,11 @@ impl EventSink for CoreEventSink {
 }
 
 struct CoreState {
+    data_dir: PathBuf,
     player: Arc<Player>,
     library: Arc<Library>,
     session: Arc<SessionStore>,
+    backup: Arc<BackupState>,
     lyrics: Arc<LyricsService>,
     metadata: Arc<MetadataService>,
     online: Arc<OnlineService>,
@@ -1614,6 +1617,17 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
         let data_path = PathBuf::from(&data_dir);
         let cache_path = PathBuf::from(&cache_dir);
 
+        // Apply any staged backup import before opening library.sqlite3 or
+        // loading session.json.
+        let import_outcome = backup_swap::apply_pending_import(&data_path);
+        if let Some(outcome) = &import_outcome {
+            if outcome.applied {
+                log::info!("applied staged backup import on startup");
+            } else if let Some(err) = &outcome.error {
+                log::warn!("staged backup import failed on startup: {err}");
+            }
+        }
+
         let session = Arc::new(SessionStore::new(data_path.join("session.json")));
         let (event_tx, _) = broadcast::channel::<UiEvent>(256);
         let remote_feed = RemoteFeed::new();
@@ -1749,6 +1763,27 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
                 .unwrap_or(false),
         );
 
+        if import_outcome.as_ref().is_some_and(|o| o.applied) {
+            match library.folder_status() {
+                Ok(folders) => {
+                    library.keep_missing_on_next_scan(folders.iter().map(|f| f.id));
+                    library.start_scan(
+                        folders
+                            .into_iter()
+                            .filter(|f| f.reachable)
+                            .map(|f| FolderInfo {
+                                id: f.id,
+                                path: f.path,
+                            })
+                            .collect(),
+                    );
+                }
+                Err(e) => log::warn!("could not list folders after backup import: {e}"),
+            }
+        }
+
+        let backup = Arc::new(BackupState::new(data_path.clone(), import_outcome));
+
         match library.repair_missing_covers() {
             Ok(folders) if !folders.is_empty() => library.start_scan(folders),
             Ok(_) => {}
@@ -1822,11 +1857,20 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
         let allow_phones = session.allow_phone_connections();
         let party_enabled = session.jam_enabled();
         let sync_clone = sync.clone();
+        #[cfg(not(target_os = "android"))]
+        let auto_backup_args = (
+            Arc::clone(&backup),
+            Arc::clone(&session),
+            Arc::clone(&library),
+            Arc::clone(&player),
+        );
 
         let state = Arc::new(CoreState {
+            data_dir: data_path,
             player: Arc::clone(&player),
             library,
             session,
+            backup,
             lyrics,
             metadata,
             online,
@@ -1860,10 +1904,35 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
             })
             .map_err(|e| format!("failed to start engine-events thread: {e}"))?;
 
-        (player, sync_clone, allow_phones, party_enabled)
+        (
+            player,
+            sync_clone,
+            allow_phones,
+            party_enabled,
+            #[cfg(not(target_os = "android"))]
+            auto_backup_args,
+        )
     };
 
+    #[cfg(not(target_os = "android"))]
+    let (player, sync, allow_phones, party_enabled, auto_backup_args) = startup;
+    #[cfg(target_os = "android")]
     let (player, sync, allow_phones, party_enabled) = startup;
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let (backup_state, auto_session, auto_library, auto_player) = auto_backup_args;
+        let save_session_cb = Arc::clone(&auto_session);
+        backup_auto::spawn_auto_backup(
+            backup_state,
+            auto_session,
+            auto_library,
+            Arc::new(move || {
+                save_session_cb.save_now(&auto_player.export_session());
+            }),
+        );
+    }
+
     tokio::spawn(async move {
         sync.start(allow_phones).await;
         if party_enabled && let Err(e) = sync.jam_set_enabled(true).await {
@@ -2751,7 +2820,10 @@ pub async fn artist_enrich(name: String) -> Result<Option<UiArtistDetail>, Strin
     if detail.bio.is_none() {
         detail.bio = info.bio;
     }
-    detail.cover = detail.image.clone().or_else(|| detail.fallback_cover.clone());
+    detail.cover = detail
+        .image
+        .clone()
+        .or_else(|| detail.fallback_cover.clone());
     detail.online_albums = info.albums.into_iter().map(Into::into).collect();
     Ok(Some(detail))
 }
@@ -2769,16 +2841,15 @@ pub async fn artist_enrich_all() -> Result<UiArtistScanProgress, String> {
         let _ = lib_tx.send(UiEvent::LibraryChanged);
     });
     let scan_tx = state.event_tx.clone();
-    let on_artist_scan: Arc<dyn Fn(ArtistScanProgress) + Send + Sync> =
-        Arc::new(move |progress| {
-            let _ = scan_tx.send(UiEvent::ArtistScanProgress {
-                running: progress.scanning,
-                total: progress.total,
-                done: progress.done,
-                current: progress.current_artist,
-                error: progress.error,
-            });
+    let on_artist_scan: Arc<dyn Fn(ArtistScanProgress) + Send + Sync> = Arc::new(move |progress| {
+        let _ = scan_tx.send(UiEvent::ArtistScanProgress {
+            running: progress.scanning,
+            total: progress.total,
+            done: progress.done,
+            current: progress.current_artist,
+            error: progress.error,
         });
+    });
     let progress = tokio::task::spawn_blocking(move || {
         online.start_artist_scan(lib, false, prefer_tr, on_library_changed, on_artist_scan)
     })
@@ -3803,17 +3874,20 @@ pub async fn metadata_apply_track(track_id: i64, candidate_id: String) -> Result
             .track_metadata_proposals
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        cache.get(&(track_id, candidate_id.clone())).cloned().or_else(|| {
-            cache
-                .iter()
-                .find(|((tid, key), _)| {
-                    *tid == track_id
-                        && key
-                            .split_once(':')
-                            .is_some_and(|(rec, rel)| rec == candidate_id || rel == candidate_id)
-                })
-                .map(|(_, p)| p.clone())
-        })
+        cache
+            .get(&(track_id, candidate_id.clone()))
+            .cloned()
+            .or_else(|| {
+                cache
+                    .iter()
+                    .find(|((tid, key), _)| {
+                        *tid == track_id
+                            && key.split_once(':').is_some_and(|(rec, rel)| {
+                                rec == candidate_id || rel == candidate_id
+                            })
+                    })
+                    .map(|(_, p)| p.clone())
+            })
     };
     let proposal = match cached {
         Some(p) => p,
@@ -4305,6 +4379,309 @@ pub fn default_music_dir() -> Option<String> {
         .map(|p| scan::display_path(&p))
 }
 
+// ---------------------------------------------------------------------
+// Backup, Restore & Relocate Music Folder
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct UiBackupExportResult {
+    pub path: String,
+    pub size_bytes: u64,
+    pub entry_count: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiBackupPreview {
+    pub app_version: String,
+    pub created_at: i64,
+    pub source_platform: String,
+    pub profiles_count: u32,
+    pub tracks_count: u64,
+    pub playlists_count: u64,
+    pub listens_count: u64,
+    pub size_bytes: u64,
+    pub entry_count: u64,
+}
+
+impl From<backup::archive::BackupSummary> for UiBackupPreview {
+    fn from(s: backup::archive::BackupSummary) -> Self {
+        Self {
+            app_version: s.app_version,
+            created_at: s.created_at,
+            source_platform: s.platform,
+            profiles_count: u32::try_from(s.profiles.len()).unwrap_or(u32::MAX),
+            tracks_count: s.tracks,
+            playlists_count: s.playlists,
+            listens_count: s.listens,
+            size_bytes: s.size,
+            entry_count: s.entries,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiBackupImportResult {
+    pub safety_backup_dir: String,
+    pub restart_required: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiAutoBackupStatus {
+    pub enabled: bool,
+    pub folder: Option<String>,
+    pub cadence: String,
+    pub keep: u32,
+    pub last_backup_at: Option<i64>,
+    pub last_backup_size: Option<u64>,
+    pub last_error: Option<String>,
+}
+
+fn cadence_to_string(interval: BackupInterval) -> String {
+    match interval {
+        BackupInterval::Day => "daily".to_string(),
+        BackupInterval::Week => "weekly".to_string(),
+    }
+}
+
+fn parse_cadence(cadence: &str) -> Result<BackupInterval, String> {
+    match cadence.trim().to_ascii_lowercase().as_str() {
+        "daily" | "day" => Ok(BackupInterval::Day),
+        "weekly" | "week" => Ok(BackupInterval::Week),
+        other => Err(format!("invalid backup cadence: {other}")),
+    }
+}
+
+fn auto_backup_to_ui(store: &SessionStore) -> UiAutoBackupStatus {
+    let a = store.auto_backup();
+    UiAutoBackupStatus {
+        enabled: a.enabled,
+        folder: a.folder.map(|p| scan::display_path(&p)),
+        cadence: cadence_to_string(a.interval),
+        keep: a.keep,
+        last_backup_at: a.last_at,
+        last_backup_size: a.last_size,
+        last_error: a.last_error,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiRelocatePreview {
+    pub old_path: String,
+    pub new_path: String,
+    pub total_tracks: u64,
+    pub found_tracks: u64,
+    pub missing_tracks: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiRelocateResult {
+    pub rewritten_tracks: u64,
+}
+
+pub async fn backup_export(dest_path: String) -> Result<UiBackupExportResult, String> {
+    let dest = dest_path.trim().to_string();
+    if dest.is_empty() {
+        return Err("destination path cannot be empty".to_string());
+    }
+    let state = core()?;
+    let backup = Arc::clone(&state.backup);
+    let data_dir = state.data_dir.clone();
+    let session = Arc::clone(&state.session);
+    let player = Arc::clone(&state.player);
+    tokio::task::spawn_blocking(move || {
+        let _job = backup.begin().map_err(|e| e.to_string())?;
+        session.save_now(&player.export_session());
+        let info = backup::archive::export(&data_dir, Path::new(&dest), backup::now_ms())
+            .map_err(|e| e.to_string())?;
+        Ok(UiBackupExportResult {
+            path: info.path,
+            size_bytes: info.size,
+            entry_count: info.entry_count,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub async fn backup_inspect(src_path: String) -> Result<UiBackupPreview, String> {
+    let src = src_path.trim().to_string();
+    if src.is_empty() {
+        return Err("backup path cannot be empty".to_string());
+    }
+    let state = core()?;
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        backup::archive::inspect(Path::new(&src), &data_dir)
+            .map(Into::into)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub async fn backup_stage_import(src_path: String) -> Result<UiBackupImportResult, String> {
+    let src = src_path.trim().to_string();
+    if src.is_empty() {
+        return Err("backup path cannot be empty".to_string());
+    }
+    let state = core()?;
+    let backup = Arc::clone(&state.backup);
+    let data_dir = state.data_dir.clone();
+    let session = Arc::clone(&state.session);
+    let player = Arc::clone(&state.player);
+    tokio::task::spawn_blocking(move || {
+        let job = backup.begin().map_err(|e| e.to_string())?;
+        session.save_now(&player.export_session());
+        let staged = backup_swap::stage_import(Path::new(&src), &data_dir, backup::now_ms())
+            .map_err(|e| e.to_string())?;
+        backup.set_import_pending();
+        drop(job);
+        Ok(UiBackupImportResult {
+            safety_backup_dir: staged.before_import,
+            restart_required: staged.restart_required,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub fn backup_auto_status() -> Result<UiAutoBackupStatus, String> {
+    let state = core()?;
+    Ok(auto_backup_to_ui(&state.session))
+}
+
+pub fn backup_set_auto(
+    enabled: bool,
+    folder: Option<String>,
+    cadence: String,
+    keep: u32,
+) -> Result<UiAutoBackupStatus, String> {
+    if cfg!(target_os = "android") {
+        return Err("automatic backup is not available on Android".to_string());
+    }
+    let state = core()?;
+    let interval = parse_cadence(&cadence)?;
+    let folder = folder
+        .map(|f| f.trim().to_string())
+        .filter(|f| !f.is_empty())
+        .map(PathBuf::from);
+    if enabled && !folder.as_ref().is_some_and(|f| f.is_dir()) {
+        return Err("choose an existing folder for the backups".to_string());
+    }
+    if !neomodern_core::session::BACKUP_KEEP_CHOICES.contains(&keep) {
+        return Err(format!(
+            "keep must be one of {:?}",
+            neomodern_core::session::BACKUP_KEEP_CHOICES
+        ));
+    }
+    state.session.update_auto_backup(|a| {
+        if a.folder != folder {
+            a.last_error = None;
+        }
+        a.enabled = enabled;
+        a.folder = folder;
+        a.interval = interval;
+        a.keep = keep;
+    });
+    state.session.save_now(&state.player.export_session());
+    state.backup.notify_auto();
+    Ok(auto_backup_to_ui(&state.session))
+}
+
+pub async fn backup_run_auto_now() -> Result<UiAutoBackupStatus, String> {
+    let state = core()?;
+    let session = Arc::clone(&state.session);
+    let player = Arc::clone(&state.player);
+    backup_auto::run_auto_once(
+        &state.backup,
+        &state.session,
+        &state.library,
+        Arc::new(move || {
+            session.save_now(&player.export_session());
+        }),
+    )
+    .await?;
+    Ok(auto_backup_to_ui(&state.session))
+}
+
+pub async fn folder_relocate_preview(
+    folder_id: i64,
+    new_path: String,
+) -> Result<UiRelocatePreview, String> {
+    let state = core()?;
+    let library = Arc::clone(&state.library);
+    tokio::task::spawn_blocking(move || {
+        let old_path = library
+            .folders()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|f| f.id == folder_id)
+            .map(|f| f.path)
+            .ok_or_else(|| format!("folder {folder_id} not found"))?;
+        let check = library
+            .folder_check_move(folder_id, &new_path)
+            .map_err(|e| e.to_string())?;
+        let missing_tracks = if !check.exists || check.checked == 0 {
+            check.total
+        } else if check.checked == check.total {
+            check.total.saturating_sub(check.found)
+        } else {
+            check.checked.saturating_sub(check.found)
+        };
+        let resolved_new = Path::new(&new_path)
+            .canonicalize()
+            .map(|p| scan::display_path(&p))
+            .unwrap_or_else(|_| new_path.trim().to_string());
+        Ok(UiRelocatePreview {
+            old_path,
+            new_path: resolved_new,
+            total_tracks: check.total,
+            found_tracks: check.found,
+            missing_tracks,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub async fn folder_relocate_apply(
+    folder_id: i64,
+    new_path: String,
+) -> Result<UiRelocateResult, String> {
+    let state = core()?;
+    let library = Arc::clone(&state.library);
+    let player = Arc::clone(&state.player);
+    let session = Arc::clone(&state.session);
+    tokio::task::spawn_blocking(move || {
+        let moved = library
+            .move_folder_detailed(folder_id, &new_path)
+            .map_err(|e| e.to_string())?;
+        if moved.old_path != moved.folder.path {
+            player.rebase_paths(&moved.old_path, &moved.folder.path);
+            session.rebase_paths(&moved.old_path, &moved.folder.path);
+            session.save_now(&player.export_session());
+        }
+        library.start_scan(vec![moved.folder]);
+        Ok(UiRelocateResult {
+            rewritten_tracks: moved.rewritten_tracks,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub fn library_missing_folders() -> Result<Vec<UiFolderInfo>, String> {
+    let statuses = core()?.library.folder_status().map_err(|e| e.to_string())?;
+    Ok(statuses
+        .into_iter()
+        .filter(|f| !f.reachable)
+        .map(|f| UiFolderInfo {
+            id: f.id,
+            path: f.path,
+        })
+        .collect())
+}
+
 #[cfg(target_os = "windows")]
 fn find_process_hwnd() -> Option<*mut std::ffi::c_void> {
     use std::ffi::c_void;
@@ -4585,5 +4962,16 @@ mod tests {
         assert_eq!(ui.cover_path.as_deref(), Some("/covers/jazz.jpg"));
         drop(lib);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backup_cadence_parses_and_formats_cleanly() {
+        assert_eq!(parse_cadence("daily").unwrap(), BackupInterval::Day);
+        assert_eq!(parse_cadence("day").unwrap(), BackupInterval::Day);
+        assert_eq!(parse_cadence("Weekly").unwrap(), BackupInterval::Week);
+        assert_eq!(parse_cadence("week").unwrap(), BackupInterval::Week);
+        assert!(parse_cadence("hourly").is_err());
+        assert_eq!(cadence_to_string(BackupInterval::Day), "daily");
+        assert_eq!(cadence_to_string(BackupInterval::Week), "weekly");
     }
 }

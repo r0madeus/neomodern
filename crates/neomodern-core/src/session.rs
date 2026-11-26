@@ -122,6 +122,66 @@ fn default_active_profile() -> i64 {
     1
 }
 
+/// How often the automatic backup runs (docs/BACKUP.md, section 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackupInterval {
+    #[default]
+    Day,
+    Week,
+}
+
+/// Choices for how many automatic backups are kept.
+pub const BACKUP_KEEP_CHOICES: [u32; 3] = [3, 5, 10];
+
+fn default_backup_keep() -> u32 {
+    5
+}
+
+/// Automatic backup to a folder (K28, desktop only). Off by default; the
+/// `last_*` fields describe the latest run. A device setting: an import
+/// keeps this device's value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AutoBackup {
+    pub enabled: bool,
+    pub folder: Option<PathBuf>,
+    pub interval: BackupInterval,
+    #[serde(default = "default_backup_keep")]
+    pub keep: u32,
+    /// Unix ms of the last successful backup.
+    pub last_at: Option<i64>,
+    /// Size in bytes of the last successful backup.
+    pub last_size: Option<u64>,
+    /// Error of the last attempt; `None` after a success.
+    pub last_error: Option<String>,
+}
+
+impl Default for AutoBackup {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            folder: None,
+            interval: BackupInterval::Day,
+            keep: default_backup_keep(),
+            last_at: None,
+            last_size: None,
+            last_error: None,
+        }
+    }
+}
+
+impl AutoBackup {
+    /// Clamp hand-edited values: `keep` is one of the offered choices.
+    pub fn normalized(mut self) -> Self {
+        if !BACKUP_KEEP_CHOICES.contains(&self.keep) {
+            self.keep = default_backup_keep();
+        }
+        self.folder = clean_opt_path(self.folder);
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SessionState {
@@ -207,6 +267,9 @@ pub struct SessionState {
     /// Profiles (K24): parked player state of the other profiles.
     #[serde(default)]
     pub profiles: std::collections::BTreeMap<i64, ProfileSession>,
+    /// Automatic backup (K28). Owned by [`SessionStore`].
+    #[serde(default)]
+    pub auto_backup: AutoBackup,
 }
 
 impl Default for SessionState {
@@ -242,6 +305,7 @@ impl Default for SessionState {
             jam_guest_enabled: false,
             active_profile: default_active_profile(),
             profiles: std::collections::BTreeMap::new(),
+            auto_backup: AutoBackup::default(),
         }
     }
 }
@@ -276,6 +340,7 @@ impl SessionState {
             }
         }
         self.pinned = seen;
+        self.auto_backup = self.auto_backup.normalized();
         self
     }
 }
@@ -382,6 +447,7 @@ pub struct SessionStore {
     jam_guest_enabled: AtomicBool,
     active_profile: std::sync::atomic::AtomicI64,
     parked: Mutex<std::collections::BTreeMap<i64, ProfileSession>>,
+    auto_backup: Mutex<AutoBackup>,
     net: Arc<NetPolicy>,
 }
 
@@ -403,6 +469,7 @@ impl SessionStore {
             jam_guest_enabled: AtomicBool::new(false),
             active_profile: std::sync::atomic::AtomicI64::new(default_active_profile()),
             parked: Mutex::new(std::collections::BTreeMap::new()),
+            auto_backup: Mutex::new(AutoBackup::default()),
             net: Arc::new(NetPolicy::default()),
         }
     }
@@ -447,6 +514,7 @@ impl SessionStore {
             // Never park the active profile's own state twice.
             parked.remove(&state.active_profile);
         }
+        *self.auto_backup.lock().unwrap_or_else(|e| e.into_inner()) = state.auto_backup.clone();
         self.net.set_offline(state.offline_mode);
         self.net.set_feature(Feature::Lyrics, state.net_lyrics);
         self.net.set_feature(Feature::Online, state.net_online);
@@ -496,6 +564,54 @@ impl SessionStore {
 
     pub fn set_jam_guest_enabled(&self, enabled: bool) {
         self.jam_guest_enabled.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn auto_backup(&self) -> AutoBackup {
+        self.auto_backup
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Changes the automatic backup settings in memory; the caller saves.
+    pub fn update_auto_backup(&self, f: impl FnOnce(&mut AutoBackup)) -> AutoBackup {
+        let mut a = self.auto_backup.lock().unwrap_or_else(|e| e.into_inner());
+        f(&mut a);
+        *a = a.clone().normalized();
+        a.clone()
+    }
+
+    /// Rewrites parked profile queue paths and `download_dir` under `old_root`
+    /// to `new_root` (when a music folder is relocated).
+    pub fn rebase_paths(&self, old_root: &str, new_root: &str) -> usize {
+        let mut changed = 0;
+        {
+            let mut parked = self.parked.lock().unwrap_or_else(|e| e.into_inner());
+            for profile in parked.values_mut() {
+                for track in &mut profile.queue {
+                    let old = track.path.to_string_lossy();
+                    if let Some(new) = crate::library::relocate::rebase(&old, old_root, new_root)
+                        && new != old
+                    {
+                        track.path = PathBuf::from(new);
+                        changed += 1;
+                    }
+                }
+            }
+        }
+        {
+            let mut dl = self.download_dir.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(dir) = dl.as_mut() {
+                let old = dir.to_string_lossy();
+                if let Some(new) = crate::library::relocate::rebase(&old, old_root, new_root)
+                    && new != old
+                {
+                    *dir = PathBuf::from(new);
+                    changed += 1;
+                }
+            }
+        }
+        changed
     }
 
     pub fn lyrics_netease(&self) -> bool {
@@ -642,6 +758,7 @@ impl SessionStore {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
+        state.auto_backup = self.auto_backup();
         state.offline_mode = self.net.offline();
         state.net_lyrics = self.net.feature_enabled(Feature::Lyrics);
         state.net_online = self.net.feature_enabled(Feature::Online);
@@ -814,6 +931,15 @@ mod tests {
             jam_guest_enabled: true,
             active_profile: 2,
             profiles: [(1, ProfileSession::default())].into_iter().collect(),
+            auto_backup: AutoBackup {
+                enabled: true,
+                folder: Some(PathBuf::from("/backups")),
+                interval: BackupInterval::Week,
+                keep: 10,
+                last_at: Some(1_700_000_000_000),
+                last_size: Some(1234),
+                last_error: None,
+            },
         };
         save(&file, &state).unwrap();
         assert_eq!(load(&file), state);

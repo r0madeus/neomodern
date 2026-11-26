@@ -533,6 +533,78 @@ class AppStrings {
     'You are up to date': 'Uygulama güncel',
     'Update available: {version}': 'Güncelleme mevcut: {version}',
     'View Release': 'Sürümü Görüntüle',
+
+    // Backup, Restore & Move Folder
+    'Backup & Restore': 'Yedekleme ve Geri Yükleme',
+    'Export or restore your profiles, favorites, playlists, history, settings, and artwork. Music files are not included.':
+        'Profillerini, favorilerini, çalma listelerini, geçmişini, ayarlarını ve kapak görsellerini dışa aktar veya geri yükle. Müzik dosyaları dahil edilmez.',
+    'Export backup': 'Yedeği dışa aktar',
+    'Exporting...': 'Dışa aktarılıyor...',
+    'Import backup…': 'Yedeği içe aktar…',
+    'Inspecting...': 'İnceleniyor...',
+    'Select backup file': 'Yedek dosyası seç',
+    'Backup exported ({size}, {n} items)':
+        'Yedek dışa aktarıldı ({size}, {n} öğe)',
+    'Restore Backup': 'Yedeği Geri Yükle',
+    'Created at': 'Oluşturulma tarihi',
+    'App version': 'Uygulama sürümü',
+    'Source platform': 'Kaynak platform',
+    'File size': 'Dosya boyutu',
+    'Profiles': 'Profiller',
+    'Tracks': 'Parçalar',
+    'Playlists': 'Çalma listeleri',
+    'Listening events': 'Dinleme etkinlikleri',
+    'Replace all data on this device? Your current data will be copied to a safety backup first.':
+        'Bu cihazdaki tüm veriler değiştirilsin mi? Mevcut verilerin önce bir güvenlik yedeğine kopyalanacaktır.',
+    'Replace & Import': 'Değiştir ve İçe Aktar',
+    'Importing...': 'İçe aktarılıyor...',
+    'Import staged': 'İçe aktarma hazırlandı',
+    'Import staged. Restart NeoModern to apply.':
+        'İçe aktarma hazırlandı. Uygulamak için NeoModern\'i yeniden başlatın.',
+    'Safety backup saved to: {path}': 'Güvenlik yedeği şuraya kaydedildi: {path}',
+    'Later': 'Daha sonra',
+    'Close app': 'Uygulamayı kapat',
+    'Automatic backup': 'Otomatik yedekleme',
+    'Periodically save a backup to a local or cloud-synced folder':
+        'Yerel veya bulutla eşitlenen bir klasöre düzenli olarak yedek kaydet',
+    'Target folder': 'Hedef klasör',
+    'No folder selected': 'Klasör seçilmedi',
+    'Select backup folder': 'Yedekleme klasörü seç',
+    'Choose…': 'Seç…',
+    'Cadence': 'Sıklık',
+    'How often automatic backups run when due':
+        'Süresi geldiğinde otomatik yedeklemelerin ne sıklıkla çalışacağı',
+    'Daily': 'Günlük',
+    'Weekly': 'Haftalık',
+    'Keep backups': 'Saklanacak yedek sayısı',
+    'Oldest automatic backups beyond this count are removed':
+        'Bu sayıyı aşan en eski otomatik yedekler silinir',
+    'Back up now': 'Şimdi yedekle',
+    'Backing up...': 'Yedekleniyor...',
+    'Last backup: {time} ({size})': 'Son yedekleme: {time} ({size})',
+    'No automatic backup run yet.': 'Henüz otomatik yedekleme yapılmadı.',
+    'Choose a target folder first to enable automatic backups.':
+        'Otomatik yedeklemeyi etkinleştirmek için önce bir hedef klasör seçin.',
+    'Music folders not found': 'Müzik klasörleri bulunamadı',
+    'One or more watched folders could not be found on disk. Move a folder to update its path without losing your stats or playlists.':
+        'İzlenen klasörlerden biri veya birkaçı diskte bulunamadı. İstatistiklerini ve çalma listelerini kaybetmeden yolunu güncellemek için klasörü taşı.',
+    'Move folder': 'Klasörü taşı',
+    'Move folder…': 'Klasörü taşı…',
+    'Move music folder': 'Müzik klasörünü taşı',
+    'Update the folder path in your library without losing favorites, playlists, or listening history. Audio files on disk are not moved.':
+        'Favorileri, çalma listelerini veya dinleme geçmişini kaybetmeden kütüphanedeki klasör yolunu güncelle. Diskteki ses dosyaları taşınmaz.',
+    'Current location': 'Mevcut konum',
+    'New location': 'Yeni konum',
+    'No new folder selected': 'Yeni klasör seçilmedi',
+    'Choose new folder…': 'Yeni klasör seç…',
+    'Select new music folder': 'Yeni müzik klasörü seç',
+    'Checking folder...': 'Klasör denetleniyor...',
+    'Found {found} of {total} songs': '{total} şarkıdan {found} tanesi bulundu',
+    'No known songs were found in this folder. Make sure you selected the right location before applying.':
+        'Bu klasörde bilinen hiçbir şarkı bulunamadı. Uygulamadan önce doğru konumu seçtiğinden emin ol.',
+    '{n} songs were not found in the new location.':
+        'Yeni konumda {n} şarkı bulunamadı.',
+    'Moved folder ({n} tracks updated)': 'Klasör taşındı ({n} parça güncellendi)',
   };
 }
 

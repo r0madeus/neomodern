@@ -87,6 +87,7 @@ class PlayerController extends ChangeNotifier {
   bool _isScanning = false;
   int _scannedCount = 0;
   List<UiFolderInfo> _folders = const [];
+  List<UiFolderInfo> _missingFolders = const [];
   bool _offlineMode = false;
 
   // Songs cache
@@ -138,12 +139,13 @@ class PlayerController extends ChangeNotifier {
   UiUpdateInfo? _updateInfo;
   bool _checkingUpdate = false;
 
-  // Profiles, Sync, Party Queue, and External Sources
+  // Profiles, Sync, Party Queue, External Sources, and Backups
   UiProfilesState? _profilesState;
   UiSyncStatus? _syncStatus;
   UiPairingOpen? _pairingOpen;
   UiPartyStatus? _partyStatus;
   List<UiSourceProvider> _sourceProviders = const [];
+  UiAutoBackupStatus? _autoBackupStatus;
 
   // Wave 1 preferences, cover colors, and pinned items
   UiPrefs _uiPrefs = const UiPrefs(
@@ -178,6 +180,7 @@ class PlayerController extends ChangeNotifier {
   bool get isScanning => _isScanning;
   int get scannedCount => _scannedCount;
   List<UiFolderInfo> get folders => _folders;
+  List<UiFolderInfo> get missingFolders => _missingFolders;
   bool get offlineMode => _offlineMode;
   String get trackSearch => _trackSearch;
   int get trackCount => _trackCount;
@@ -222,6 +225,7 @@ class PlayerController extends ChangeNotifier {
       _sourceProviders.where((p) => p.enabled).toList();
   bool get hasEnabledSourceProviders =>
       _sourceProviders.any((p) => p.enabled);
+  UiAutoBackupStatus? get autoBackupStatus => _autoBackupStatus;
 
   bool isFavorite(PlatformInt64 trackId) =>
       _favoriteIds.contains(trackId.toInt());
@@ -247,6 +251,7 @@ class PlayerController extends ChangeNotifier {
       );
 
       _folders = await libraryFolders();
+      _missingFolders = await rust_api.libraryMissingFolders();
       _isScanning = await libraryIsScanning();
       _offlineMode = await settingsGetOffline();
       _uiPrefs = await uiPrefsGet();
@@ -273,6 +278,7 @@ class PlayerController extends ChangeNotifier {
       unawaited(refreshDownloads());
       unawaited(refreshNetSettings());
       unawaited(refreshArtistEnrichStatus());
+      unawaited(_refreshAutoBackupQuietly());
     } catch (e) {
       _initError = e.toString();
       notifyListeners();
@@ -401,6 +407,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> _onLibraryChanged() async {
     try {
       _folders = await libraryFolders();
+      _missingFolders = await rust_api.libraryMissingFolders();
       _isScanning = await libraryIsScanning();
       _coverColorCache.clear();
       _coverColorLoading.clear();
@@ -1431,6 +1438,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> addFolder(String path) async {
     try {
       _folders = await libraryAddFolder(path: path);
+      _missingFolders = await rust_api.libraryMissingFolders();
       _isScanning = await libraryIsScanning();
       notifyListeners();
     } catch (e) {
@@ -1442,6 +1450,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> removeFolder(PlatformInt64 id) async {
     try {
       _folders = await libraryRemoveFolder(id: id);
+      _missingFolders = await rust_api.libraryMissingFolders();
       notifyListeners();
     } catch (e) {
       _lastError = e.toString();
@@ -2159,6 +2168,86 @@ class PlayerController extends ChangeNotifier {
       _checkingUpdate = false;
       notifyListeners();
     }
+  }
+
+  // Backup, Restore & Folder Relocation
+  Future<void> _refreshAutoBackupQuietly() async {
+    try {
+      _autoBackupStatus = await rust_api.backupAutoStatus();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<UiBackupExportResult> backupExport(String destPath) {
+    return rust_api.backupExport(destPath: destPath);
+  }
+
+  Future<UiBackupPreview> backupInspect(String srcPath) {
+    return rust_api.backupInspect(srcPath: srcPath);
+  }
+
+  Future<UiBackupImportResult> backupStageImport(String srcPath) {
+    return rust_api.backupStageImport(srcPath: srcPath);
+  }
+
+  Future<UiAutoBackupStatus> backupAutoStatus() async {
+    final status = await rust_api.backupAutoStatus();
+    _autoBackupStatus = status;
+    notifyListeners();
+    return status;
+  }
+
+  Future<UiAutoBackupStatus> backupSetAuto({
+    required bool enabled,
+    String? folder,
+    required String cadence,
+    required int keep,
+  }) async {
+    final status = await rust_api.backupSetAuto(
+      enabled: enabled,
+      folder: folder,
+      cadence: cadence,
+      keep: keep,
+    );
+    _autoBackupStatus = status;
+    notifyListeners();
+    return status;
+  }
+
+  Future<UiAutoBackupStatus> backupRunAutoNow() async {
+    final status = await rust_api.backupRunAutoNow();
+    _autoBackupStatus = status;
+    notifyListeners();
+    return status;
+  }
+
+  Future<UiRelocatePreview> folderRelocatePreview(
+    int folderId,
+    String newPath,
+  ) {
+    return rust_api.folderRelocatePreview(
+      folderId: PlatformInt64Util.from(folderId),
+      newPath: newPath,
+    );
+  }
+
+  Future<UiRelocateResult> folderRelocateApply(
+    int folderId,
+    String newPath,
+  ) async {
+    final result = await rust_api.folderRelocateApply(
+      folderId: PlatformInt64Util.from(folderId),
+      newPath: newPath,
+    );
+    await _onLibraryChanged();
+    return result;
+  }
+
+  Future<List<UiFolderInfo>> libraryMissingFolders() async {
+    final missing = await rust_api.libraryMissingFolders();
+    _missingFolders = missing;
+    notifyListeners();
+    return missing;
   }
 
   @override

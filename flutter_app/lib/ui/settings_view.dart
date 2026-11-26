@@ -8,6 +8,8 @@ import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/backup_settings_section.dart';
+import 'package:neomodern/ui/move_folder_dialog.dart';
 import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/sync_settings_section.dart';
 import 'package:neomodern/ui/widgets/smooth_scroll.dart';
@@ -55,7 +57,29 @@ class _SettingsViewState extends State<SettingsView> {
       if (ctrl.lyricsShareStatus == null) {
         unawaited(ctrl.refreshLyricsShareStatus());
       }
+      unawaited(ctrl.libraryMissingFolders());
     });
+  }
+
+  Future<void> _openMoveFolderDialog(UiFolderInfo folder) async {
+    final result = await showMoveFolderDialog(
+      context: context,
+      controller: widget.controller,
+      folder: folder,
+    );
+    if (result != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            t('Moved folder ({n} tracks updated)', {
+              'n': result.rewrittenTracks,
+            }),
+          ),
+          behavior: SnackBarBehavior.floating,
+          width: 320,
+        ),
+      );
+    }
   }
 
   Future<void> _pickAndAddFolder() async {
@@ -194,6 +218,7 @@ class _SettingsViewState extends State<SettingsView> {
     final ctrl = widget.controller;
     final snap = ctrl.snapshot;
     final folders = ctrl.folders;
+    final missingFolders = ctrl.missingFolders;
     final eqGains = _gainsDraft ??
         List<double>.generate(
           10,
@@ -293,6 +318,11 @@ class _SettingsViewState extends State<SettingsView> {
             ],
           ),
           children: [
+            if (missingFolders.isNotEmpty)
+              _MissingFoldersBanner(
+                folders: missingFolders,
+                onMoveFolder: _openMoveFolderDialog,
+              ),
             if (ctrl.isScanning)
               Container(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -358,6 +388,16 @@ class _SettingsViewState extends State<SettingsView> {
                             color: AppColors.textPrimary,
                           ),
                         ),
+                      ),
+                      IconButton(
+                        tooltip: t('Move folder'),
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(
+                          Icons.drive_file_move_outlined,
+                          size: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                        onPressed: () => _openMoveFolderDialog(folders[i]),
                       ),
                       IconButton(
                         tooltip: t('Remove folder'),
@@ -741,6 +781,10 @@ class _SettingsViewState extends State<SettingsView> {
         const SizedBox(height: 20),
 
         _buildUpdatesSection(ctrl),
+
+        const SizedBox(height: 20),
+
+        BackupSettingsSection(controller: widget.controller),
 
         const SizedBox(height: 20),
 
@@ -1836,6 +1880,95 @@ class _SleepChip extends StatelessWidget {
       labelStyle: TextStyle(
         fontSize: 12.5,
         color: selected ? AppColors.accent : AppColors.textPrimary,
+      ),
+    );
+  }
+}
+
+class _MissingFoldersBanner extends StatelessWidget {
+  const _MissingFoldersBanner({
+    required this.folders,
+    required this.onMoveFolder,
+  });
+
+  final List<UiFolderInfo> folders;
+  final ValueChanged<UiFolderInfo> onMoveFolder;
+
+  @override
+  Widget build(BuildContext context) {
+    const amber = Color(0xFFE5A00D);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: amber.withAlpha(22),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: amber.withAlpha(90)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 17,
+                color: amber,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  t('Music folders not found'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t(
+              'One or more watched folders could not be found on disk. Move a folder to update its path without losing your stats or playlists.',
+            ),
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (var i = 0; i < folders.length; i++) ...[
+            if (i > 0) const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    folders[i].path,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () => onMoveFolder(folders[i]),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: amber,
+                    side: BorderSide(color: amber.withAlpha(110)),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.drive_file_move_outlined, size: 15),
+                  label: Text(t('Move folder…')),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

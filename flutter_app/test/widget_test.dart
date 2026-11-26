@@ -6,7 +6,9 @@ import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
+import 'package:neomodern/ui/backup_settings_section.dart';
 import 'package:neomodern/ui/genre_view.dart';
+import 'package:neomodern/ui/move_folder_dialog.dart';
 import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/recap_view.dart';
 import 'package:neomodern/ui/right_panel.dart';
@@ -781,5 +783,186 @@ void main() {
     await tester.tap(find.text('Roygbiv'));
     await tester.pump();
     expect(openedAlbum, 77);
+  });
+
+  testWidgets(
+      'BackupSettingsSection renders export/import buttons, auto-backup toggle, and import flow',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+
+    String? exportedPath;
+    String? stagedPath;
+    var closedApp = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: BackupSettingsSection(
+              controller: ctrl,
+              onFetchAutoStatus: () async => const UiAutoBackupStatus(
+                enabled: false,
+                cadence: 'daily',
+                keep: 5,
+              ),
+              onPickSaveFile: (name) async => 'C:\\Backups\\$name',
+              onExport: (destPath) async {
+                exportedPath = destPath;
+                return UiBackupExportResult(
+                  path: destPath,
+                  sizeBytes: BigInt.from(2 * 1024 * 1024),
+                  entryCount: BigInt.from(12),
+                );
+              },
+              onPickOpenFile: () async => r'C:\Backups\sample.nmbackup',
+              onInspect: (srcPath) async => UiBackupPreview(
+                appVersion: '2.5.0',
+                createdAt: PlatformInt64Util.from(1700000000000),
+                sourcePlatform: 'windows',
+                profilesCount: 2,
+                tracksCount: BigInt.from(150),
+                playlistsCount: BigInt.from(4),
+                listensCount: BigInt.from(300),
+                sizeBytes: BigInt.from(2 * 1024 * 1024),
+                entryCount: BigInt.from(12),
+              ),
+              onStageImport: (srcPath) async {
+                stagedPath = srcPath;
+                return const UiBackupImportResult(
+                  safetyBackupDir: r'C:\Data\before-import',
+                  restartRequired: true,
+                );
+              },
+              onCloseApp: () => closedApp = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Backup & Restore'), findsOneWidget);
+    expect(find.text('Export backup'), findsOneWidget);
+    expect(find.text('Import backup…'), findsOneWidget);
+    expect(find.text('Automatic backup'), findsOneWidget);
+    expect(find.text('Back up now'), findsOneWidget);
+
+    final autoSwitch = tester.widget<Switch>(find.byType(Switch));
+    expect(autoSwitch.value, isFalse);
+
+    await tester.tap(find.text('Export backup'));
+    await tester.pumpAndSettle();
+    expect(exportedPath, contains('NeoModern-backup-'));
+    expect(find.text('Backup exported (2.0 MB, 12 items)'), findsWidgets);
+
+    await tester.tap(find.text('Import backup…'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restore Backup'), findsOneWidget);
+    expect(find.text('2.5.0'), findsOneWidget);
+    expect(find.text('windows'), findsOneWidget);
+    expect(find.text('150'), findsOneWidget);
+    expect(
+      find.text(
+        'Replace all data on this device? Your current data will be copied to a safety backup first.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Replace & Import'), findsOneWidget);
+
+    await tester.tap(find.text('Replace & Import'));
+    await tester.pumpAndSettle();
+
+    expect(stagedPath, r'C:\Backups\sample.nmbackup');
+    expect(find.text('Import staged. Restart NeoModern to apply.'), findsOneWidget);
+    expect(find.text('Close app'), findsOneWidget);
+    expect(find.text('Later'), findsOneWidget);
+
+    await tester.tap(find.text('Close app'));
+    await tester.pump();
+    expect(closedApp, isTrue);
+  });
+
+  testWidgets(
+      'MoveFolderDialog shows old path, folder picker button, and relocate preview',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+
+    int? previewFolderId;
+    String? previewNewPath;
+    int? appliedFolderId;
+    String? appliedNewPath;
+    UiRelocateResult? poppedResult;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  poppedResult = await showDialog<UiRelocateResult>(
+                    context: context,
+                    builder: (_) => MoveFolderDialog(
+                      controller: ctrl,
+                      folder: UiFolderInfo(
+                        id: PlatformInt64Util.from(7),
+                        path: r'C:\Old\Music',
+                      ),
+                      onPickDirectory: () async => r'D:\New\Music',
+                      onPreviewRelocate: (id, newPath) async {
+                        previewFolderId = id;
+                        previewNewPath = newPath;
+                        return UiRelocatePreview(
+                          oldPath: r'C:\Old\Music',
+                          newPath: newPath,
+                          totalTracks: BigInt.from(45),
+                          foundTracks: BigInt.from(42),
+                          missingTracks: BigInt.from(3),
+                        );
+                      },
+                      onApplyRelocate: (id, newPath) async {
+                        appliedFolderId = id;
+                        appliedNewPath = newPath;
+                        return UiRelocateResult(
+                          rewrittenTracks: BigInt.from(45),
+                        );
+                      },
+                    ),
+                  );
+                },
+                child: const Text('OpenMoveDialog'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('OpenMoveDialog'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Move music folder'), findsOneWidget);
+    expect(find.text(r'C:\Old\Music'), findsOneWidget);
+    expect(find.text('Choose new folder…'), findsOneWidget);
+
+    await tester.tap(find.text('Choose new folder…'));
+    await tester.pumpAndSettle();
+
+    expect(previewFolderId, 7);
+    expect(previewNewPath, r'D:\New\Music');
+    expect(find.text(r'D:\New\Music'), findsOneWidget);
+    expect(find.text('Found 42 of 45 songs'), findsOneWidget);
+
+    await tester.tap(find.text('Move folder'));
+    await tester.pumpAndSettle();
+
+    expect(appliedFolderId, 7);
+    expect(appliedNewPath, r'D:\New\Music');
+    expect(poppedResult?.rewrittenTracks, BigInt.from(45));
   });
 }

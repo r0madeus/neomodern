@@ -10,9 +10,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'neomodern.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_net_settings`, `build_profiles_state`, `build_tracks`, `cache_album_proposals`, `cache_track_proposals`, `cached_cover_color_only`, `compute_and_cache_cover_color`, `core`, `current_online_status`, `find_process_hwnd`, `find_track_id_for_path`, `generate_provider_id`, `genre_row_to_ui`, `load_ui_prefs`, `lyrics_for_track_inner`, `map_apply_outcome`, `map_field_diff`, `map_lyrics_result`, `map_share_status`, `map_source_configs`, `normalize_language`, `online_queue_entry`, `parse_pinned_kind`, `playlist_cover_mode_and_value`, `prefer_turkish_bio`, `qr_parts`, `refresh_player_meta`, `rgb_to_argb`, `sanitize_width`, `save_ui_prefs`, `share_block_label`, `source_label`, `stats_to_ui`, `track_candidate_id`, `validate_and_normalize_ui_prefs`
+// These functions are ignored because they are not marked as `pub`: `auto_backup_to_ui`, `build_net_settings`, `build_profiles_state`, `build_tracks`, `cache_album_proposals`, `cache_track_proposals`, `cached_cover_color_only`, `cadence_to_string`, `compute_and_cache_cover_color`, `core`, `current_online_status`, `find_process_hwnd`, `find_track_id_for_path`, `generate_provider_id`, `genre_row_to_ui`, `load_ui_prefs`, `lyrics_for_track_inner`, `map_apply_outcome`, `map_field_diff`, `map_lyrics_result`, `map_share_status`, `map_source_configs`, `normalize_language`, `online_queue_entry`, `parse_cadence`, `parse_pinned_kind`, `playlist_cover_mode_and_value`, `prefer_turkish_bio`, `qr_parts`, `refresh_player_meta`, `rgb_to_argb`, `sanitize_width`, `save_ui_prefs`, `share_block_label`, `source_label`, `stats_to_ui`, `track_candidate_id`, `validate_and_normalize_ui_prefs`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CoreEventSink`, `CoreState`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `emit`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<UiPlayerSnapshot> initCore({
   required String dataDir,
@@ -738,6 +738,52 @@ Future<void> uiPrefsSave({required UiPrefs prefs}) =>
 Future<String?> defaultMusicDir() =>
     RustLib.instance.api.crateApiNeomodernDefaultMusicDir();
 
+Future<UiBackupExportResult> backupExport({required String destPath}) =>
+    RustLib.instance.api.crateApiNeomodernBackupExport(destPath: destPath);
+
+Future<UiBackupPreview> backupInspect({required String srcPath}) =>
+    RustLib.instance.api.crateApiNeomodernBackupInspect(srcPath: srcPath);
+
+Future<UiBackupImportResult> backupStageImport({required String srcPath}) =>
+    RustLib.instance.api.crateApiNeomodernBackupStageImport(srcPath: srcPath);
+
+Future<UiAutoBackupStatus> backupAutoStatus() =>
+    RustLib.instance.api.crateApiNeomodernBackupAutoStatus();
+
+Future<UiAutoBackupStatus> backupSetAuto({
+  required bool enabled,
+  String? folder,
+  required String cadence,
+  required int keep,
+}) => RustLib.instance.api.crateApiNeomodernBackupSetAuto(
+  enabled: enabled,
+  folder: folder,
+  cadence: cadence,
+  keep: keep,
+);
+
+Future<UiAutoBackupStatus> backupRunAutoNow() =>
+    RustLib.instance.api.crateApiNeomodernBackupRunAutoNow();
+
+Future<UiRelocatePreview> folderRelocatePreview({
+  required PlatformInt64 folderId,
+  required String newPath,
+}) => RustLib.instance.api.crateApiNeomodernFolderRelocatePreview(
+  folderId: folderId,
+  newPath: newPath,
+);
+
+Future<UiRelocateResult> folderRelocateApply({
+  required PlatformInt64 folderId,
+  required String newPath,
+}) => RustLib.instance.api.crateApiNeomodernFolderRelocateApply(
+  folderId: folderId,
+  newPath: newPath,
+);
+
+Future<List<UiFolderInfo>> libraryMissingFolders() =>
+    RustLib.instance.api.crateApiNeomodernLibraryMissingFolders();
+
 class UiAlbumDetail {
   final UiAlbumRow album;
   final List<UiTrackRow> tracks;
@@ -1053,6 +1099,145 @@ class UiArtistTopTrack {
           track == other.track &&
           playCount == other.playCount &&
           listenedMs == other.listenedMs;
+}
+
+class UiAutoBackupStatus {
+  final bool enabled;
+  final String? folder;
+  final String cadence;
+  final int keep;
+  final PlatformInt64? lastBackupAt;
+  final BigInt? lastBackupSize;
+  final String? lastError;
+
+  const UiAutoBackupStatus({
+    required this.enabled,
+    this.folder,
+    required this.cadence,
+    required this.keep,
+    this.lastBackupAt,
+    this.lastBackupSize,
+    this.lastError,
+  });
+
+  @override
+  int get hashCode =>
+      enabled.hashCode ^
+      folder.hashCode ^
+      cadence.hashCode ^
+      keep.hashCode ^
+      lastBackupAt.hashCode ^
+      lastBackupSize.hashCode ^
+      lastError.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiAutoBackupStatus &&
+          runtimeType == other.runtimeType &&
+          enabled == other.enabled &&
+          folder == other.folder &&
+          cadence == other.cadence &&
+          keep == other.keep &&
+          lastBackupAt == other.lastBackupAt &&
+          lastBackupSize == other.lastBackupSize &&
+          lastError == other.lastError;
+}
+
+class UiBackupExportResult {
+  final String path;
+  final BigInt sizeBytes;
+  final BigInt entryCount;
+
+  const UiBackupExportResult({
+    required this.path,
+    required this.sizeBytes,
+    required this.entryCount,
+  });
+
+  @override
+  int get hashCode => path.hashCode ^ sizeBytes.hashCode ^ entryCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiBackupExportResult &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          sizeBytes == other.sizeBytes &&
+          entryCount == other.entryCount;
+}
+
+class UiBackupImportResult {
+  final String safetyBackupDir;
+  final bool restartRequired;
+
+  const UiBackupImportResult({
+    required this.safetyBackupDir,
+    required this.restartRequired,
+  });
+
+  @override
+  int get hashCode => safetyBackupDir.hashCode ^ restartRequired.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiBackupImportResult &&
+          runtimeType == other.runtimeType &&
+          safetyBackupDir == other.safetyBackupDir &&
+          restartRequired == other.restartRequired;
+}
+
+class UiBackupPreview {
+  final String appVersion;
+  final PlatformInt64 createdAt;
+  final String sourcePlatform;
+  final int profilesCount;
+  final BigInt tracksCount;
+  final BigInt playlistsCount;
+  final BigInt listensCount;
+  final BigInt sizeBytes;
+  final BigInt entryCount;
+
+  const UiBackupPreview({
+    required this.appVersion,
+    required this.createdAt,
+    required this.sourcePlatform,
+    required this.profilesCount,
+    required this.tracksCount,
+    required this.playlistsCount,
+    required this.listensCount,
+    required this.sizeBytes,
+    required this.entryCount,
+  });
+
+  @override
+  int get hashCode =>
+      appVersion.hashCode ^
+      createdAt.hashCode ^
+      sourcePlatform.hashCode ^
+      profilesCount.hashCode ^
+      tracksCount.hashCode ^
+      playlistsCount.hashCode ^
+      listensCount.hashCode ^
+      sizeBytes.hashCode ^
+      entryCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiBackupPreview &&
+          runtimeType == other.runtimeType &&
+          appVersion == other.appVersion &&
+          createdAt == other.createdAt &&
+          sourcePlatform == other.sourcePlatform &&
+          profilesCount == other.profilesCount &&
+          tracksCount == other.tracksCount &&
+          playlistsCount == other.playlistsCount &&
+          listensCount == other.listensCount &&
+          sizeBytes == other.sizeBytes &&
+          entryCount == other.entryCount;
 }
 
 class UiBulkSaveOutcome {
@@ -2438,6 +2623,57 @@ class UiRecentTrack {
           runtimeType == other.runtimeType &&
           track == other.track &&
           startedAt == other.startedAt;
+}
+
+class UiRelocatePreview {
+  final String oldPath;
+  final String newPath;
+  final BigInt totalTracks;
+  final BigInt foundTracks;
+  final BigInt missingTracks;
+
+  const UiRelocatePreview({
+    required this.oldPath,
+    required this.newPath,
+    required this.totalTracks,
+    required this.foundTracks,
+    required this.missingTracks,
+  });
+
+  @override
+  int get hashCode =>
+      oldPath.hashCode ^
+      newPath.hashCode ^
+      totalTracks.hashCode ^
+      foundTracks.hashCode ^
+      missingTracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiRelocatePreview &&
+          runtimeType == other.runtimeType &&
+          oldPath == other.oldPath &&
+          newPath == other.newPath &&
+          totalTracks == other.totalTracks &&
+          foundTracks == other.foundTracks &&
+          missingTracks == other.missingTracks;
+}
+
+class UiRelocateResult {
+  final BigInt rewrittenTracks;
+
+  const UiRelocateResult({required this.rewrittenTracks});
+
+  @override
+  int get hashCode => rewrittenTracks.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UiRelocateResult &&
+          runtimeType == other.runtimeType &&
+          rewrittenTracks == other.rewrittenTracks;
 }
 
 class UiSourceProvider {

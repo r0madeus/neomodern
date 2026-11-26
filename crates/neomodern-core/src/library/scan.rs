@@ -541,8 +541,12 @@ pub fn scan_folder(lib: &Library, folder_id: i64, root: &Path) -> Result<ScanSta
 
     // Whatever is left in `existing` was not seen on disk. Only trust that
     // when the whole walk succeeded.
+    let keep_missing = lib.take_keep_missing(folder_id);
     let stale: Vec<i64> = if walk_failed {
         log::warn!("walk had errors, not removing missing tracks");
+        Vec::new()
+    } else if keep_missing {
+        log::info!("first scan after an import, not removing missing tracks");
         Vec::new()
     } else {
         for path in existing.keys() {

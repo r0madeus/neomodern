@@ -14,7 +14,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 17;
+/// The newest schema this build knows; a newer database is refused.
+pub const SCHEMA_VERSION: i64 = 17;
 
 pub(super) const SCHEMA_V1: &str = "
 CREATE TABLE folders (

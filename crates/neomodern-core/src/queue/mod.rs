@@ -424,6 +424,25 @@ impl Queue {
         changed
     }
 
+    /// Rewrites entry paths under `old_root` to `new_root` (when a music
+    /// folder is relocated). Returns how many entries changed.
+    pub fn rebase_paths(&mut self, old_root: &str, new_root: &str) -> usize {
+        let mut changed = 0;
+        for e in &mut self.entries {
+            let old = e.path.to_string_lossy();
+            if let Some(new) = crate::library::relocate::rebase(&old, old_root, new_root)
+                && new != old
+            {
+                e.path = PathBuf::from(new);
+                changed += 1;
+            }
+        }
+        if changed > 0 {
+            self.version += 1;
+        }
+        changed
+    }
+
     pub fn first_index(&self) -> Option<usize> {
         if self.entries.is_empty() {
             return None;

@@ -1,23 +1,21 @@
-pub mod audio;
-mod autoplay;
-mod commands;
-mod diagnostics;
-pub mod library;
-pub mod lyrics;
 #[cfg(not(target_os = "android"))]
-pub mod media_keys;
-pub mod metadata;
-pub mod net;
-pub mod online;
-pub mod player;
+pub use neomodern_core::media_keys;
+pub use neomodern_core::{
+    audio, autoplay, diagnostics, library, lyrics, metadata, net, online, player, queue, session,
+    source_provider, update,
+};
+
+mod android_audio;
+mod commands;
 mod profiles;
-pub mod queue;
-pub mod session;
+pub mod sync_commands;
 // PC <-> phone sync and remote control (docs/SYNC.md).
-pub mod sync;
+pub mod sync {
+    pub use crate::sync_commands::{self as commands, TauriSink};
+    pub use neomodern_core::sync::*;
+}
 pub mod tray;
 mod ui;
-pub mod update;
 mod webview_guard;
 
 #[cfg(not(target_os = "android"))]
@@ -88,7 +86,7 @@ pub fn run() {
             #[cfg(not(target_os = "android"))]
             let engine = MpvEngine::new(MpvOptions::default(), tx);
             #[cfg(target_os = "android")]
-            let engine = audio::android::AndroidEngine::new(
+            let engine = android_audio::android::AndroidEngine::new(
                 app.state::<tauri_plugin_android_audio::AndroidAudio<tauri::Wry>>()
                     .0
                     .clone(),
@@ -580,4 +578,67 @@ pub fn run() {
                 session.save_now(&player.export_session());
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                rust_sources(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && path.file_name().is_some_and(|n| n != "tests.rs")
+            {
+                out.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn every_shell_network_entry_point_is_known_and_gated() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rust_sources(&root, &mut files);
+        let count = |text: &str, needle: &str| text.matches(needle).count();
+
+        let allowed: &[(&str, &str, usize)] = &[];
+        let mut seen = std::collections::HashMap::new();
+        for f in &files {
+            let rel = f
+                .strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if rel == "lib.rs" {
+                continue;
+            }
+            let text = std::fs::read_to_string(f).unwrap().replace("\r\n", "\n");
+            let text = text.split("#[cfg(test)]\nmod tests {").next().unwrap();
+            for needle in [
+                "client_builder()",
+                "reqwest::Client::new()",
+                "reqwest::Client::builder()",
+                "reqwest::get(",
+                "Command::new(",
+                "Command::new (",
+                "TcpListener::bind(",
+                "TcpStream::connect(",
+                "UdpSocket::bind(",
+                "TcpSocket::new",
+            ] {
+                let n = count(text, needle);
+                if n > 0 {
+                    seen.insert((rel.clone(), needle), n);
+                }
+            }
+        }
+        let want: std::collections::HashMap<_, _> = allowed
+            .iter()
+            .map(|(f, n, c)| ((f.to_string(), *n), *c))
+            .collect();
+        assert_eq!(seen, want);
+    }
 }

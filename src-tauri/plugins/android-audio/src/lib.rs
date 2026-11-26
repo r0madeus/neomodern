@@ -2,8 +2,10 @@
 //! its [`PluginHandle`] to the app. The app's `audio::android` engine is the
 //! only user; it implements `AudioEngine` on top of this handle.
 
+#[cfg(target_os = "android")]
+use tauri::Manager;
+use tauri::Runtime;
 use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
-use tauri::{Manager, Runtime};
 
 /// Handle to the Kotlin plugin, managed as app state.
 pub struct AndroidAudio<R: Runtime>(pub PluginHandle<R>);

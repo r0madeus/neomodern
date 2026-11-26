@@ -1,0 +1,59 @@
+[package]
+name = "neomodern-core"
+version = "0.11.0"
+description = "Core audio, library, lyrics, metadata, queue, player, and sync engine for NeoModern"
+authors = ["r0madeus"]
+license = "GPL-3.0-only"
+repository = "https://github.com/r0madeus/neomodern"
+edition = "2024"
+rust-version = "1.90"
+
+[features]
+test-support = []
+
+# Versions are pinned on purpose (see AGENTS.md). Check docs.rs for the
+# pinned version before writing code against these crates.
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+log = "=0.4.35"
+thiserror = "=2.0.21"
+rusqlite = { version = "=0.42.0", features = ["bundled", "collation"] }
+lofty = "=0.25.5"
+# Already in Cargo.lock as a transitive dependency; used for the LRCLIB publish proof-of-work.
+sha2 = "=0.10.9"
+walkdir = "=2.5.0"
+reqwest = { version = "=0.13.5", default-features = false, features = ["json", "query"] }
+tokio = { version = "=1.54.1", features = ["rt", "rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+# PC <-> phone sync link (docs/SYNC.md): pure Rust only, so the Android
+# build needs no C toolchain. snow without its `std` feature, because that
+# feature also switches on `ring`; we only use the pure-Rust resolver
+# (X25519 / ChaChaPoly / BLAKE2s).
+snow = { version = "=0.10.0", default-features = false, features = ["default-resolver", "use-curve25519", "use-chacha20poly1305", "use-blake2", "use-getrandom"] }
+spake2 = "=0.4.0"
+hkdf = "=0.12.4"
+hmac = "=0.12.1"
+getrandom = "=0.3.4"
+# The pairing QR code (K23); raw modules only, the UI draws them.
+qrcode = { version = "=0.15.0", default-features = false, features = ["std"] }
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "=1.1.11", default-features = false, features = ["rust_backend"] }
+
+# Desktop only: libmpv audio, OS media controls (SMTC / MPRIS), system TLS.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+libmpv2 = "=7.0.1"
+libmpv2-sys = "=4.0.1"
+# zbus backend: the default dbus backend blocks up to 1 s between updates.
+souvlaki = { version = "=0.9.3", default-features = false, features = ["use_zbus"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["native-tls"] }
+
+# Android: rustls with the Mozilla root store (no OpenSSL to cross-compile, no JNI verifier setup).
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "=1.0.10"
+
+[dev-dependencies]
+hound = "=3.5.1"
+tempfile = "=3.27.0"

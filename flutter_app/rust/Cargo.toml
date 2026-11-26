@@ -1,0 +1,17 @@
+[package]
+name = "neomodern_bridge"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+flutter_rust_bridge = "=2.13.0"
+neomodern-core = { path = "../../crates/neomodern-core" }
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "sync"] }
+log = "=0.4.35"
+serde_json = "=1.0.154"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

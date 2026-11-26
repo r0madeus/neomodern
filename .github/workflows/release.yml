@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.1.0; empty uses v<version> from tauri.conf.json)'
+        description: 'Release tag (e.g. v0.1.0; empty uses v<version> from flutter_app/pubspec.yaml)'
         required: false
         type: string
       prerelease:
@@ -24,62 +24,69 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Creates (or locks as draft) the GitHub release upfront so Windows,
-  # Android and Linux can build and upload in parallel.
+  # Resolves release tag, semantic version, and Flutter build metadata once
+  # so all platform jobs produce consistent artifact names and version info.
   prepare:
-    name: Prepare draft release
+    name: Prepare release metadata
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      build_name: ${{ steps.meta.outputs.build_name }}
+      build_number: ${{ steps.meta.outputs.build_number }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Resolve tag and create draft release
+      - name: Resolve tag and version metadata
         id: meta
         env:
-          GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
+          pubspec_ver="$(awk '/^version:[[:space:]]*/{print $2; exit}' flutter_app/pubspec.yaml | tr -d '\r')"
+          pubspec_base="${pubspec_ver%%+*}"
+
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             tag="$GITHUB_REF_NAME"
           elif [ -n "$(echo "${INPUT_TAG:-}" | xargs)" ]; then
             tag="$(echo "$INPUT_TAG" | xargs)"
           else
-            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+            tag="v${pubspec_base}"
           fi
+
           ver="${tag#v}"
-          if [[ "$ver" =~ ^[0-9]+\.[0-9]+$ ]]; then ver="$ver.0"; fi
+          if [[ "$ver" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            ver="${ver}.0"
+          fi
+
+          # Strip any pre-release suffix so Windows Runner.rc numeric macros stay valid.
+          build_name="${ver%%-*}"
+          if [[ ! "$build_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            build_name="${pubspec_base%%-*}"
+          fi
+          build_number="${GITHUB_RUN_NUMBER:-1}"
+
+          prerelease="false"
+          if [ "${INPUT_PRERELEASE:-false}" = "true" ] || [[ "$tag" == *-* ]]; then
+            prerelease="true"
+          fi
+
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "build_name=$build_name" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --draft=true
-          else
-            args=(release create "$tag" --title "NeoModern $tag" --target "$GITHUB_SHA" --generate-notes --draft)
-            if [ "${INPUT_PRERELEASE:-false}" = "true" ] || [[ "$tag" == *-* ]]; then
-              args+=(--prerelease)
-            fi
-            gh "${args[@]}"
-          fi
-
-  windows-release:
-    name: Windows Release (installer)
+  windows:
+    name: Windows Release (x64 setup + zip)
     needs: prepare
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 22
-          cache: npm
-
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: src-tauri
 
       - name: Fetch LGPL libmpv
         shell: pwsh
@@ -87,266 +94,215 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: ./scripts/fetch-libmpv.ps1
 
-      - run: npm ci
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.1'
+          channel: 'stable'
+          cache: true
 
-      - name: Sync version from release tag
+      - name: Install Flutter dependencies
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Build Windows release
+        working-directory: flutter_app
         shell: pwsh
         env:
-          VER: ${{ needs.prepare.outputs.version }}
+          BUILD_NAME: ${{ needs.prepare.outputs.build_name }}
+          BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:VER -notmatch '^\d+\.\d+\.\d+') { return }
-
-          $conf = Get-Content 'src-tauri/tauri.conf.json' -Raw
-          $conf = [regex]::Replace($conf, '"version"\s*:\s*"[^"]+"', "`"version`": `"$($env:VER)`"", 1)
-          Set-Content -Path 'src-tauri/tauri.conf.json' -Value $conf -NoNewline -Encoding utf8NoBOM
-
-          $cargo = Get-Content 'src-tauri/Cargo.toml' -Raw
-          $cargo = [regex]::Replace($cargo, '(?m)^version = "[^"]+"', "version = `"$($env:VER)`"", 1)
-          Set-Content -Path 'src-tauri/Cargo.toml' -Value $cargo -NoNewline -Encoding utf8NoBOM
-
-          $pkg = Get-Content 'package.json' -Raw
-          $pkg = [regex]::Replace($pkg, '"version"\s*:\s*"[^"]+"', "`"version`": `"$($env:VER)`"", 1)
-          Set-Content -Path 'package.json' -Value $pkg -NoNewline -Encoding utf8NoBOM
-
-      - name: Build NSIS installer
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
-            Write-Host '::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no in-app update for this release.'
-            npm run tauri -- build --bundles nsis
-          } else {
-            npm run tauri -- build --bundles nsis --config src-tauri/tauri.updater.conf.json
-          }
+          flutter build windows --release --build-name="$env:BUILD_NAME" --build-number="$env:BUILD_NUMBER"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload Windows assets to GitHub Release
+      - name: Package NSIS installer, portable zip, and checksums
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = $env:TAG
-
-          $installers = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -Filter '*.exe'
-          if (-not $installers) {
-            throw 'No NSIS .exe installer found in src-tauri/target/release/bundle/nsis'
-          }
-          $signatures = @(Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -Filter '*.exe.sig')
-
-          $staging = Join-Path $env:RUNNER_TEMP 'release-assets'
-          New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          $assets = @()
-          $hashes = @()
-          foreach ($file in $installers) {
-            $dest = Join-Path $staging $file.Name
-            Copy-Item -Path $file.FullName -Destination $dest -Force
-            $hash = (Get-FileHash -Path $dest -Algorithm SHA256).Hash.ToLowerInvariant()
-            $hashes += "$hash  $($file.Name)"
-            $assets += $dest
+          $releaseDir = 'flutter_app\build\windows\x64\runner\Release'
+          if (-not (Test-Path (Join-Path $releaseDir 'neomodern.exe'))) {
+            throw "neomodern.exe not found in $releaseDir"
           }
 
-          foreach ($sig in $signatures) {
-            $dest = Join-Path $staging $sig.Name
-            Copy-Item -Path $sig.FullName -Destination $dest -Force
-            $assets += $dest
-          }
-
-          if ($signatures.Count -gt 0) {
-            $sigFile = $signatures[0]
-            $exeName = $sigFile.Name.Substring(0, $sigFile.Name.Length - 4)
-            $sigText = (Get-Content -Path $sigFile.FullName -Raw).Trim()
-            $baseUrl = "https://github.com/$($env:GITHUB_REPOSITORY)/releases/download/$tag/"
-            $manifest = [ordered]@{
-              version   = ($tag -replace '^v', '')
-              notes     = "NeoModern $tag"
-              pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-              platforms = [ordered]@{
-                "windows-x86_64" = [ordered]@{
-                  signature = $sigText
-                  url       = $baseUrl + [uri]::EscapeDataString($exeName)
-                }
-              }
+          # CMake installs libmpv-2.dll beside neomodern.exe; fall back to src-tauri/lib if needed.
+          $bundleDll = Join-Path $releaseDir 'libmpv-2.dll'
+          if (-not (Test-Path $bundleDll)) {
+            $fetchedDll = 'src-tauri\lib\libmpv-2.dll'
+            if (-not (Test-Path $fetchedDll)) {
+              throw "libmpv-2.dll not found in $releaseDir or $fetchedDll"
             }
-            $manifestFile = Join-Path $staging 'latest.json'
-            Set-Content -Path $manifestFile -Value ($manifest | ConvertTo-Json -Depth 5) -Encoding utf8
-            $assets += $manifestFile
+            Copy-Item -Path $fetchedDll -Destination $bundleDll -Force
           }
 
-          $checksumFile = Join-Path $staging 'SHA256SUMS.txt'
-          Set-Content -Path $checksumFile -Value ($hashes -join "`n") -Encoding utf8
-          $assets += $checksumFile
+          foreach ($required in @('neomodern.exe', 'flutter_windows.dll', 'neomodern_bridge.dll', 'libmpv-2.dll', 'data')) {
+            if (-not (Test-Path (Join-Path $releaseDir $required))) {
+              throw "Required runtime artifact '$required' missing from $releaseDir"
+            }
+          }
 
-          gh release upload $tag @assets --clobber
+          $ver = $env:VERSION
+          $stageRoot = Join-Path $env:RUNNER_TEMP 'windows-stage'
+          $stageDir = Join-Path $stageRoot "NeoModern-$ver-windows-x64"
+          $outDir = Join-Path $env:RUNNER_TEMP 'windows-assets'
+          Remove-Item -Path $stageRoot, $outDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $stageDir, $outDir -Force | Out-Null
+
+          Copy-Item -Path (Join-Path $releaseDir '*') -Destination $stageDir -Recurse -Force
+          Get-ChildItem -Path $stageDir -Include '*.pdb', '*.lib', '*.exp' -Recurse -File | Remove-Item -Force
+
+          $zipName = "NeoModern_${ver}_windows-x64-portable.zip"
+          $zipPath = Join-Path $outDir $zipName
+          Compress-Archive -Path $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
+
+          $makensis = (Get-Command makensis -ErrorAction SilentlyContinue)?.Source
+          if (-not $makensis -and (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) {
+            $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          }
+          if (-not $makensis) {
+            choco install nsis -y
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $makensis = (Get-Command makensis -ErrorAction SilentlyContinue)?.Source
+            if (-not $makensis) {
+              $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+            }
+          }
+          if (-not (Test-Path $makensis)) {
+            throw "makensis.exe not found after installation"
+          }
+
+          $setupName = "NeoModern_${ver}_x64-setup.exe"
+          $setupPath = Join-Path $outDir $setupName
+          $sourceAbs = (Resolve-Path $stageDir).Path
+          & $makensis "/DVERSION=$ver" "/DSOURCE_DIR=$sourceAbs" "/DOUTFILE=$setupPath" 'scripts\installer.nsi'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  android-release:
-    name: Android Release (APK)
+          $checksumLines = foreach ($artifact in @($setupName, $zipName)) {
+            $hash = (Get-FileHash -Path (Join-Path $outDir $artifact) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $artifact"
+          }
+          $checksumPath = Join-Path $outDir 'SHA256SUMS-windows.txt'
+          [IO.File]::WriteAllText($checksumPath, (($checksumLines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          Get-ChildItem -Path $outDir
+
+      - name: Upload Windows release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-assets
+          path: ${{ runner.temp }}/windows-assets/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux Release (x64 AppImage)
     needs: prepare
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Rust Android target
-        run: rustup target add aarch64-linux-android
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: src-tauri
-
-      - name: Point Tauri at the NDK
-        run: echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
-
-      - run: npm ci
-
-      - name: Sync version from release tag
-        env:
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          VER: ${{ needs.prepare.outputs.version }}
-        run: |
-          set -euo pipefail
-          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          if [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            node -e '
-              const fs = require("fs")
-              const p = "src-tauri/tauri.conf.json"
-              const conf = JSON.parse(fs.readFileSync(p, "utf8"))
-              conf.version = process.env.VER
-              fs.writeFileSync(p, JSON.stringify(conf, null, 2) + "\n")
-            '
-          fi
-
-      - name: Generate Android project
-        run: |
-          npm run tauri -- android init --ci
-          cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
-
-      - name: Build APK
-        run: npm run tauri -- android build --apk --target aarch64 --ci
-
-      - name: Sign APK
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          out_dir="src-tauri/gen/android/app/build/outputs/apk"
-          staging="$RUNNER_TEMP/android-assets"
-          mkdir -p "$staging"
-          name="NeoModern-${RELEASE_TAG}-android-arm64"
-          unsigned="$(find "$out_dir" -name '*release*.apk' | head -n 1)"
-          [ -n "$unsigned" ] || { echo "No release APK found in $out_dir"; exit 1; }
-          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
-          ks="$RUNNER_TEMP/release.jks"
-          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks"
-            out="$staging/$name.apk"
-          else
-            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; signing with a throwaway key (this APK cannot be updated in place)."
-            export ANDROID_KEYSTORE_PASSWORD="$(openssl rand -hex 16)"
-            export ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
-            export ANDROID_KEY_ALIAS=throwaway
-            keytool -genkeypair -keystore "$ks" -storepass "$ANDROID_KEYSTORE_PASSWORD" \
-              -keypass "$ANDROID_KEY_PASSWORD" -alias "$ANDROID_KEY_ALIAS" \
-              -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=NeoModern test" >/dev/null
-            out="$staging/$name-testkey.apk"
-          fi
-          "$tools/zipalign" -f -p 4 "$unsigned" "$RUNNER_TEMP/aligned.apk"
-          "$tools/apksigner" sign \
-            --ks "$ks" \
-            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
-            --ks-key-alias "$ANDROID_KEY_ALIAS" \
-            --key-pass env:ANDROID_KEY_PASSWORD \
-            --out "$out" \
-            "$RUNNER_TEMP/aligned.apk"
-          "$tools/apksigner" verify "$out"
-          rm -f "$ks"
-          ls -lh "$staging"
-          (cd "$staging" && sha256sum *.apk > SHA256SUMS-android.txt)
-          echo "ANDROID_ASSETS=$staging" >> "$GITHUB_ENV"
-
-      - name: Upload to the GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release upload "$RELEASE_TAG" "$ANDROID_ASSETS"/* --clobber
-
-  linux-release:
-    name: Linux Release (AppImage)
-    needs: prepare
-    runs-on: ubuntu-24.04
-    # Normally about 12 minutes; fail instead of hanging for hours.
+    # Build on Ubuntu 22.04 so glibc requirements stay compatible across 22.04, 24.04, and 26.04.
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # A plain `apt-get install` once took 29 minutes on a slow mirror and
-      # the release never finished (2026-11-20); the script retries and
-      # switches mirrors, and the step has a time limit.
+      # Retries and switches mirrors if the runner's default apt mirror stalls.
       - name: System packages
         timeout-minutes: 25
         run: |
-          ./scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev libmpv-dev libdbus-1-dev \
+          ./scripts/ci-apt-install.sh clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libmpv-dev libssl-dev libdbus-1-dev \
             patchelf file
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 22
-          cache: npm
-
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      - uses: subosito/flutter-action@v2
         with:
-          workspaces: src-tauri
+          flutter-version: '3.50.1'
+          channel: 'stable'
+          cache: true
 
-      - run: npm ci
+      - name: Install Flutter dependencies
+        working-directory: flutter_app
+        run: flutter pub get
 
-      - name: Sync version from release tag
+      - name: Build Linux release
+        working-directory: flutter_app
         env:
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          VER: ${{ needs.prepare.outputs.version }}
-        run: |
-          set -euo pipefail
-          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          if [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            node -e '
-              const fs = require("fs")
-              const p = "src-tauri/tauri.conf.json"
-              const conf = JSON.parse(fs.readFileSync(p, "utf8"))
-              conf.version = process.env.VER
-              fs.writeFileSync(p, JSON.stringify(conf, null, 2) + "\n")
-            '
-          fi
+          BUILD_NAME: ${{ needs.prepare.outputs.build_name }}
+          BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
+        run: flutter build linux --release --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
 
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          # libmpv links against libjack.so.0, which linuxdeploy omits via the
-          # AppImage excludelist. Newer desktop distros (e.g. Ubuntu 26) don't
-          # install JACK by default, so bundle libjack.so.0 via appimage.files
-          # before linuxdeploy packs and Tauri signs the updater artifact.
+          bundle_dir="flutter_app/build/linux/x64/release/bundle"
+          if [ ! -x "$bundle_dir/neomodern" ]; then
+            echo "::error::Flutter Linux binary not found at $bundle_dir/neomodern"
+            exit 1
+          fi
+
+          tools_dir="$RUNNER_TEMP/appimage-tools"
+          appdir="$RUNNER_TEMP/AppDir"
+          staging="$RUNNER_TEMP/linux-assets"
+          rm -rf "$tools_dir" "$appdir" "$staging"
+          mkdir -p "$tools_dir" "$appdir/usr/bin" "$appdir/usr/lib" "$staging"
+
+          linuxdeploy="$tools_dir/linuxdeploy-x86_64.AppImage"
+          appimagetool="$tools_dir/appimagetool-x86_64.AppImage"
+          curl -fsSL -o "$linuxdeploy" \
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          curl -fsSL -o "$appimagetool" \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x "$linuxdeploy" "$appimagetool"
+
+          # Keep the Flutter bundle structure (neomodern, data/, lib/libapp.so) under usr/bin/.
+          cp -a "$bundle_dir"/. "$appdir/usr/bin/"
+
+          desktop_file="$RUNNER_TEMP/neomodern.desktop"
+          cat > "$desktop_file" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=NeoModern
+          Comment=Modern music player
+          Exec=neomodern
+          Icon=neomodern
+          Categories=AudioVideo;Audio;Player;Music;
+          Terminal=false
+          StartupWMClass=io.github.r0madeus.neomodern
+          EOF
+
+          icon_file="$RUNNER_TEMP/neomodern.png"
+          cp "src-tauri/icons/128x128@2x.png" "$icon_file"
+
+          linuxdeploy_libs=()
+          for so in "$appdir"/usr/bin/lib/*.so*; do
+            [ -e "$so" ] || continue
+            if [ "$(basename "$so")" = "libapp.so" ]; then
+              continue
+            fi
+            linuxdeploy_libs+=(-l "$so")
+          done
+
+          LD_LIBRARY_PATH="$appdir/usr/bin/lib:${LD_LIBRARY_PATH:-}" \
+            "$linuxdeploy" \
+            --appdir "$appdir" \
+            -e "$appdir/usr/bin/neomodern" \
+            "${linuxdeploy_libs[@]}" \
+            -d "$desktop_file" \
+            -i "$icon_file"
+
+          # Avoid duplicate shared objects in usr/bin/lib/ while keeping libapp.so and symlink fallbacks.
+          for so in "$appdir"/usr/bin/lib/*.so*; do
+            [ -e "$so" ] || continue
+            base="$(basename "$so")"
+            if [ "$base" != "libapp.so" ] && [ -e "$appdir/usr/lib/$base" ]; then
+              ln -sf "../../lib/$base" "$so"
+            fi
+          done
+
+          # libmpv links against libjack.so.0, which linuxdeploy skips via the AppImage excludelist.
+          # Newer desktop distros (e.g. Ubuntu 26) don't install JACK by default, so bundle it explicitly.
           libjack_src="$(ldconfig -p | awk '/libjack\.so\.0[[:space:]]/{print $NF; exit}')"
           if [ -z "$libjack_src" ]; then
             libjack_src="$(find /usr/lib /lib -maxdepth 3 -name 'libjack.so.0*' 2>/dev/null | head -n1 || true)"
@@ -359,31 +315,15 @@ jobs:
             echo "::error::Could not locate libjack.so.0 on build runner"
             exit 1
           fi
-          mkdir -p "$RUNNER_TEMP/appimage-extra"
-          cp -L "$libjack_real" "$RUNNER_TEMP/appimage-extra/libjack.so.0"
-          LIBJACK_STAGED="$RUNNER_TEMP/appimage-extra/libjack.so.0"
-          APPIMAGE_CFG="$RUNNER_TEMP/appimage-files.json"
-          LIBJACK_STAGED="$LIBJACK_STAGED" APPIMAGE_CFG="$APPIMAGE_CFG" node -e '
-            const fs = require("fs");
-            const cfg = {
-              bundle: {
-                linux: {
-                  appimage: {
-                    files: {
-                      "/usr/lib/libjack.so.0": process.env.LIBJACK_STAGED
-                    }
-                  }
-                }
-              }
-            };
-            fs.writeFileSync(process.env.APPIMAGE_CFG, JSON.stringify(cfg, null, 2) + "\n");
-          '
-          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            npm run tauri -- build --bundles appimage --config "$APPIMAGE_CFG" --config src-tauri/tauri.updater.conf.json
-          else
-            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; no in-app update for this AppImage."
-            npm run tauri -- build --bundles appimage --config "$APPIMAGE_CFG"
-          fi
+          cp -L "$libjack_real" "$appdir/usr/lib/libjack.so.0"
+          patchelf --set-rpath '$ORIGIN' "$appdir/usr/lib/libjack.so.0"
+          patchelf --set-rpath '$ORIGIN/../lib:$ORIGIN/lib' "$appdir/usr/bin/neomodern"
+
+          appimage_name="NeoModern-${VERSION}-linux-x86_64.AppImage"
+          ARCH=x86_64 "$appimagetool" "$appdir" "$staging/$appimage_name"
+          chmod +x "$staging/$appimage_name"
+          (cd "$staging" && sha256sum "$appimage_name" > SHA256SUMS-linux.txt)
+          ls -lh "$staging"
 
       - name: Verify AppImage bundled libraries
         env:
@@ -391,11 +331,12 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          appimages=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          appimages=("$RUNNER_TEMP"/linux-assets/*.AppImage)
           if [ "${#appimages[@]}" -ne 1 ]; then
             echo "::error::Expected 1 AppImage, found ${#appimages[@]}"
             exit 1
           fi
+
           appimage_abs="$(readlink -f "${appimages[0]}")"
           verify_dir="$RUNNER_TEMP/appimage-verify"
           rm -rf "$verify_dir"
@@ -403,107 +344,222 @@ jobs:
           (
             cd "$verify_dir"
             "$appimage_abs" --appimage-extract >/dev/null
-            if [ ! -f squashfs-root/usr/lib/libjack.so.0 ]; then
-              echo "::error::libjack.so.0 was not bundled into squashfs-root/usr/lib/"
+
+            for required in \
+              squashfs-root/usr/bin/neomodern \
+              squashfs-root/usr/bin/data/icudtl.dat \
+              squashfs-root/usr/bin/lib/libapp.so \
+              squashfs-root/usr/lib/libjack.so.0 \
+              squashfs-root/usr/lib/libneomodern_bridge.so \
+              squashfs-root/usr/lib/libflutter_linux_gtk.so; do
+              if [ ! -e "$required" ]; then
+                echo "::error::Missing required file in AppImage: $required"
+                exit 1
+              fi
+            done
+
+            mpv_libs=(squashfs-root/usr/lib/libmpv.so*)
+            if [ "${#mpv_libs[@]}" -eq 0 ]; then
+              echo "::error::libmpv.so* was not bundled into squashfs-root/usr/lib/"
               exit 1
             fi
+
             ldd_out="$(env -u LD_LIBRARY_PATH ldd squashfs-root/usr/bin/neomodern)"
             echo "$ldd_out"
             if echo "$ldd_out" | grep -q "not found"; then
               echo "::error::Missing shared library dependencies in neomodern binary"
               exit 1
             fi
+
             expected_jack="$(readlink -f squashfs-root/usr/lib/libjack.so.0)"
             jack_resolved="$(echo "$ldd_out" | awk '/libjack\.so\.0[[:space:]]*=>/{print $3; exit}')"
             if [ -z "$jack_resolved" ] || [ "$(readlink -f "$jack_resolved" || true)" != "$expected_jack" ]; then
               echo "::error::neomodern did not resolve libjack.so.0 from bundled usr/lib (got: ${jack_resolved:-<empty>})"
               exit 1
             fi
-            for target in squashfs-root/usr/lib/libjack.so.0 squashfs-root/usr/lib/libmpv.so* squashfs-root/usr/lib/webkit2gtk-4.1/WebKitWebProcess; do
+
+            expected_lib_dir="$(readlink -f squashfs-root/usr/lib)"
+            mpv_resolved="$(echo "$ldd_out" | awk '/libmpv\.so\.[0-9]+[[:space:]]*=>/{print $3; exit}')"
+            if [ -z "$mpv_resolved" ]; then
+              echo "::error::neomodern did not link or resolve libmpv (got empty path)"
+              exit 1
+            fi
+            mpv_resolved_dir="$(dirname "$(readlink -f "$mpv_resolved" || true)")"
+            if [ "$mpv_resolved_dir" != "$expected_lib_dir" ]; then
+              echo "::error::neomodern did not resolve libmpv from bundled usr/lib (got: $mpv_resolved)"
+              exit 1
+            fi
+
+            for target in \
+              squashfs-root/usr/lib/libjack.so.0 \
+              squashfs-root/usr/lib/libmpv.so* \
+              squashfs-root/usr/lib/libneomodern_bridge.so \
+              squashfs-root/usr/lib/libflutter_linux_gtk.so; do
               [ -e "$target" ] || continue
-              if LD_LIBRARY_PATH="$PWD/squashfs-root/usr/lib:$PWD/squashfs-root/usr/lib/webkit2gtk-4.1" ldd "$target" | grep -q "not found"; then
+              if LD_LIBRARY_PATH="$PWD/squashfs-root/usr/lib" ldd "$target" | grep -q "not found"; then
                 echo "::error::Unresolved shared library in $target"
-                LD_LIBRARY_PATH="$PWD/squashfs-root/usr/lib:$PWD/squashfs-root/usr/lib/webkit2gtk-4.1" ldd "$target"
+                LD_LIBRARY_PATH="$PWD/squashfs-root/usr/lib" ldd "$target"
                 exit 1
               fi
             done
           )
           rm -rf "$verify_dir"
 
-      - name: Upload to the GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          dir="src-tauri/target/release/bundle/appimage"
-          staging="$RUNNER_TEMP/linux-assets"
-          mkdir -p "$staging"
-          cp "$dir"/*.AppImage "$staging"/
-          cp "$dir"/*.AppImage.sig "$staging"/ 2>/dev/null || true
-          (cd "$staging" && sha256sum *.AppImage > SHA256SUMS-linux.txt)
-          ls -lh "$staging"
-          gh release upload "$RELEASE_TAG" "$staging"/* --clobber
+      - name: Upload Linux release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-assets
+          path: ${{ runner.temp }}/linux-assets/*
+          if-no-files-found: error
 
-  updater-manifest:
-    name: Updater manifest (latest.json)
-    needs: [prepare, windows-release, linux-release]
+  android:
+    name: Android Release (arm64 APK)
+    needs: prepare
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Write and upload latest.json
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Rust Android target
+        run: rustup target add aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      - name: Point Gradle/Cargokit at Android NDK
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_VERSION=$(basename "$ANDROID_NDK_LATEST_HOME")" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.1'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Build arm64 APK
+        working-directory: flutter_app
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare.outputs.tag }}
+          BUILD_NAME: ${{ needs.prepare.outputs.build_name }}
+          BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
+        run: flutter build apk --release --target-platform android-arm64 --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
+
+      - name: Sign APK and generate checksum
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          tag="$TAG"
-          work="$RUNNER_TEMP/manifest"
-          mkdir -p "$work"
-          gh release download "$tag" --dir "$work" --pattern '*.sig' || true
-          if ! ls "$work"/*.sig >/dev/null 2>&1; then
-            echo "::warning::No updater signatures in $tag; latest.json is not published."
-            exit 0
+          out_dir="flutter_app/build/app/outputs/flutter-apk"
+          staging="$RUNNER_TEMP/android-assets"
+          rm -rf "$staging"
+          mkdir -p "$staging"
+
+          apk_in="$(find "$out_dir" -maxdepth 1 -name '*release*.apk' | head -n 1)"
+          if [ -z "$apk_in" ]; then
+            echo "::error::No release APK found in $out_dir"
+            exit 1
           fi
-          TAG="$tag" WORK="$work" REPO="$GITHUB_REPOSITORY" node -e '
-            const fs = require("fs"), path = require("path")
-            const { TAG, WORK, REPO } = process.env
-            const base = `https://github.com/${REPO}/releases/download/${TAG}/`
-            const platforms = {}
-            for (const sig of fs.readdirSync(WORK).filter((f) => f.endsWith(".sig"))) {
-              const file = sig.slice(0, -4)
-              const key = file.endsWith(".exe") ? "windows-x86_64"
-                : file.endsWith(".AppImage") ? "linux-x86_64" : null
-              if (!key) continue
-              platforms[key] = {
-                signature: fs.readFileSync(path.join(WORK, sig), "utf8").trim(),
-                url: base + encodeURIComponent(file),
-              }
-            }
-            const manifest = {
-              version: TAG.replace(/^v/, ""),
-              notes: `NeoModern ${TAG}`,
-              pub_date: new Date().toISOString(),
-              platforms,
-            }
-            fs.writeFileSync(path.join(WORK, "latest.json"), JSON.stringify(manifest, null, 2))
-            console.log(JSON.stringify(manifest, null, 2))
-          '
-          gh release upload "$tag" "$work/latest.json" --clobber
+
+          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          ks="$RUNNER_TEMP/release.jks"
+          base_name="NeoModern-${VERSION}-android-arm64"
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            for req in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+              if [ -z "${!req:-}" ]; then
+                echo "::error::$req must be set when ANDROID_KEYSTORE_BASE64 is configured"
+                exit 1
+              fi
+            done
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks"
+            apk_out="$staging/$base_name.apk"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; signing with a throwaway key (this APK cannot be updated in place)."
+            export ANDROID_KEYSTORE_PASSWORD="$(openssl rand -hex 16)"
+            export ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+            export ANDROID_KEY_ALIAS="throwaway"
+            keytool -genkeypair -keystore "$ks" -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+              -keypass "$ANDROID_KEY_PASSWORD" -alias "$ANDROID_KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=NeoModern test" >/dev/null
+            apk_out="$staging/$base_name-testkey.apk"
+          fi
+
+          "$tools/zipalign" -f -p 4 "$apk_in" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign \
+            --ks "$ks" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "$apk_out" \
+            "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify "$apk_out"
+          rm -f "$ks" "$RUNNER_TEMP/aligned.apk"
+
+          (cd "$staging" && sha256sum *.apk > SHA256SUMS-android.txt)
+          ls -lh "$staging"
+
+      - name: Upload Android release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-assets
+          path: ${{ runner.temp }}/android-assets/*
+          if-no-files-found: error
 
   publish:
-    name: Publish release
-    needs: [prepare, windows-release, android-release, linux-release, updater-manifest]
+    name: Publish GitHub Release
+    needs: [prepare, windows, linux, android]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
 
-      - name: Publish the draft
+      - name: Combine and verify checksums
+        run: |
+          set -euo pipefail
+          assets_dir="$RUNNER_TEMP/release-assets"
+          cd "$assets_dir"
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          ls -lh "$assets_dir"
+
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           set -euo pipefail
-          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
-            gh release edit "$TAG" --draft=false
+          assets_dir="$RUNNER_TEMP/release-assets"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$assets_dir"/* --clobber
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+              gh release edit "$TAG" --draft=false
+            fi
+          else
+            args=(
+              release create "$TAG"
+              "$assets_dir"/*
+              --title "NeoModern $TAG"
+              --target "$GITHUB_SHA"
+              --generate-notes
+            )
+            if [ "${PRERELEASE:-false}" = "true" ] || [[ "$TAG" == *-* ]]; then
+              args+=(--prerelease)
+            fi
+            gh "${args[@]}"
           fi

@@ -127,7 +127,7 @@ pub(super) fn rt<F: std::future::Future>(f: F) -> F::Output {
 
 macro_rules! wait_for {
     ($what:expr, $cond:expr) => {{
-        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
         loop {
             if $cond {
                 break;

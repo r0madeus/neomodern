@@ -1,13 +1,64 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/state/system_tools.dart';
 import 'package:neomodern/theme/app_theme.dart';
 
-class ExternalSourcesSettingsSection extends StatelessWidget {
-  const ExternalSourcesSettingsSection({super.key, required this.controller});
+class ExternalSourcesSettingsSection extends StatefulWidget {
+  const ExternalSourcesSettingsSection({
+    super.key,
+    required this.controller,
+    this.onDetectSystemTools,
+    this.onAttachDetectedTools,
+    this.isAndroidOverride,
+  });
 
   final PlayerController controller;
+  final DetectedSystemTools Function()? onDetectSystemTools;
+  final Future<void> Function(DetectedSystemTools tools)? onAttachDetectedTools;
+  final bool? isAndroidOverride;
+
+  @override
+  State<ExternalSourcesSettingsSection> createState() =>
+      _ExternalSourcesSettingsSectionState();
+}
+
+class _ExternalSourcesSettingsSectionState
+    extends State<ExternalSourcesSettingsSection> {
+  bool _attachingTools = false;
+
+  bool get _isAndroid => widget.isAndroidOverride ?? Platform.isAndroid;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_isAndroid &&
+        (widget.onDetectSystemTools != null ||
+            !widget.controller.systemToolsChecked)) {
+      widget.controller.refreshDetectedSystemTools(
+        detector: widget.onDetectSystemTools,
+        notify: false,
+      );
+    }
+  }
+
+  Future<void> _attachTools(DetectedSystemTools tools) async {
+    if (_attachingTools) return;
+    setState(() => _attachingTools = true);
+    try {
+      if (widget.onAttachDetectedTools != null) {
+        await widget.onAttachDetectedTools!(tools);
+      }
+      await widget.controller.attachDetectedSystemTools(tools);
+    } finally {
+      if (mounted) {
+        setState(() => _attachingTools = false);
+      }
+    }
+  }
 
   Future<void> _showAddDialog(BuildContext context) async {
     final nameCtrl = TextEditingController();
@@ -79,7 +130,7 @@ class ExternalSourcesSettingsSection extends StatelessWidget {
                         saving = true;
                         error = null;
                       });
-                      final err = await controller.addSourceProvider(
+                      final err = await widget.controller.addSourceProvider(
                         nameCtrl.text,
                         urlCtrl.text,
                       );
@@ -106,34 +157,202 @@ class ExternalSourcesSettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final providers = controller.sourceProviders;
+    final ctrl = widget.controller;
 
+    return ListenableBuilder(
+      listenable: ctrl,
+      builder: (context, _) {
+        final providers = ctrl.sourceProviders;
+        final showSystemToolsCard =
+            !_isAndroid && ctrl.hasUnconfiguredDetectedSystemTools;
+
+        return Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t('External Sources (HTTP/JSON)'),
+                          style: const TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          t('Optional external catalog and stream providers'),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => _showAddDialog(context),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: AppColors.canvas,
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 17),
+                    label: Text(
+                      t('Add Source'),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              if (showSystemToolsCard) ...[
+                const SizedBox(height: 14),
+                _SystemToolsSuggestionCard(
+                  tools: ctrl.detectedSystemTools,
+                  attaching: _attachingTools,
+                  onAttach: () => _attachTools(ctrl.detectedSystemTools),
+                  onDismiss: ctrl.dismissDetectedSystemTools,
+                ),
+              ],
+              const SizedBox(height: 14),
+              if (providers.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    t('No external sources configured. Add a neutral HTTP/JSON provider (e.g. self-hosted bridge) to search and stream external catalogs.'),
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                )
+              else
+                for (var i = 0; i < providers.length; i++) ...[
+                  if (i > 0) const Divider(height: 12, color: AppColors.border),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.hub_rounded,
+                          size: 18,
+                          color: AppColors.accent,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                providers[i].name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                providers[i].baseUrl,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: providers[i].enabled,
+                          onChanged: (enabled) => ctrl.toggleSourceProvider(
+                            providers[i].id,
+                            enabled,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Remove source',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                            color: AppColors.textSecondary,
+                          ),
+                          onPressed: () =>
+                              ctrl.removeSourceProvider(providers[i].id),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SystemToolsSuggestionCard extends StatelessWidget {
+  const _SystemToolsSuggestionCard({
+    required this.tools,
+    required this.attaching,
+    required this.onAttach,
+    required this.onDismiss,
+  });
+
+  final DetectedSystemTools tools;
+  final bool attaching;
+  final VoidCallback onAttach;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.accent.withAlpha(90)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const Icon(
+                Icons.terminal_rounded,
+                size: 18,
+                color: AppColors.accent,
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      t('External Sources (HTTP/JSON)'),
+                      t('Detected on this system: {tools}', {
+                        'tools': tools.names.join(' / '),
+                      }),
                       style: const TextStyle(
-                        fontSize: 15.5,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
                     ),
+                    const SizedBox(height: 3),
                     Text(
-                      t('Optional external catalog and stream providers'),
+                      t('Add as external tool? NeoModern never downloads these tools automatically.'),
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -142,91 +361,30 @@ class ExternalSourcesSettingsSection extends StatelessWidget {
                   ],
                 ),
               ),
-              FilledButton.icon(
-                onPressed: () => _showAddDialog(context),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                onPressed: attaching ? null : onAttach,
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.accent,
                   foregroundColor: AppColors.canvas,
                 ),
-                icon: const Icon(Icons.add_rounded, size: 17),
-                label: Text(
-                  t('Add Source'),
+                child: Text(
+                  t('Add detected tools'),
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
+              TextButton(
+                onPressed: attaching ? null : onDismiss,
+                child: Text(t('Dismiss')),
+              ),
             ],
           ),
-          const SizedBox(height: 14),
-          if (providers.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                t('No external sources configured. Add a neutral HTTP/JSON provider (e.g. self-hosted bridge) to search and stream external catalogs.'),
-                style: const TextStyle(
-                    fontSize: 13, color: AppColors.textSecondary),
-              ),
-            )
-          else
-            for (var i = 0; i < providers.length; i++) ...[
-              if (i > 0) const Divider(height: 12, color: AppColors.border),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.hub_rounded,
-                      size: 18,
-                      color: AppColors.accent,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            providers[i].name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            providers[i].baseUrl,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Switch(
-                      value: providers[i].enabled,
-                      onChanged: (enabled) => controller.toggleSourceProvider(
-                        providers[i].id,
-                        enabled,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Remove source',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(
-                        Icons.delete_outline_rounded,
-                        size: 18,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: () =>
-                          controller.removeSourceProvider(providers[i].id),
-                    ),
-                  ],
-                ),
-              ),
-            ],
         ],
       ),
     );

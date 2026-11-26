@@ -40,7 +40,6 @@ class _SettingsViewState extends State<SettingsView> {
   double? _crossfadeDraft;
   double? _preampDraft;
   List<double>? _gainsDraft;
-  bool _installingTools = false;
   bool _savingCachedLyrics = false;
   bool _sharingLyrics = false;
 
@@ -138,27 +137,6 @@ class _SettingsViewState extends State<SettingsView> {
     final path = files.first.path;
     if (path != null && path.isNotEmpty) {
       await widget.controller.setOnlineYtdlpPath(path);
-    }
-  }
-
-  Future<void> _installMissingTools() async {
-    if (_installingTools) return;
-    final ctrl = widget.controller;
-    final status = ctrl.onlineStatus;
-    if (status == null || !status.canInstallTools) return;
-    setState(() => _installingTools = true);
-    try {
-      if (!status.ytdlpAvailable) {
-        await ctrl.installOnlineTool('ytdlp');
-      }
-      final afterYtdlp = ctrl.onlineStatus;
-      if (afterYtdlp == null || !afterYtdlp.ffmpegAvailable) {
-        await ctrl.installOnlineTool('ffmpeg');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _installingTools = false);
-      }
     }
   }
 
@@ -889,10 +867,6 @@ class _SettingsViewState extends State<SettingsView> {
 
   Widget _buildOnlineAndDownloadsSection(PlayerController ctrl) {
     final status = ctrl.onlineStatus;
-    final installProgress = ctrl.toolInstallProgress;
-    final installing = _installingTools || installProgress != null;
-    final hasMissingTool =
-        status != null && (!status.ytdlpAvailable || !status.ffmpegAvailable);
     final downloads = ctrl.downloads;
     final hasFinishedDownloads = downloads.any(
       (j) =>
@@ -902,29 +876,6 @@ class _SettingsViewState extends State<SettingsView> {
     return _SettingsSection(
       title: t('Online Search & Downloads'),
       subtitle: t('Manage yt-dlp, ffmpeg, download folder, and active transfers'),
-      trailing: (status?.canInstallTools == true && hasMissingTool) || installing
-          ? FilledButton.icon(
-              onPressed: installing ? null : _installMissingTools,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                foregroundColor: AppColors.canvas,
-              ),
-              icon: installing
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.canvas,
-                      ),
-                    )
-                  : const Icon(Icons.download_for_offline_rounded, size: 17),
-              label: Text(
-                installing ? t('Installing...') : t('Auto-install'),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            )
-          : null,
       children: [
         Wrap(
           spacing: 8,
@@ -945,10 +896,6 @@ class _SettingsViewState extends State<SettingsView> {
             ),
           ],
         ),
-        if (installProgress != null) ...[
-          const SizedBox(height: 12),
-          _ToolInstallProgressBanner(progress: installProgress),
-        ],
         const Divider(height: 22, color: AppColors.border),
         _SettingRow(
           title: t('Download Folder'),
@@ -971,7 +918,7 @@ class _SettingsViewState extends State<SettingsView> {
           title: t('Custom yt-dlp Path'),
           subtitle: status?.ytdlpPath?.isNotEmpty == true
               ? status!.ytdlpPath!
-              : t('Automatic (system PATH or managed tool)'),
+              : t('Manual executable path (optional)'),
           stackOnNarrow: true,
           trailing: Wrap(
             spacing: 8,
@@ -1609,67 +1556,6 @@ class _ToolBadge extends StatelessWidget {
               fontWeight: FontWeight.w500,
               color: available ? AppColors.textPrimary : AppColors.textSecondary,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ToolInstallProgressBanner extends StatelessWidget {
-  const _ToolInstallProgressBanner({required this.progress});
-
-  final ToolInstallState progress;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = progress.total;
-    final hasTotal = total != null && total > BigInt.zero;
-    final fraction = hasTotal
-        ? (progress.received.toDouble() / total.toDouble()).clamp(0.0, 1.0)
-        : null;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.canvas,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${progress.tool}: ${progress.stage}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              if (hasTotal)
-                Text(
-                  '${(fraction! * 100).round()}%',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.accent,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          LinearProgressIndicator(
-            value: fraction,
-            backgroundColor: AppColors.surface,
-            color: AppColors.accent,
           ),
         ],
       ),

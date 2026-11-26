@@ -102,6 +102,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
+      - uses: gradle/actions/setup-gradle@v4
+
       - name: Point Gradle/Cargokit at Android NDK
         run: |
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
@@ -120,4 +122,8 @@ jobs:
 
       - name: flutter build apk
         working-directory: flutter_app
-        run: flutter build apk --release --target-platform android-arm64
+        run: |
+          if ! flutter build apk --release --target-platform android-arm64; then
+            echo "::warning::flutter build apk failed; retrying once for transient Maven/Gradle errors..."
+            flutter build apk --release --target-platform android-arm64
+          fi

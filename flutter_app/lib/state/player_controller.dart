@@ -7,35 +7,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart' as rust_api;
+import 'package:neomodern/state/system_tools.dart';
 import 'package:path_provider/path_provider.dart';
-
-/// Progress state for installing managed online tools (`ytdlp`, `ffmpeg`).
-class ToolInstallState {
-  final String tool;
-  final String stage;
-  final BigInt received;
-  final BigInt? total;
-
-  const ToolInstallState({
-    required this.tool,
-    required this.stage,
-    required this.received,
-    this.total,
-  });
-
-  @override
-  int get hashCode => Object.hash(tool, stage, received, total);
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ToolInstallState &&
-          runtimeType == other.runtimeType &&
-          tool == other.tool &&
-          stage == other.stage &&
-          received == other.received &&
-          total == other.total;
-}
 
 class PlayerController extends ChangeNotifier {
   static const int _pageSize = 100;
@@ -135,9 +108,12 @@ class PlayerController extends ChangeNotifier {
   List<UiDownloadJob> _downloads = const [];
   UiNetSettings? _netSettings;
   UiArtistScanProgress? _artistScanProgress;
-  ToolInstallState? _toolInstallProgress;
   UiUpdateInfo? _updateInfo;
   bool _checkingUpdate = false;
+  DetectedSystemTools _detectedSystemTools = const DetectedSystemTools();
+  bool _systemToolsChecked = false;
+  bool _systemToolsDismissed = false;
+  bool _systemToolsAttached = false;
 
   // Profiles, Sync, Party Queue, External Sources, and Backups
   UiProfilesState? _profilesState;
@@ -202,9 +178,22 @@ class PlayerController extends ChangeNotifier {
   List<UiDownloadJob> get downloads => _downloads;
   UiNetSettings? get netSettings => _netSettings;
   UiArtistScanProgress? get artistScanProgress => _artistScanProgress;
-  ToolInstallState? get toolInstallProgress => _toolInstallProgress;
   UiUpdateInfo? get updateInfo => _updateInfo;
   bool get checkingUpdate => _checkingUpdate;
+  DetectedSystemTools get detectedSystemTools => _detectedSystemTools;
+  bool get systemToolsChecked => _systemToolsChecked;
+  bool get systemToolsPromptDismissed => _systemToolsDismissed;
+  bool get systemToolsAttached => _systemToolsAttached;
+  bool get hasUnconfiguredDetectedSystemTools {
+    if (Platform.isAndroid ||
+        _systemToolsDismissed ||
+        _systemToolsAttached) {
+      return false;
+    }
+    final ytdlpConfigured = _onlineStatus?.ytdlpPath?.isNotEmpty == true;
+    if (ytdlpConfigured) return false;
+    return _detectedSystemTools.hasAny;
+  }
 
   UiProfilesState? get profilesState => _profilesState;
   bool get isProfileLocked => _profilesState?.locked ?? false;
@@ -272,6 +261,7 @@ class PlayerController extends ChangeNotifier {
 
       _initialized = true;
       _initError = null;
+      refreshDetectedSystemTools(notify: false);
       notifyListeners();
 
       unawaited(refreshOnlineStatus());
@@ -351,23 +341,8 @@ class PlayerController extends ChangeNotifier {
         if (!running) {
           unawaited(refreshArtistEnrichStatus());
         }
-      case UiEvent_ToolInstallProgress(
-          :final tool,
-          :final stage,
-          :final received,
-          :final total,
-        ):
-        if (stage == 'done') {
-          _toolInstallProgress = null;
-        } else {
-          _toolInstallProgress = ToolInstallState(
-            tool: tool,
-            stage: stage,
-            received: received,
-            total: total,
-          );
-        }
-        notifyListeners();
+      case UiEvent_ToolInstallProgress():
+        break;
       case UiEvent_Error(:final field0):
         _lastError = field0;
         notifyListeners();
@@ -2004,19 +1979,13 @@ class PlayerController extends ChangeNotifier {
   }
 
   // Online Search, Playback, Tools & Downloads
-  Future<void> _runOnlineStatusCmd(
-    Future<UiOnlineStatus> Function() fn, {
-    bool clearInstallProgress = false,
-  }) async {
+  Future<void> _runOnlineStatusCmd(Future<UiOnlineStatus> Function() fn) async {
     if (!_initialized) return;
     try {
       _onlineStatus = await fn();
     } catch (e) {
       _lastError = e.toString();
     } finally {
-      if (clearInstallProgress) {
-        _toolInstallProgress = null;
-      }
       notifyListeners();
     }
   }
@@ -2030,10 +1999,36 @@ class PlayerController extends ChangeNotifier {
   Future<void> setOnlineYtdlpPath(String? path) =>
       _runOnlineStatusCmd(() => onlineSetYtdlpPath(path: path));
 
-  Future<void> installOnlineTool(String tool) => _runOnlineStatusCmd(
-        () => onlineInstallTool(tool: tool),
-        clearInstallProgress: true,
-      );
+  /// Scans `PATH` (read-only) for pre-installed `yt-dlp` / `ffmpeg`.
+  void refreshDetectedSystemTools({
+    DetectedSystemTools Function()? detector,
+    bool notify = true,
+  }) {
+    _detectedSystemTools = (detector ?? detectSystemToolsOnPath)();
+    _systemToolsChecked = true;
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  /// Attaches user-approved system tools without downloading anything.
+  Future<void> attachDetectedSystemTools([
+    DetectedSystemTools? overrideTools,
+  ]) async {
+    final tools = overrideTools ?? _detectedSystemTools;
+    if (tools.ytdlpPath != null &&
+        _onlineStatus?.ytdlpPath?.isNotEmpty != true) {
+      await setOnlineYtdlpPath(tools.ytdlpPath);
+    }
+    _systemToolsAttached = true;
+    notifyListeners();
+  }
+
+  /// Dismisses the opt-in system tool suggestion card.
+  void dismissDetectedSystemTools() {
+    _systemToolsDismissed = true;
+    notifyListeners();
+  }
 
   Future<UiOnlineSearchResult> searchOnline(String query) {
     if (!_initialized) {

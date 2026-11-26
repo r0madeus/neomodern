@@ -80,7 +80,7 @@ jobs:
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
   windows:
-    name: Windows Release (x64 zip)
+    name: Windows Release (x64 setup + zip)
     needs: prepare
     runs-on: windows-latest
     steps:
@@ -115,7 +115,7 @@ jobs:
           flutter build windows --release --build-name="$env:BUILD_NAME" --build-number="$env:BUILD_NUMBER"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Package portable zip and generate checksum
+      - name: Package NSIS installer, portable zip, and checksums
         shell: pwsh
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -142,9 +142,9 @@ jobs:
             }
           }
 
-          $baseName = "NeoModern-$($env:VERSION)-windows-x64"
+          $ver = $env:VERSION
           $stageRoot = Join-Path $env:RUNNER_TEMP 'windows-stage'
-          $stageDir = Join-Path $stageRoot $baseName
+          $stageDir = Join-Path $stageRoot "NeoModern-$ver-windows-x64"
           $outDir = Join-Path $env:RUNNER_TEMP 'windows-assets'
           Remove-Item -Path $stageRoot, $outDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $stageDir, $outDir -Force | Out-Null
@@ -152,13 +152,38 @@ jobs:
           Copy-Item -Path (Join-Path $releaseDir '*') -Destination $stageDir -Recurse -Force
           Get-ChildItem -Path $stageDir -Include '*.pdb', '*.lib', '*.exp' -Recurse -File | Remove-Item -Force
 
-          $zipName = "$baseName.zip"
+          $zipName = "NeoModern_${ver}_windows-x64-portable.zip"
           $zipPath = Join-Path $outDir $zipName
           Compress-Archive -Path $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
 
-          $hash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $makensis = (Get-Command makensis -ErrorAction SilentlyContinue)?.Source
+          if (-not $makensis -and (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) {
+            $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          }
+          if (-not $makensis) {
+            choco install nsis -y
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $makensis = (Get-Command makensis -ErrorAction SilentlyContinue)?.Source
+            if (-not $makensis) {
+              $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+            }
+          }
+          if (-not (Test-Path $makensis)) {
+            throw "makensis.exe not found after installation"
+          }
+
+          $setupName = "NeoModern_${ver}_x64-setup.exe"
+          $setupPath = Join-Path $outDir $setupName
+          $sourceAbs = (Resolve-Path $stageDir).Path
+          & $makensis "/DVERSION=$ver" "/DSOURCE_DIR=$sourceAbs" "/DOUTFILE=$setupPath" 'scripts\installer.nsi'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $checksumLines = foreach ($artifact in @($setupName, $zipName)) {
+            $hash = (Get-FileHash -Path (Join-Path $outDir $artifact) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $artifact"
+          }
           $checksumPath = Join-Path $outDir 'SHA256SUMS-windows.txt'
-          [IO.File]::WriteAllText($checksumPath, "$hash  $zipName`n", [Text.UTF8Encoding]::new($false))
+          [IO.File]::WriteAllText($checksumPath, (($checksumLines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
           Get-ChildItem -Path $outDir
 
       - name: Upload Windows release artifact

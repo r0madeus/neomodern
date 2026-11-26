@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/state/system_tools.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/backup_settings_section.dart';
 import 'package:neomodern/ui/genre_view.dart';
@@ -357,7 +360,10 @@ void main() {
       MaterialApp(
         theme: AppTheme.dark(),
         home: Scaffold(
-          body: ExternalSourcesSettingsSection(controller: ctrl),
+          body: ExternalSourcesSettingsSection(
+            controller: ctrl,
+            onDetectSystemTools: () => const DetectedSystemTools(),
+          ),
         ),
       ),
     );
@@ -369,6 +375,8 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(find.text('Add detected tools'), findsNothing);
+    expect(find.text('Auto-install'), findsNothing);
   });
 
   testWidgets('ProfileBadgeButton and QrMatrixView render cleanly',
@@ -964,5 +972,201 @@ void main() {
     expect(appliedFolderId, 7);
     expect(appliedNewPath, r'D:\New\Music');
     expect(poppedResult?.rewrittenTracks, BigInt.from(45));
+  });
+
+  test('detectSystemToolsOnPath finds tools on PATH read-only', () async {
+    final tempDir = await Directory.systemTemp.createTemp('neomodern_path_test_');
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    final ytdlpFile = File('${tempDir.path}${Platform.pathSeparator}yt-dlp.exe');
+    final ffmpegFile = File('${tempDir.path}${Platform.pathSeparator}ffmpeg.exe');
+    await ytdlpFile.writeAsString('');
+    await ffmpegFile.writeAsString('');
+
+    final detected = detectSystemToolsOnPath(
+      pathEnv: '${tempDir.path};C:\\NonExistentDir',
+      isWindows: true,
+      isAndroid: false,
+    );
+    expect(detected.ytdlpPath, ytdlpFile.path);
+    expect(detected.ffmpegPath, ffmpegFile.path);
+    expect(detected.names, ['yt-dlp', 'ffmpeg']);
+
+    final androidDetected = detectSystemToolsOnPath(
+      pathEnv: tempDir.path,
+      isWindows: true,
+      isAndroid: true,
+    );
+    expect(androidDetected.hasAny, isFalse);
+
+    final emptyDetected = detectSystemToolsOnPath(
+      pathEnv: '',
+      isWindows: true,
+      isAndroid: false,
+    );
+    expect(emptyDetected.hasAny, isFalse);
+  });
+
+  testWidgets(
+      'ExternalSourcesSettingsSection shows opt-in card for detected PATH tools and attaches on accept',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+
+    DetectedSystemTools? attached;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ExternalSourcesSettingsSection(
+              controller: ctrl,
+              isAndroidOverride: false,
+              onDetectSystemTools: () => const DetectedSystemTools(
+                ytdlpPath: r'C:\Tools\yt-dlp.exe',
+                ffmpegPath: r'C:\Tools\ffmpeg.exe',
+              ),
+              onAttachDetectedTools: (tools) async {
+                attached = tools;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Detected on this system: yt-dlp / ffmpeg'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Add as external tool? NeoModern never downloads these tools automatically.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Add detected tools'), findsOneWidget);
+    expect(find.text('Dismiss'), findsOneWidget);
+    expect(find.text('Auto-install'), findsNothing);
+
+    await tester.tap(find.text('Add detected tools'));
+    await tester.pumpAndSettle();
+
+    expect(attached?.ytdlpPath, r'C:\Tools\yt-dlp.exe');
+    expect(attached?.ffmpegPath, r'C:\Tools\ffmpeg.exe');
+    expect(
+      find.text('Detected on this system: yt-dlp / ffmpeg'),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+      'ExternalSourcesSettingsSection dismisses opt-in card and stays hidden on Android',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+    var attachCalled = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ExternalSourcesSettingsSection(
+              controller: ctrl,
+              isAndroidOverride: false,
+              onDetectSystemTools: () => const DetectedSystemTools(
+                ytdlpPath: r'C:\Tools\yt-dlp.exe',
+              ),
+              onAttachDetectedTools: (_) async {
+                attachCalled = true;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Detected on this system: yt-dlp'), findsOneWidget);
+    await tester.tap(find.text('Dismiss'));
+    await tester.pumpAndSettle();
+
+    expect(attachCalled, isFalse);
+    expect(find.text('Detected on this system: yt-dlp'), findsNothing);
+
+    final androidCtrl = PlayerController();
+    addTearDown(androidCtrl.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ExternalSourcesSettingsSection(
+              controller: androidCtrl,
+              isAndroidOverride: true,
+              onDetectSystemTools: () => const DetectedSystemTools(
+                ytdlpPath: r'C:\Tools\yt-dlp.exe',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Detected on this system: yt-dlp'), findsNothing);
+  });
+
+  testWidgets(
+      'SettingsView never shows Auto-install and displays manual picker + detected opt-in card',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+    ctrl.refreshDetectedSystemTools(
+      detector: () => const DetectedSystemTools(
+        ytdlpPath: r'C:\Tools\yt-dlp.exe',
+        ffmpegPath: r'C:\Tools\ffmpeg.exe',
+      ),
+      notify: false,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SettingsView(controller: ctrl),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Auto-install'), findsNothing);
+    expect(find.text('Installing...'), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text('Browse...'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Browse...'), findsOneWidget);
+    expect(find.text('Auto-install'), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text('Detected on this system: yt-dlp / ffmpeg'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      find.text('Detected on this system: yt-dlp / ffmpeg'),
+      findsOneWidget,
+    );
+    expect(find.text('Add detected tools'), findsOneWidget);
   });
 }

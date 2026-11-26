@@ -534,12 +534,14 @@ jobs:
           assets_dir="$RUNNER_TEMP/release-assets"
           cd "$assets_dir"
           cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          rm -f SHA256SUMS-*.txt
           sha256sum -c SHA256SUMS.txt
           ls -lh "$assets_dir"
 
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |

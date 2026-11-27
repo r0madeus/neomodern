@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/track_menu.dart';
@@ -128,7 +129,7 @@ class _HomeViewState extends State<HomeView> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(
-                  Icons.library_music_rounded,
+                  AppIcons.library,
                   size: 32,
                   color: AppTheme.accent400,
                 ),
@@ -230,7 +231,7 @@ class _HomeViewState extends State<HomeView> {
                       vertical: 10,
                     ),
                   ),
-                  icon: const Icon(Icons.shuffle_rounded, size: 16),
+                  icon: const Icon(AppIcons.shuffle, size: 16),
                   label: Text(
                     t('Shuffle'),
                     style: const TextStyle(
@@ -254,7 +255,7 @@ class _HomeViewState extends State<HomeView> {
                       ),
                     ),
                     icon: const Icon(
-                      Icons.bar_chart_rounded,
+                      AppIcons.recap,
                       size: 16,
                       color: AppTheme.accent400,
                     ),
@@ -272,7 +273,7 @@ class _HomeViewState extends State<HomeView> {
                   tooltip: t('Refresh Home'),
                   onPressed: ctrl.refreshHome,
                   icon: const Icon(
-                    Icons.refresh_rounded,
+                    AppIcons.refresh,
                     size: 18,
                     color: AppTheme.zinc400,
                   ),

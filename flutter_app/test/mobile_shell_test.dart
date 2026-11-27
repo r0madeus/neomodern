@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/platform/android_audio_bridge.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/genre_view.dart';
 import 'package:neomodern/ui/mobile/mini_player.dart';
@@ -368,21 +369,21 @@ void main() {
 
     expect(find.text('Midnight City'), findsOneWidget);
     expect(find.text('M83'), findsWidgets);
-    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    expect(find.byIcon(AppIcons.pause), findsOneWidget);
     expect(find.byType(AnimatedSaveButton), findsOneWidget);
-    expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+    expect(find.byIcon(AppIcons.saveAdd), findsOneWidget);
 
     // Play/Pause
-    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.tap(find.byIcon(AppIcons.pause));
     await tester.pump();
     expect(ctrl.togglePauseCalls, 1);
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byIcon(AppIcons.play), findsOneWidget);
 
     // Save button
     await tester.tap(find.byType(AnimatedSaveButton));
     await tester.pump();
     expect(ctrl.toggleFavoriteCalls, 1);
-    expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
+    expect(find.byIcon(AppIcons.saveChecked), findsOneWidget);
 
     // Horizontal swipe next & previous
     await tester.fling(
@@ -528,7 +529,7 @@ void main() {
     expect(ctrl.seekCalls, [80.0]);
 
     // Toggle play/pause inside full-screen lyrics
-    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.tap(find.byIcon(AppIcons.pause));
     await tester.pump();
     expect(ctrl.togglePauseCalls, 1);
 
@@ -782,7 +783,7 @@ void main() {
     expect(find.text('Nightcall'), findsOneWidget);
 
     // Pop back to Search tab
-    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.tap(find.byIcon(AppIcons.back));
     await tester.pumpAndSettle();
     expect(find.byType(MobileGenrePage), findsNothing);
 

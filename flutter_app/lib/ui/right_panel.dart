@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
@@ -195,7 +196,7 @@ class _NowPlayingSideState extends State<_NowPlayingSide> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             icon: const Icon(
-              Icons.close_rounded,
+              AppIcons.close,
               size: 18,
               color: AppTheme.zinc400,
             ),
@@ -465,7 +466,7 @@ class _NowPlayingSideState extends State<_NowPlayingSide> {
                                     ),
                                     alignment: Alignment.center,
                                     child: const Icon(
-                                      Icons.play_arrow_rounded,
+                                      AppIcons.play,
                                       size: 22,
                                       color: Colors.white,
                                     ),
@@ -807,7 +808,7 @@ class _LyricsSideState extends State<_LyricsSide> {
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 28),
                   icon: const Icon(
-                    Icons.close_rounded,
+                    AppIcons.close,
                     size: 18,
                     color: AppTheme.zinc400,
                   ),
@@ -918,7 +919,7 @@ class _LyricsSideState extends State<_LyricsSide> {
                     constraints:
                         const BoxConstraints(minWidth: 28, minHeight: 28),
                     icon: Icon(
-                      Icons.attach_file_rounded,
+                      AppIcons.attach,
                       size: 17,
                       color: Colors.white.withValues(alpha: 0.80),
                     ),
@@ -942,7 +943,7 @@ class _LyricsSideState extends State<_LyricsSide> {
                             ),
                           )
                         : Icon(
-                            Icons.cloud_upload_outlined,
+                            AppIcons.cloud,
                             size: 17,
                             color: Colors.white.withValues(alpha: 0.80),
                           ),
@@ -957,7 +958,7 @@ class _LyricsSideState extends State<_LyricsSide> {
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 28),
                   icon: Icon(
-                    Icons.refresh_rounded,
+                    AppIcons.refresh,
                     size: 17,
                     color: Colors.white.withValues(alpha: 0.80),
                   ),
@@ -971,7 +972,7 @@ class _LyricsSideState extends State<_LyricsSide> {
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 28),
                   icon: Icon(
-                    Icons.close_rounded,
+                    AppIcons.close,
                     size: 18,
                     color: Colors.white.withValues(alpha: 0.80),
                   ),
@@ -1033,7 +1034,7 @@ class _LyricsSideState extends State<_LyricsSide> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 ),
-                icon: const Icon(Icons.refresh_rounded, size: 15),
+                icon: const Icon(AppIcons.refresh, size: 15),
                 label: Text(t('Retry')),
               ),
             ],
@@ -1346,7 +1347,7 @@ class _QueueSideState extends State<_QueueSide> {
                   constraints:
                       const BoxConstraints(minWidth: 28, minHeight: 28),
                   icon: const Icon(
-                    Icons.close_rounded,
+                    AppIcons.close,
                     size: 18,
                     color: AppTheme.zinc400,
                   ),
@@ -1945,7 +1946,7 @@ class _QueueUpNextRowState extends State<_QueueUpNextRow> {
                         minHeight: 26,
                       ),
                       icon: const Icon(
-                        Icons.close_rounded,
+                        AppIcons.close,
                         size: 16,
                         color: AppTheme.zinc400,
                       ),

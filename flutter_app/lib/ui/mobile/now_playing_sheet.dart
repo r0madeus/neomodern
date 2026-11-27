@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/mobile/cover_tint.dart';
@@ -385,7 +386,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                           tooltip: t('Close'),
                                           padding: const EdgeInsets.all(12),
                                           icon: const Icon(
-                                            Icons.keyboard_arrow_down_rounded,
+                                            AppIcons.chevronDown,
                                             size: 28,
                                             color: Colors.white,
                                           ),
@@ -660,7 +661,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                         MainAxisAlignment.spaceBetween,
                                     children: [
                                       _ActiveDotIconButton(
-                                        icon: Icons.shuffle_rounded,
+                                        icon: AppIcons.shuffle,
                                         size: 24,
                                         active: snap.shuffle,
                                         tooltip: t(
@@ -674,7 +675,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                         tooltip: t('Previous'),
                                         padding: const EdgeInsets.all(8),
                                         icon: const Icon(
-                                          Icons.skip_previous_rounded,
+                                          AppIcons.previous,
                                           size: 40,
                                           color: Colors.white,
                                         ),
@@ -694,7 +695,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                         tooltip: t('Next'),
                                         padding: const EdgeInsets.all(8),
                                         icon: const Icon(
-                                          Icons.skip_next_rounded,
+                                          AppIcons.next,
                                           size: 40,
                                           color: Colors.white,
                                         ),
@@ -702,8 +703,8 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                       ),
                                       _ActiveDotIconButton(
                                         icon: snap.repeat == 'one'
-                                            ? Icons.repeat_one_rounded
-                                            : Icons.repeat_rounded,
+                                            ? AppIcons.repeatOne
+                                            : AppIcons.repeat,
                                         size: 24,
                                         active: snap.repeat != 'off',
                                         tooltip: t('Repeat: ${snap.repeat}'),
@@ -725,7 +726,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                           tooltip: t('Lyrics'),
                                           padding: const EdgeInsets.all(12),
                                           icon: Icon(
-                                            Icons.lyrics_rounded,
+                                            AppIcons.lyrics,
                                             size: 24,
                                             color: Colors.white
                                                 .withValues(alpha: 0.80),
@@ -740,7 +741,7 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                           tooltip: t('Queue'),
                                           padding: const EdgeInsets.all(12),
                                           icon: Icon(
-                                            Icons.queue_music_rounded,
+                                            AppIcons.queue,
                                             size: 24,
                                             color: Colors.white
                                                 .withValues(alpha: 0.80),
@@ -832,7 +833,7 @@ class _WhiteCirclePlayButtonState extends State<_WhiteCirclePlayButton> {
             ),
             alignment: Alignment.center,
             child: Icon(
-              widget.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              widget.playing ? AppIcons.pause : AppIcons.play,
               size: widget.iconSize,
               color: AppTheme.zinc950,
             ),
@@ -1056,7 +1057,7 @@ class _BelowFoldLyricsCardState extends State<_BelowFoldLyricsCard> {
                   ),
                   if (current != null)
                     _DarkCircleButton(
-                      icon: Icons.refresh_rounded,
+                      icon: AppIcons.refresh,
                       tooltip: t('Refresh lyrics'),
                       onPressed: ctrl.lyricsLoading ? null : ctrl.refreshLyrics,
                     ),
@@ -1399,7 +1400,7 @@ class _MobileSleepTimerButtonState extends State<_MobileSleepTimerButton> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.bedtime_rounded,
+                    AppIcons.sleepTimer,
                     size: 24,
                     color: active ? AppTheme.accent400 : AppTheme.zinc100,
                   ),
@@ -1435,7 +1436,7 @@ class _MobileSleepTimerButtonState extends State<_MobileSleepTimerButton> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.bedtime_rounded,
+                AppIcons.sleepTimer,
                 size: 24,
                 color: active
                     ? AppTheme.accent400
@@ -1600,7 +1601,7 @@ class _FullScreenLyricsPageState extends State<FullScreenLyricsPage> {
                             tooltip: t('Close'),
                             padding: const EdgeInsets.all(12),
                             icon: const Icon(
-                              Icons.keyboard_arrow_down_rounded,
+                              AppIcons.chevronDown,
                               size: 28,
                               color: Colors.white,
                             ),
@@ -1643,7 +1644,7 @@ class _FullScreenLyricsPageState extends State<FullScreenLyricsPage> {
                               tooltip: t('Refresh lyrics'),
                               padding: const EdgeInsets.all(12),
                               icon: Icon(
-                                Icons.refresh_rounded,
+                                AppIcons.refresh,
                                 size: 24,
                                 color: Colors.white.withValues(alpha: 0.80),
                               ),
@@ -2201,7 +2202,7 @@ class _QueueSheetState extends State<QueueSheet> {
                                             children: [
                                               if (item.queued) ...[
                                                 const Icon(
-                                                  Icons.queue_music_rounded,
+                                                  AppIcons.queue,
                                                   size: 14,
                                                   color: AppTheme.accent400,
                                                 ),
@@ -2230,7 +2231,7 @@ class _QueueSheetState extends State<QueueSheet> {
                                       IconButton(
                                         tooltip: t('Remove from queue'),
                                         icon: const Icon(
-                                          Icons.close_rounded,
+                                          AppIcons.close,
                                           size: 18,
                                           color: AppTheme.zinc400,
                                         ),
@@ -2252,7 +2253,7 @@ class _QueueSheetState extends State<QueueSheet> {
                     children: [
                       Expanded(
                         child: _QueueBottomCard(
-                          icon: Icons.shuffle_rounded,
+                          icon: AppIcons.shuffle,
                           label: t('Shuffle'),
                           active: snap.shuffle,
                           onTap: ctrl.toggleShuffle,
@@ -2262,8 +2263,8 @@ class _QueueSheetState extends State<QueueSheet> {
                       Expanded(
                         child: _QueueBottomCard(
                           icon: snap.repeat == 'one'
-                              ? Icons.repeat_one_rounded
-                              : Icons.repeat_rounded,
+                              ? AppIcons.repeatOne
+                              : AppIcons.repeat,
                           label: snap.repeat == 'one'
                               ? 'Repeat one'
                               : snap.repeat == 'all'

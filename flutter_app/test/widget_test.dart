@@ -8,6 +8,7 @@ import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/state/system_tools.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/backup_settings_section.dart';
 import 'package:neomodern/ui/genre_view.dart';
@@ -186,7 +187,7 @@ void main() {
     expect(find.text('Now Playing'), findsOneWidget);
     expect(find.text('Nothing playing'), findsOneWidget);
     expect(find.text('Now playing'), findsNothing);
-    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.tap(find.byIcon(AppIcons.close));
     expect(closeCount, 1);
 
     // Queue mode header: ONLY 2 underline tabs ("Queue" and "Recently played") + Close (X).

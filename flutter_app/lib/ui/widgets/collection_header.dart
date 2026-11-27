@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
 
@@ -113,7 +114,7 @@ class _CollectionHeaderState extends State<CollectionHeader> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.upload_rounded,
+                          AppIcons.upload,
                           size: 24,
                           color: AppTheme.editorialPaper,
                         ),
@@ -268,8 +269,8 @@ class _CollectionHeaderState extends State<CollectionHeader> {
                                 alignment: Alignment.center,
                                 child: Icon(
                                   widget.isPinned!
-                                      ? Icons.push_pin_rounded
-                                      : Icons.push_pin_outlined,
+                                      ? AppIcons.pin
+                                      : AppIcons.pin,
                                   size: 19,
                                   color: widget.isPinned!
                                       ? AppTheme.accent400
@@ -304,7 +305,7 @@ class _CollectionHeaderState extends State<CollectionHeader> {
                                 ),
                                 alignment: Alignment.center,
                                 child: Icon(
-                                  Icons.more_horiz_rounded,
+                                  AppIcons.more,
                                   size: 20,
                                   color: _moreHovered
                                       ? AppTheme.editorialPaper
@@ -348,7 +349,7 @@ class _CollectionHeaderState extends State<CollectionHeader> {
                         ),
                         alignment: Alignment.center,
                         child: Icon(
-                          Icons.arrow_back_rounded,
+                          AppIcons.back,
                           size: 18,
                           color: _backHovered
                               ? AppTheme.editorialPaper
@@ -413,8 +414,8 @@ class _EditorialPlayPillState extends State<_EditorialPlayPill> {
                 children: [
                   Icon(
                     widget.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
+                        ? AppIcons.pause
+                        : AppIcons.play,
                     size: 18,
                     color: AppTheme.editorialInk,
                   ),
@@ -483,7 +484,7 @@ class _HeaderShuffleButton extends StatelessWidget {
                 alignment: Alignment.center,
                 children: [
                   Icon(
-                    Icons.shuffle_rounded,
+                    AppIcons.shuffle,
                     size: 19,
                     color: active
                         ? AppTheme.accent400

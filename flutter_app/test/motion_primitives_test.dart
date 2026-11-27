@@ -3,6 +3,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
@@ -299,7 +300,7 @@ void main() {
         ),
       );
 
-      expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.saveAdd), findsOneWidget);
       var opacity =
           tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity));
       expect(opacity.opacity, 0.0);
@@ -311,7 +312,7 @@ void main() {
 
       await tester.tap(find.byType(AnimatedSaveButton));
       await tester.pump();
-      expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.saveChecked), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 280));
     });
 
@@ -341,11 +342,11 @@ void main() {
         ),
       );
 
-      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.play), findsOneWidget);
       await tester.tap(find.byType(HoverPlayButton));
       await tester.pumpAndSettle();
       expect(tapped, 1);
-      expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.pause), findsOneWidget);
     });
 
     testWidgets('ViewFadeIn fades child into view',
@@ -443,7 +444,7 @@ void main() {
       expect(find.text('7'), findsOneWidget);
       expect(find.text('Weekly Favorites'), findsOneWidget);
       expect(find.text('On Repeat'), findsOneWidget);
-      expect(find.byIcon(Icons.repeat_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.repeat), findsOneWidget);
       expect(find.text('Rediscover'), findsOneWidget);
       expect(find.text('✦'), findsNWidgets(3));
       expect(find.text('MIX'), findsOneWidget);

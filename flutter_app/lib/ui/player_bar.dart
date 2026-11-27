@@ -5,6 +5,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/right_panel.dart';
@@ -156,7 +157,7 @@ class _PlayerBarState extends State<PlayerBar> {
                                               ),
                                               alignment: Alignment.center,
                                               child: const Icon(
-                                                Icons.smart_display_outlined,
+                                                AppIcons.nowPlayingPanel,
                                                 size: 20,
                                                 color: Colors.white,
                                               ),
@@ -234,7 +235,7 @@ class _PlayerBarState extends State<PlayerBar> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           _DotToggleButton(
-                            icon: Icons.shuffle_rounded,
+                            icon: AppIcons.shuffle,
                             size: 20,
                             active: snap.shuffle,
                             tooltip: snap.shuffle
@@ -244,7 +245,7 @@ class _PlayerBarState extends State<PlayerBar> {
                           ),
                           const SizedBox(width: 8),
                           _TransportIconButton(
-                            icon: Icons.skip_previous_rounded,
+                            icon: AppIcons.previous,
                             size: 24,
                             tooltip: t('Previous'),
                             onPressed: hasTrack ? ctrl.previous : null,
@@ -258,7 +259,7 @@ class _PlayerBarState extends State<PlayerBar> {
                           ),
                           const SizedBox(width: 8),
                           _TransportIconButton(
-                            icon: Icons.skip_next_rounded,
+                            icon: AppIcons.next,
                             size: 24,
                             tooltip: t('Next'),
                             onPressed: hasTrack ? ctrl.next : null,
@@ -266,8 +267,8 @@ class _PlayerBarState extends State<PlayerBar> {
                           const SizedBox(width: 8),
                           _DotToggleButton(
                             icon: snap.repeat == 'one'
-                                ? Icons.repeat_one_rounded
-                                : Icons.repeat_rounded,
+                                ? AppIcons.repeatOne
+                                : AppIcons.repeat,
                             size: 20,
                             active: snap.repeat != 'off',
                             tooltip: t('Repeat: ${snap.repeat}'),
@@ -350,7 +351,7 @@ class _PlayerBarState extends State<PlayerBar> {
                         const SizedBox(width: 4),
                       ],
                       _PanelModeIconButton(
-                        icon: Icons.lyrics_rounded,
+                        icon: AppIcons.lyrics,
                         tooltip: t('Lyrics'),
                         active: widget.rightPanelOpen &&
                             widget.rightPanelTab == RightPanelTab.lyrics,
@@ -359,7 +360,7 @@ class _PlayerBarState extends State<PlayerBar> {
                       ),
                       const SizedBox(width: 2),
                       _PanelModeIconButton(
-                        icon: Icons.queue_music_rounded,
+                        icon: AppIcons.queue,
                         tooltip: t('Queue'),
                         active: widget.rightPanelOpen &&
                             widget.rightPanelTab == RightPanelTab.queue,
@@ -368,7 +369,7 @@ class _PlayerBarState extends State<PlayerBar> {
                       ),
                       const SizedBox(width: 2),
                       _PanelModeIconButton(
-                        icon: Icons.smart_display_outlined,
+                        icon: AppIcons.nowPlayingPanel,
                         tooltip: t('Now playing'),
                         active: widget.rightPanelOpen &&
                             widget.rightPanelTab == RightPanelTab.nowPlaying,
@@ -378,10 +379,10 @@ class _PlayerBarState extends State<PlayerBar> {
                       const SizedBox(width: 4),
                       _TransportIconButton(
                         icon: snap.volume == 0
-                            ? Icons.volume_off_rounded
+                            ? AppIcons.volumeMute
                             : snap.volume < 50
-                                ? Icons.volume_down_rounded
-                                : Icons.volume_up_rounded,
+                                ? AppIcons.volumeLow
+                                : AppIcons.volumeHigh,
                         size: 20,
                         tooltip: snap.volume == 0 ? t('Unmute') : t('Mute'),
                         onPressed: ctrl.toggleMute,
@@ -759,7 +760,7 @@ class _SleepTimerPillState extends State<_SleepTimerPill> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
-              Icons.bedtime_rounded,
+              AppIcons.sleepTimer,
               size: 16,
               color: AppTheme.accent300,
             ),

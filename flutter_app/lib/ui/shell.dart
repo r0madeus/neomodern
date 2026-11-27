@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/albums_view.dart';
 import 'package:neomodern/ui/artists_view.dart';
@@ -435,7 +436,7 @@ class _AppShellState extends State<AppShell> {
                                   iconSize: 16,
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
-                                  icon: const Icon(Icons.close_rounded),
+                                  icon: const Icon(AppIcons.close),
                                   onPressed: ctrl.clearError,
                                 ),
                               ],
@@ -695,7 +696,7 @@ class _Sidebar extends StatelessWidget {
 
           // Primary Nav
           _NavItem(
-            icon: Icons.home_rounded,
+            icon: AppIcons.home,
             label: t('Home'),
             collapsed: collapsed,
             active: selected == NavTab.home,
@@ -703,7 +704,7 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           _NavItem(
-            icon: Icons.music_note_rounded,
+            icon: AppIcons.songs,
             label: t('Songs'),
             collapsed: collapsed,
             active: selected == NavTab.songs,
@@ -713,7 +714,7 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           _NavItem(
-            icon: Icons.album_rounded,
+            icon: AppIcons.albums,
             label: t('Albums'),
             collapsed: collapsed,
             active: selected == NavTab.albums && externalAlbumId == null,
@@ -723,7 +724,7 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           _NavItem(
-            icon: Icons.person_rounded,
+            icon: AppIcons.artists,
             label: t('Artists'),
             collapsed: collapsed,
             active: selected == NavTab.artists,
@@ -731,7 +732,7 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           _NavItem(
-            icon: Icons.search_rounded,
+            icon: AppIcons.search,
             label: t('Search'),
             collapsed: collapsed,
             active: selected == NavTab.search,
@@ -755,7 +756,7 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           _NavItem(
-            icon: Icons.bar_chart_rounded,
+            icon: AppIcons.recap,
             label: t('Recap'),
             collapsed: collapsed,
             active: selected == NavTab.recap,
@@ -764,7 +765,7 @@ class _Sidebar extends StatelessWidget {
           if (controller.hasEnabledSourceProviders) ...[
             const SizedBox(height: 2),
             _NavItem(
-              icon: Icons.hub_rounded,
+              icon: AppIcons.sources,
               label: t('Sources'),
               collapsed: collapsed,
               active: selected == NavTab.sources,
@@ -812,7 +813,7 @@ class _Sidebar extends StatelessWidget {
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.queue_music_rounded,
+                              AppIcons.queue,
                               size: 16,
                               color: AppTheme.zinc400,
                             ),
@@ -839,7 +840,7 @@ class _Sidebar extends StatelessWidget {
                     child: const Padding(
                       padding: EdgeInsets.all(4),
                       child: Icon(
-                        Icons.add_rounded,
+                        AppIcons.plus,
                         size: 18,
                         color: AppTheme.zinc400,
                       ),
@@ -1001,7 +1002,7 @@ class _Sidebar extends StatelessWidget {
             ),
 
           _NavItem(
-            icon: Icons.tune_rounded,
+            icon: AppIcons.settings,
             label: t('Settings'),
             collapsed: collapsed,
             active: selected == NavTab.settings,
@@ -1038,7 +1039,7 @@ class _Sidebar extends StatelessWidget {
             borderRadius: 6,
             iconSize: 20,
             fallbackIcon:
-                isAlbum ? Icons.album_rounded : Icons.queue_music_rounded,
+                isAlbum ? AppIcons.albums : AppIcons.queue,
           );
 
     final active = isAlbum
@@ -1140,7 +1141,7 @@ class _CollapseButtonState extends State<_CollapseButton> {
             child: Icon(
               widget.collapsed
                   ? Icons.chevron_right_rounded
-                  : Icons.view_sidebar_outlined,
+                  : AppIcons.sidebarClose,
               size: 16,
               color: _hovered ? AppTheme.zinc100 : AppTheme.zinc400,
             ),
@@ -1327,7 +1328,7 @@ class _SidebarLibraryRowState extends State<_SidebarLibraryRow> {
                   ),
                   alignment: Alignment.center,
                   child: Icon(
-                    showPause ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    showPause ? AppIcons.pause : AppIcons.play,
                     size: 24,
                     color: Colors.white,
                   ),
@@ -1383,7 +1384,7 @@ class _SidebarLibraryRowState extends State<_SidebarLibraryRow> {
                             children: [
                               if (widget.isPinned) ...[
                                 const Icon(
-                                  Icons.push_pin_rounded,
+                                  AppIcons.pin,
                                   size: 14,
                                   color: AppTheme.accent400,
                                 ),
@@ -1409,7 +1410,7 @@ class _SidebarLibraryRowState extends State<_SidebarLibraryRow> {
                     if (widget.isPlayingContext) ...[
                       const SizedBox(width: 6),
                       const Icon(
-                        Icons.volume_up_rounded,
+                        AppIcons.volumeHigh,
                         size: 16,
                         color: AppTheme.accent400,
                       ),

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 
@@ -464,8 +465,8 @@ class _AnimatedSaveButtonState extends State<AnimatedSaveButton>
                 },
                 child: Icon(
                   widget.isSaved
-                      ? Icons.check_circle_rounded
-                      : Icons.add_circle_outline_rounded,
+                      ? AppIcons.saveChecked
+                      : AppIcons.saveAdd,
                   size: widget.size,
                   color: widget.isSaved ? savedColor : unsavedColor,
                 ),
@@ -578,8 +579,8 @@ class _HoverPlayButtonState extends State<HoverPlayButton> {
                   alignment: Alignment.center,
                   child: Icon(
                     widget.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
+                        ? AppIcons.pause
+                        : AppIcons.play,
                     size: effectiveIconSize,
                     color: AppTheme.editorialInk,
                   ),
@@ -920,7 +921,7 @@ class MixCoverArt extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: Icon(
-              Icons.repeat_rounded,
+              AppIcons.repeat,
               size: 0.065 * w,
               color: Colors.white,
             ),
@@ -1116,7 +1117,7 @@ class MixCoverArt extends StatelessWidget {
                     )
                   : Center(
                       child: Icon(
-                        Icons.music_note_rounded,
+                        AppIcons.songs,
                         size: 0.24 * w,
                         color: Colors.white,
                       ),

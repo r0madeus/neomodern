@@ -523,12 +523,12 @@ class _NowPlayingSheetState extends State<NowPlayingSheet>
                                                   t('Nothing playing'),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 22,
-                                                fontWeight: FontWeight.w700,
-                                                height: 1.2,
+                                              style: AppTheme.displayStyle(
+                                                fontSize: 26,
+                                                fontWeight: FontWeight.w400,
+                                                height: 1.15,
                                                 color: hasTrack
-                                                    ? Colors.white
+                                                    ? AppTheme.editorialPaper
                                                     : AppTheme.zinc400,
                                               ),
                                             ),
@@ -1166,10 +1166,13 @@ class _BelowFoldLyricsCardState extends State<_BelowFoldLyricsCard> {
                   duration: const Duration(milliseconds: 240),
                   child: Text(
                     display,
-                    style: TextStyle(
-                      fontSize: blank ? 16 : 27,
-                      height: 1.15,
-                      fontWeight: FontWeight.w700,
+                    style: AppTheme.displayStyle(
+                      fontSize: blank ? 16 : 25,
+                      height: 1.22,
+                      fontWeight: FontWeight.w400,
+                      fontStyle: isActive && !blank
+                          ? FontStyle.italic
+                          : FontStyle.normal,
                       color: color,
                     ),
                   ),

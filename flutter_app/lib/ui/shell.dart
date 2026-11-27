@@ -670,16 +670,16 @@ class _Sidebar extends StatelessWidget {
                 children: [
                   const _LogoBadge(),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'NeoModern',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.zinc100,
-                        letterSpacing: -0.3,
+                      style: AppTheme.displayStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.editorialPaper,
+                        letterSpacing: 0.1,
                       ),
                     ),
                   ),
@@ -738,13 +738,13 @@ class _Sidebar extends StatelessWidget {
             trailingWidget: Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
               decoration: BoxDecoration(
-                color: AppTheme.zinc800.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: AppTheme.zinc700),
+                color: AppTheme.zinc800.withValues(alpha: 0.60),
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: AppTheme.hairline),
               ),
-              child: const Text(
+              child: Text(
                 'Ctrl K',
-                style: TextStyle(
+                style: AppTheme.monoStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w500,
                   color: AppTheme.zinc400,
@@ -785,11 +785,9 @@ class _Sidebar extends StatelessWidget {
                       t('YOUR LIBRARY'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.7,
-                        color: AppTheme.zinc400,
+                      style: AppTheme.kickerStyle(
+                        fontSize: 10.5,
+                        color: AppTheme.zinc500,
                       ),
                     ),
                   ),
@@ -1182,11 +1180,11 @@ class _NavItemState extends State<_NavItem> {
   @override
   Widget build(BuildContext context) {
     final bg = widget.active
-        ? AppTheme.accent950.withValues(alpha: 0.50)
+        ? Colors.white.withValues(alpha: 0.04)
         : (_hovered
-            ? AppTheme.zinc800.withValues(alpha: 0.70)
+            ? Colors.white.withValues(alpha: 0.04)
             : Colors.transparent);
-    final fg = widget.active ? AppTheme.accent100 : AppTheme.zinc300;
+    final fg = widget.active ? AppTheme.editorialPaper : AppTheme.zinc400;
 
     Widget tile = MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -1196,10 +1194,25 @@ class _NavItemState extends State<_NavItem> {
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: EdgeInsets.fromLTRB(
+            widget.collapsed ? 8 : (widget.active ? 10 : 8),
+            6,
+            8,
+            6,
+          ),
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: widget.active && !widget.collapsed
+                ? BorderRadius.zero
+                : BorderRadius.circular(3),
+            border: widget.active && !widget.collapsed
+                ? const Border(
+                    left: BorderSide(
+                      color: AppTheme.editorialPaper,
+                      width: 2,
+                    ),
+                  )
+                : null,
           ),
           child: Row(
             mainAxisAlignment: widget.collapsed
@@ -1209,7 +1222,7 @@ class _NavItemState extends State<_NavItem> {
               Icon(
                 widget.icon,
                 size: 18,
-                color: fg.withValues(alpha: 0.90),
+                color: fg.withValues(alpha: 0.92),
               ),
               if (!widget.collapsed) ...[
                 const SizedBox(width: 10),
@@ -1219,9 +1232,9 @@ class _NavItemState extends State<_NavItem> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13.5,
                       fontWeight:
-                          widget.active ? FontWeight.w500 : FontWeight.w400,
+                          widget.active ? FontWeight.w600 : FontWeight.w400,
                       color: fg,
                     ),
                   ),
@@ -1231,10 +1244,9 @@ class _NavItemState extends State<_NavItem> {
                 else if (widget.trailing != null)
                   Text(
                     widget.trailing!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.zinc400,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                    style: AppTheme.monoStyle(
+                      fontSize: 11,
+                      color: AppTheme.zinc500,
                     ),
                   ),
               ],

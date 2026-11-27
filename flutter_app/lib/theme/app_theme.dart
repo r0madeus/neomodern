@@ -2,27 +2,27 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-/// Legacy color aliases preserved for existing views while aligning values
-/// with the cool-tinted zinc & soft-blue accent palette from `app.css`.
+/// Legacy color aliases preserved for existing views while adopting the
+/// Editorial Catalog warm-neutral ink & paper palette (K30).
 class AppColors {
   AppColors._();
 
   static const Color canvas = AppTheme.zinc950;
-  static const Color sidebar = Color(0xFF14161D);
+  static const Color sidebar = Color(0xFF131315);
   static const Color surface = AppTheme.zinc900;
   static const Color surfaceHover = AppTheme.zinc800;
   static const Color border = AppTheme.zinc800;
 
   static const Color accent = AppTheme.accent500;
-  static const Color accentMuted = Color(0x267CAAFF);
+  static const Color accentMuted = Color(0x24A3C4A8);
 
   static const Color textPrimary = AppTheme.zinc100;
   static const Color textSecondary = AppTheme.zinc400;
   static const Color textMuted = AppTheme.zinc500;
-  static const Color danger = Color(0xFFE06C75);
+  static const Color danger = Color(0xFFD96B70);
 }
 
-/// Cover-derived tint colors matching `src/lib/tint.ts`.
+/// Cover-derived tint colors with restrained editorial ink-wash saturation.
 @immutable
 class CoverTint {
   const CoverTint({
@@ -41,9 +41,9 @@ class CoverTint {
   final Color dim;
 
   static const CoverTint neutral = CoverTint(
-    top: Color(0xFF3D414E),
-    surface: Color(0xFF262933),
-    dim: Color(0xFF9FA3B2),
+    top: Color(0xFF232327),
+    surface: Color(0xFF17171A),
+    dim: Color(0xFFA7A49C),
   );
 
   @override
@@ -59,8 +59,8 @@ class CoverTint {
   int get hashCode => Object.hash(top, surface, dim);
 }
 
-/// Converts a 32-bit ARGB color integer into clamped HSL cover tint colors,
-/// matching `tintFrom` in `src/lib/tint.ts`.
+/// Converts a 32-bit ARGB color integer into restrained editorial ink-wash
+/// HSL cover tint colors so cover art colors the atmosphere without harsh blocks.
 CoverTint tintFromArgb(int? argb) {
   if (argb == null) return CoverTint.neutral;
 
@@ -90,13 +90,13 @@ CoverTint tintFromArgb(int? argb) {
     h = (h * 60.0 + 360.0) % 360.0;
   }
 
-  final sat = math.min(s, 0.5);
-  if (sat < 0.08) return CoverTint.neutral;
+  final sat = math.min(s, 0.28);
+  if (sat < 0.06) return CoverTint.neutral;
 
   return CoverTint(
-    top: HSLColor.fromAHSL(1.0, h, sat, 0.30).toColor(),
-    surface: HSLColor.fromAHSL(1.0, h, sat * 0.9, 0.24).toColor(),
-    dim: HSLColor.fromAHSL(1.0, h, math.min(sat + 0.15, 0.6), 0.72).toColor(),
+    top: HSLColor.fromAHSL(1.0, h, sat, 0.19).toColor(),
+    surface: HSLColor.fromAHSL(1.0, h, sat * 0.85, 0.14).toColor(),
+    dim: HSLColor.fromAHSL(1.0, h, math.min(sat + 0.08, 0.36), 0.70).toColor(),
   );
 }
 
@@ -105,21 +105,21 @@ CoverTint tintFromColor(Color? color) =>
     color == null ? CoverTint.neutral : tintFromArgb(color.toARGB32());
 
 const List<Color> kGenrePalette = [
-  Color(0xFF0D7A5F),
-  Color(0xFFA1263D),
-  Color(0xFF3E46A3),
-  Color(0xFFA65A18),
-  Color(0xFF146C78),
-  Color(0xFF6D2D80),
-  Color(0xFF1E5C99),
-  Color(0xFF9C2754),
-  Color(0xFF456E28),
-  Color(0xFF32506D),
-  Color(0xFFB0442A),
-  Color(0xFF58339C),
+  Color(0xFF1F4E46),
+  Color(0xFF6E2D3A),
+  Color(0xFF343B6E),
+  Color(0xFF6B4626),
+  Color(0xFF214E58),
+  Color(0xFF4F2F5E),
+  Color(0xFF244566),
+  Color(0xFF6B2B47),
+  Color(0xFF39522B),
+  Color(0xFF2E4254),
+  Color(0xFF73392A),
+  Color(0xFF42316E),
 ];
 
-/// Deterministic Spotify-style card background color for a genre or mix label,
+/// Deterministic editorial card background color for a genre or mix label,
 /// matching `genreColor` in `src/lib/genreColor.ts` using 32-bit FNV-1a.
 Color genreColor(String name) {
   final key = name.trim().toLowerCase();
@@ -137,43 +137,108 @@ Color genreColor(String name) {
 class AppTheme {
   AppTheme._();
 
-  // Accent scale (`src/app.css`)
-  static const Color accent50 = Color(0xFFF0F5FF);
-  static const Color accent100 = Color(0xFFE2ECFF);
-  static const Color accent200 = Color(0xFFC9DCFF);
-  static const Color accent300 = Color(0xFFA8C6FF);
-  static const Color accent400 = Color(0xFF92B8FF);
-  static const Color accent500 = Color(0xFF7CAAFF);
-  static const Color accent600 = Color(0xFF3A68D0);
-  static const Color accent700 = Color(0xFF335CC0);
-  static const Color accent800 = Color(0xFF2B4B99);
-  static const Color accent900 = Color(0xFF263F78);
-  static const Color accent950 = Color(0xFF172647);
+  // Bundled offline SIL OFL font families (K30 Editorial Catalog)
+  static const String fontSans = 'EditorialSans';
+  static const String fontSerif = 'EditorialSerif';
+  static const String fontMono = 'EditorialMono';
 
-  // Cool-tinted zinc scale (`src/app.css`)
-  static const Color zinc50 = Color(0xFFFAFAFB);
-  static const Color zinc100 = Color(0xFFF3F4F6);
-  static const Color zinc200 = Color(0xFFE5E6EB);
-  static const Color zinc300 = Color(0xFFD2D4DC);
-  static const Color zinc400 = Color(0xFF9FA3B2);
-  static const Color zinc500 = Color(0xFF71768A);
-  static const Color zinc600 = Color(0xFF535868);
-  static const Color zinc700 = Color(0xFF3D414E);
-  static const Color zinc800 = Color(0xFF262933);
-  static const Color zinc900 = Color(0xFF1A1C23);
-  static const Color zinc950 = Color(0xFF111318);
+  // Editorial paper & ink signature tones
+  static const Color editorialPaper = Color(0xFFF5F3EE);
+  static const Color editorialInk = Color(0xFF101012);
+  static const Color hairline = Color(0x1CFFFFFF);
+  static const Color hairlineStrong = Color(0x36FFFFFF);
 
-  static const Color danger = Color(0xFFE06C75);
+  // Restrained sage-mineral accent scale (distinct from Spotify green & SaaS blue)
+  static const Color accent50 = Color(0xFFF3F6F3);
+  static const Color accent100 = Color(0xFFE3EBE4);
+  static const Color accent200 = Color(0xFFC8D7CA);
+  static const Color accent300 = Color(0xFFB3CBB7);
+  static const Color accent400 = Color(0xFFBDD4C0);
+  static const Color accent500 = Color(0xFFA3C4A8);
+  static const Color accent600 = Color(0xFF2D4F3E);
+  static const Color accent700 = Color(0xFF244032);
+  static const Color accent800 = Color(0xFF1C3227);
+  static const Color accent900 = Color(0xFF17261F);
+  static const Color accent950 = Color(0xFF121A16);
+
+  // Warm-neutral editorial ink & paper neutral scale
+  static const Color zinc50 = Color(0xFFF7F5F0);
+  static const Color zinc100 = Color(0xFFF5F3EE);
+  static const Color zinc200 = Color(0xFFE5E1D8);
+  static const Color zinc300 = Color(0xFFD5D2CA);
+  static const Color zinc400 = Color(0xFFA7A49C);
+  static const Color zinc500 = Color(0xFF75726B);
+  static const Color zinc600 = Color(0xFF55534E);
+  static const Color zinc700 = Color(0xFF333338);
+  static const Color zinc800 = Color(0xFF232327);
+  static const Color zinc900 = Color(0xFF17171A);
+  static const Color zinc950 = Color(0xFF101012);
+
+  static const Color danger = Color(0xFFD96B70);
+
+  /// Editorial serif style for display titles, section headers, and active lyrics.
+  static TextStyle displayStyle({
+    double fontSize = 24,
+    FontWeight fontWeight = FontWeight.w400,
+    FontStyle fontStyle = FontStyle.normal,
+    Color color = zinc100,
+    double? height,
+    double letterSpacing = -0.2,
+  }) {
+    return TextStyle(
+      fontFamily: fontSerif,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      fontStyle: fontStyle,
+      color: color,
+      height: height,
+      letterSpacing: letterSpacing,
+    );
+  }
+
+  /// Tabular monospace style for track numbers, durations, and technical metadata.
+  static TextStyle monoStyle({
+    double fontSize = 11.5,
+    FontWeight fontWeight = FontWeight.w400,
+    Color color = zinc400,
+    double letterSpacing = 0.0,
+    double? height,
+  }) {
+    return TextStyle(
+      fontFamily: fontMono,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      color: color,
+      letterSpacing: letterSpacing,
+      height: height,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+  }
+
+  /// Uppercase tracked catalog kicker label (e.g. `ALBUM · 2018`, `LIBRARY`).
+  static TextStyle kickerStyle({
+    double fontSize = 10.5,
+    Color color = zinc500,
+    FontWeight fontWeight = FontWeight.w500,
+  }) {
+    return TextStyle(
+      fontFamily: fontMono,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      color: color,
+      letterSpacing: 1.2,
+    );
+  }
 
   static ThemeData get darkTheme => dark();
   static ThemeData get lightTheme => light();
 
   static ThemeData dark() {
     const colorScheme = ColorScheme.dark(
-      primary: accent500,
-      onPrimary: zinc950,
-      secondary: accent400,
-      onSecondary: zinc950,
+      primary: editorialPaper,
+      onPrimary: editorialInk,
+      secondary: accent500,
+      onSecondary: editorialInk,
       surface: zinc900,
       onSurface: zinc100,
       outline: zinc800,
@@ -184,6 +249,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: fontSans,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: zinc950,
       cardColor: zinc900,
@@ -192,21 +258,25 @@ class AppTheme {
       highlightColor: Colors.transparent,
       textTheme: const TextTheme(
         headlineSmall: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
+          fontFamily: fontSerif,
+          fontSize: 25,
+          fontWeight: FontWeight.w400,
           color: zinc100,
-          letterSpacing: -0.3,
+          letterSpacing: -0.2,
         ),
         titleMedium: TextStyle(
+          fontFamily: fontSans,
           fontSize: 15,
           fontWeight: FontWeight.w600,
           color: zinc100,
         ),
         bodyMedium: TextStyle(
+          fontFamily: fontSans,
           fontSize: 13.5,
           color: zinc100,
         ),
         bodySmall: TextStyle(
+          fontFamily: fontSans,
           fontSize: 12,
           color: zinc400,
         ),
@@ -219,60 +289,61 @@ class AppTheme {
             const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         hintStyle: const TextStyle(color: zinc500, fontSize: 13),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
           borderSide: const BorderSide(color: zinc800),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
           borderSide: const BorderSide(color: zinc800),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: accent500),
+          borderRadius: BorderRadius.circular(4),
+          borderSide: const BorderSide(color: zinc400),
         ),
       ),
       sliderTheme: SliderThemeData(
-        trackHeight: 4,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+        trackHeight: 3.5,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5.5),
         overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-        activeTrackColor: accent500,
+        activeTrackColor: editorialPaper,
         inactiveTrackColor: zinc700,
-        thumbColor: Colors.white,
-        overlayColor: accent500.withValues(alpha: 0.18),
+        thumbColor: editorialPaper,
+        overlayColor: editorialPaper.withValues(alpha: 0.16),
       ),
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.hovered) ||
               states.contains(WidgetState.dragged)) {
-            return const Color(0x61FFFFFF);
+            return const Color(0x5CEAE6DC);
           }
-          return const Color(0x33FFFFFF);
+          return const Color(0x2CEAE6DC);
         }),
         trackColor: WidgetStateProperty.all(Colors.transparent),
         trackBorderColor: WidgetStateProperty.all(Colors.transparent),
         radius: const Radius.circular(9999),
-        thickness: WidgetStateProperty.all(4),
+        thickness: WidgetStateProperty.all(3.5),
       ),
     );
   }
 
   static ThemeData light() {
     const colorScheme = ColorScheme.light(
-      primary: accent600,
-      onPrimary: Colors.white,
-      secondary: accent500,
+      primary: editorialInk,
+      onPrimary: editorialPaper,
+      secondary: accent600,
       onSecondary: Colors.white,
       surface: Colors.white,
       onSurface: zinc950,
       surfaceContainerHighest: zinc100,
       outline: zinc200,
-      error: Color(0xFFDC2626),
+      error: Color(0xFFB9383E),
       onError: Colors.white,
     );
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: fontSans,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: zinc50,
       cardColor: Colors.white,
@@ -281,53 +352,57 @@ class AppTheme {
       highlightColor: Colors.transparent,
       textTheme: const TextTheme(
         headlineSmall: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
+          fontFamily: fontSerif,
+          fontSize: 25,
+          fontWeight: FontWeight.w400,
           color: zinc950,
-          letterSpacing: -0.3,
+          letterSpacing: -0.2,
         ),
         titleMedium: TextStyle(
+          fontFamily: fontSans,
           fontSize: 15,
           fontWeight: FontWeight.w600,
           color: zinc950,
         ),
         bodyMedium: TextStyle(
+          fontFamily: fontSans,
           fontSize: 13.5,
           color: zinc950,
         ),
         bodySmall: TextStyle(
+          fontFamily: fontSans,
           fontSize: 12,
           color: zinc600,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: zinc100,
+        fillColor: Colors.white,
         isDense: true,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         hintStyle: const TextStyle(color: zinc500, fontSize: 13),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
           borderSide: const BorderSide(color: zinc200),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
           borderSide: const BorderSide(color: zinc200),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: accent600),
+          borderRadius: BorderRadius.circular(4),
+          borderSide: const BorderSide(color: editorialInk),
         ),
       ),
       sliderTheme: SliderThemeData(
-        trackHeight: 4,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+        trackHeight: 3.5,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5.5),
         overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-        activeTrackColor: accent600,
+        activeTrackColor: editorialInk,
         inactiveTrackColor: zinc300,
-        thumbColor: Colors.white,
-        overlayColor: accent600.withValues(alpha: 0.16),
+        thumbColor: editorialInk,
+        overlayColor: editorialInk.withValues(alpha: 0.14),
       ),
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -340,7 +415,7 @@ class AppTheme {
         trackColor: WidgetStateProperty.all(Colors.transparent),
         trackBorderColor: WidgetStateProperty.all(Colors.transparent),
         radius: const Radius.circular(9999),
-        thickness: WidgetStateProperty.all(4),
+        thickness: WidgetStateProperty.all(3.5),
       ),
     );
   }

@@ -63,11 +63,38 @@ void main() {
     expect(parseProfileColor('invalid'), AppColors.accent);
   });
 
-  testWidgets('AppTheme.dark configures expected dark canvas',
+  testWidgets('AppTheme configures Editorial Catalog dark and light tokens',
       (WidgetTester tester) async {
+    final dark = AppTheme.dark();
+    final light = AppTheme.light();
+
+    expect(dark.scaffoldBackgroundColor, AppTheme.zinc950);
+    expect(dark.colorScheme.primary, AppTheme.editorialPaper);
+    expect(dark.colorScheme.onPrimary, AppTheme.editorialInk);
+    expect(dark.textTheme.headlineSmall?.fontFamily, AppTheme.fontSerif);
+    expect(dark.textTheme.bodyMedium?.fontFamily, AppTheme.fontSans);
+
+    expect(light.scaffoldBackgroundColor, AppTheme.zinc50);
+    expect(light.colorScheme.primary, AppTheme.editorialInk);
+    expect(light.textTheme.headlineSmall?.fontFamily, AppTheme.fontSerif);
+
+    final display = AppTheme.displayStyle(fontSize: 32);
+    expect(display.fontFamily, AppTheme.fontSerif);
+    final mono = AppTheme.monoStyle();
+    expect(mono.fontFamily, AppTheme.fontMono);
+    expect(mono.fontFeatures, contains(const FontFeature.tabularFigures()));
+    final kicker = AppTheme.kickerStyle();
+    expect(kicker.fontFamily, AppTheme.fontMono);
+
+    // Restrained cover tint should cap saturation at editorial ink-wash levels
+    final vibrantBlueTint = tintFromArgb(0xFF0055FF);
+    final hslTop = HSLColor.fromColor(vibrantBlueTint.top);
+    expect(hslTop.saturation, lessThanOrEqualTo(0.30));
+    expect(hslTop.lightness, lessThanOrEqualTo(0.22));
+
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.dark(),
+        theme: dark,
         home: const Scaffold(body: Text('NeoModern')),
       ),
     );

@@ -195,21 +195,21 @@ class _HomeViewState extends State<HomeView> {
               children: [
                 Text(
                   _greeting(),
-                  style: const TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.6,
-                    color: AppTheme.zinc50,
+                  style: AppTheme.displayStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: -0.4,
+                    color: AppTheme.editorialPaper,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(
                   t('{songs} songs · {albums} albums', {
                     'songs': ctrl.trackCount,
                     'albums': ctrl.albumCount,
                   }),
-                  style: const TextStyle(
-                    fontSize: 13.5,
+                  style: AppTheme.monoStyle(
+                    fontSize: 11.5,
                     color: AppTheme.zinc400,
                   ),
                 ),
@@ -222,8 +222,8 @@ class _HomeViewState extends State<HomeView> {
                   onPressed:
                       ctrl.trackCount > 0 ? () => _shuffleLibrary(ctrl) : null,
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.accent600,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppTheme.editorialPaper,
+                    foregroundColor: AppTheme.editorialInk,
                     shape: const StadiumBorder(),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -459,13 +459,21 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
-        color: AppTheme.zinc50,
-        letterSpacing: -0.3,
+    return Container(
+      padding: const EdgeInsets.only(bottom: 8),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: AppTheme.hairline),
+        ),
+      ),
+      child: Text(
+        title,
+        style: AppTheme.displayStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w400,
+          color: AppTheme.editorialPaper,
+          letterSpacing: -0.2,
+        ),
       ),
     );
   }

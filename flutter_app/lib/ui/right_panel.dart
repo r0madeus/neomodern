@@ -81,10 +81,10 @@ class _RightPanelState extends State<RightPanel>
 
     Widget panel = Container(
       width: widget.width,
-      decoration: BoxDecoration(
-        color: AppTheme.zinc900.withValues(alpha: 0.50),
+      decoration: const BoxDecoration(
+        color: AppColors.sidebar,
         border: Border(
-          left: BorderSide(color: AppTheme.zinc800.withValues(alpha: 0.80)),
+          left: BorderSide(color: AppTheme.hairline),
         ),
       ),
       child: switch (widget.activeTab) {
@@ -1137,10 +1137,13 @@ class _LyricsSideState extends State<_LyricsSide> {
                                 alignment: Alignment.centerLeft,
                                 child: AnimatedDefaultTextStyle(
                                   duration: const Duration(milliseconds: 300),
-                                  style: TextStyle(
-                                    fontSize: isBlank ? 18 : 24,
-                                    height: 1.24,
-                                    fontWeight: FontWeight.w700,
+                                  style: AppTheme.displayStyle(
+                                    fontSize: isBlank ? 18 : 22,
+                                    height: 1.28,
+                                    fontWeight: FontWeight.w400,
+                                    fontStyle: isActive && !isBlank
+                                        ? FontStyle.italic
+                                        : FontStyle.normal,
                                     color: color,
                                   ),
                                   child: Text(display),

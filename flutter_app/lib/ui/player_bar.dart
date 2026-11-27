@@ -56,11 +56,11 @@ class _PlayerBarState extends State<PlayerBar> {
     }
     final activeGlowColor = coverColor ?? _lastGlowColor;
 
-    final bgColor = AppTheme.zinc900.withValues(alpha: 0.95);
-    final borderColor = AppTheme.zinc800.withValues(alpha: 0.8);
+    const bgColor = AppColors.sidebar;
+    const borderColor = AppTheme.hairlineStrong;
 
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: bgColor,
         border: Border(top: BorderSide(color: borderColor)),
       ),
@@ -80,14 +80,14 @@ class _PlayerBarState extends State<PlayerBar> {
                         radius: 2.0,
                         colors: [
                           Color.fromARGB(
-                            56,
+                            24,
                             (activeGlowColor.r * 255).round() & 0xFF,
                             (activeGlowColor.g * 255).round() & 0xFF,
                             (activeGlowColor.b * 255).round() & 0xFF,
                           ),
                           Colors.transparent,
                         ],
-                        stops: const [0.0, 0.75],
+                        stops: const [0.0, 0.72],
                       ),
                     ),
                   ),
@@ -139,7 +139,7 @@ class _PlayerBarState extends State<PlayerBar> {
                                           CoverArt(
                                             path: ctrl.currentCoverPath,
                                             size: 48,
-                                            borderRadius: 6,
+                                            borderRadius: 2,
                                             iconSize: 22,
                                           ),
                                           AnimatedOpacity(
@@ -152,7 +152,7 @@ class _PlayerBarState extends State<PlayerBar> {
                                                 color: Colors.black
                                                     .withValues(alpha: 0.50),
                                                 borderRadius:
-                                                    BorderRadius.circular(6),
+                                                    BorderRadius.circular(2),
                                               ),
                                               alignment: Alignment.center,
                                               child: const Icon(
@@ -292,12 +292,9 @@ class _PlayerBarState extends State<PlayerBar> {
                                       ? formatDuration(clampedPos)
                                       : '--:--',
                                   textAlign: TextAlign.right,
-                                  style: const TextStyle(
-                                    fontSize: 12,
+                                  style: AppTheme.monoStyle(
+                                    fontSize: 11,
                                     color: AppTheme.zinc400,
-                                    fontFeatures: [
-                                      FontFeature.tabularFigures(),
-                                    ],
                                   ),
                                 ),
                               ),
@@ -326,12 +323,9 @@ class _PlayerBarState extends State<PlayerBar> {
                                   hasTrack
                                       ? formatDuration(duration)
                                       : '--:--',
-                                  style: const TextStyle(
-                                    fontSize: 12,
+                                  style: AppTheme.monoStyle(
+                                    fontSize: 11,
                                     color: AppTheme.zinc400,
-                                    fontFeatures: [
-                                      FontFeature.tabularFigures(),
-                                    ],
                                   ),
                                 ),
                               ),

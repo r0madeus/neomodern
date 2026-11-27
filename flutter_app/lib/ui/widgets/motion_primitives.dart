@@ -222,17 +222,17 @@ class _HoverSeekBarState extends State<HoverSeekBar> {
     final Color fillColor;
     final Color trackColor;
     if (widget.light) {
-      fillColor = Colors.white;
-      trackColor = Colors.white.withValues(alpha: 0.25);
+      fillColor = AppTheme.editorialPaper;
+      trackColor = AppTheme.editorialPaper.withValues(alpha: 0.24);
     } else if (isDark) {
       fillColor = (_hovered || _dragging) && _enabled
-          ? AppTheme.accent400
-          : AppTheme.accent500;
+          ? Colors.white
+          : AppTheme.editorialPaper;
       trackColor = AppTheme.zinc700;
     } else {
       fillColor = (_hovered || _dragging) && _enabled
-          ? AppTheme.accent500
-          : AppTheme.accent600;
+          ? AppTheme.editorialInk
+          : AppTheme.zinc700;
       trackColor = AppTheme.zinc300;
     }
 
@@ -562,13 +562,16 @@ class _HoverPlayButtonState extends State<HoverPlayButton> {
                   width: widget.size,
                   height: widget.size,
                   decoration: BoxDecoration(
-                    color: AppTheme.accent500,
+                    color: AppTheme.editorialPaper,
                     shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.12),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
                       ),
                     ],
                   ),
@@ -578,7 +581,7 @@ class _HoverPlayButtonState extends State<HoverPlayButton> {
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
                     size: effectiveIconSize,
-                    color: AppTheme.zinc950,
+                    color: AppTheme.editorialInk,
                   ),
                 ),
               ),

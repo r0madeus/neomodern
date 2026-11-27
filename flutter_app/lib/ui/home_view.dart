@@ -337,7 +337,7 @@ class _HomeViewState extends State<HomeView> {
           _SectionHeader(title: t('Daily Mixes')),
           const SizedBox(height: 12),
           SizedBox(
-            height: 244,
+            height: 274,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: mixes.length,

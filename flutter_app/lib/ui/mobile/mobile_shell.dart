@@ -939,20 +939,28 @@ class _HomeTabState extends State<_HomeTab> {
                 // Daily Mixes carousel
                 if (_filter == _HomeFilter.all || _filter == _HomeFilter.mixes)
                   if (feed != null && feed.mixes.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Text(
-                        'Daily Mixes',
-                        style: TextStyle(
-                          fontSize: 19,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.zinc50,
-                          letterSpacing: -0.3,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Container(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: AppTheme.hairline),
+                          ),
+                        ),
+                        child: Text(
+                          'Daily Mixes',
+                          style: AppTheme.displayStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w400,
+                            color: AppTheme.editorialPaper,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                       ),
                     ),
                     SizedBox(
-                      height: cardWidth + 58,
+                      height: cardWidth + 62,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -970,7 +978,7 @@ class _HomeTabState extends State<_HomeTab> {
                                   MixCoverArt(
                                     mix: mix,
                                     size: cardWidth,
-                                    borderRadius: 8,
+                                    borderRadius: 3,
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
@@ -1010,13 +1018,21 @@ class _HomeTabState extends State<_HomeTab> {
                     feed.recentlyPlayedAlbums.isNotEmpty) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Text(
-                      t('Recently Played'),
-                      style: const TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.zinc50,
-                        letterSpacing: -0.3,
+                    child: Container(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: AppTheme.hairline),
+                        ),
+                      ),
+                      child: Text(
+                        t('Recently Played'),
+                        style: AppTheme.displayStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w400,
+                          color: AppTheme.editorialPaper,
+                          letterSpacing: -0.2,
+                        ),
                       ),
                     ),
                   ),

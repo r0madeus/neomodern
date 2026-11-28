@@ -179,10 +179,39 @@ pub enum SourceProviderError {
     Unsupported(String),
 }
 
+/// Declares which operations an external [`SourceProvider`] supports.
+///
+/// Future external lyrics or metadata adapters plug into the same neutral
+/// `SourceProvider` interface by advertising their capabilities here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCapabilities {
+    pub search: bool,
+    pub stream: bool,
+    pub metadata: bool,
+    pub lyrics: bool,
+}
+
+impl Default for ProviderCapabilities {
+    fn default() -> Self {
+        Self {
+            search: true,
+            stream: true,
+            metadata: true,
+            lyrics: false,
+        }
+    }
+}
+
 /// Asynchronous interface implemented by an external audio source adapter.
 pub trait SourceProvider: Send + Sync {
     /// Unique identifier for this provider instance.
     fn id(&self) -> &str;
+
+    /// Declares supported operations for this provider.
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::default()
+    }
 
     /// Search for tracks matching `query`, returning at most `limit` results.
     fn search(
@@ -202,6 +231,21 @@ pub trait SourceProvider: Send + Sync {
         &self,
         external_id: &str,
     ) -> BoxFuture<'_, Result<ExternalTrack, SourceProviderError>>;
+
+    /// Optional hook for external lyrics providers (returns LRC or plain text).
+    fn fetch_lyrics(
+        &self,
+        _title: &str,
+        _artist: &str,
+        _album: Option<&str>,
+        _duration_ms: Option<u64>,
+    ) -> BoxFuture<'_, Result<Option<String>, SourceProviderError>> {
+        Box::pin(async {
+            Err(SourceProviderError::Unsupported(
+                "provider does not support lyrics lookup".to_owned(),
+            ))
+        })
+    }
 }
 
 /// Thread-safe registry of configured [`SourceProvider`] instances.

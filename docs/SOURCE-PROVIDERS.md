@@ -31,6 +31,12 @@ Users can add any provider from **Settings › External Sources** using its endp
     - `{"op":"fetchMetadata","externalId":"..."}`
   - Reads JSON from `stdout` matching `ExternalTrack[]` / `{"tracks":[...]}` (`search`), `ResolvedStream` (`resolveStream`), or `ExternalTrack` (`fetchMetadata`).
 
+## Core Modules vs. External Providers
+
+NeoModern follows a two-layer modular model (exposed together under **Settings › Modules & Extensions**):
+- **Core Modules (built-in, zero-config, toggleable):** Synced Lyrics (LRCLIB + optional NetEase fallback), Metadata & Artist Matching (MusicBrainz), LAN Sync & Phone Remote, Party Queue, and Release Update Checks. Every network-capable core module respects `NetPolicy` and offline mode.
+- **External Providers (`SourceProvider`):** User-configured `HttpJson`, `Subsonic`, and desktop `Cli` adapters. Each provider advertises `ProviderCapabilities` (`search`, `stream`, `metadata`, `lyrics`) and may optionally implement `fetch_lyrics(...)` so future external lyrics/metadata adapters plug into the same neutral contract without a separate plugin runtime.
+
 ## Core Purity (`legacy-online` feature flag)
 
 `neomodern-core` excludes the legacy `online` module by default (`default = []`). Builds that still need legacy bridge compatibility must explicitly opt in with `--features legacy-online`.

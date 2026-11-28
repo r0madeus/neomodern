@@ -12,6 +12,7 @@ import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/backup_settings_section.dart';
 import 'package:neomodern/ui/genre_view.dart';
+import 'package:neomodern/ui/modules_settings_section.dart';
 import 'package:neomodern/ui/move_folder_dialog.dart';
 import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/recap_view.dart';
@@ -1196,5 +1197,33 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add detected tools'), findsOneWidget);
+  });
+
+  testWidgets(
+      'ModulesSettingsSection groups Core Modules and External Providers under one panel',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ModulesSettingsSection(controller: ctrl),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Modules & Extensions'), findsOneWidget);
+    expect(find.text('CORE MODULES'), findsOneWidget);
+    expect(find.text('EXTERNAL PROVIDERS'), findsOneWidget);
+    expect(find.text('Synced Lyrics (LRCLIB)'), findsOneWidget);
+    expect(find.text('NetEase Lyrics Fallback'), findsOneWidget);
+    expect(find.text('Metadata & Artist Matching (MusicBrainz)'), findsOneWidget);
+    expect(find.text('Party Queue (LAN · Experimental)'), findsOneWidget);
+    expect(find.byType(ExternalSourcesSettingsSection), findsOneWidget);
   });
 }

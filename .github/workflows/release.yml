@@ -126,10 +126,10 @@ jobs:
             throw "neomodern.exe not found in $releaseDir"
           }
 
-          # CMake installs libmpv-2.dll beside neomodern.exe; fall back to src-tauri/lib if needed.
+          # CMake installs libmpv-2.dll beside neomodern.exe; fall back to vendor/libmpv if needed.
           $bundleDll = Join-Path $releaseDir 'libmpv-2.dll'
           if (-not (Test-Path $bundleDll)) {
-            $fetchedDll = 'src-tauri\lib\libmpv-2.dll'
+            $fetchedDll = 'vendor\libmpv\libmpv-2.dll'
             if (-not (Test-Path $fetchedDll)) {
               throw "libmpv-2.dll not found in $releaseDir or $fetchedDll"
             }
@@ -273,7 +273,7 @@ jobs:
           EOF
 
           icon_file="$RUNNER_TEMP/neomodern.png"
-          cp "src-tauri/icons/128x128@2x.png" "$icon_file"
+          cp "assets/icons/icon-256.png" "$icon_file"
 
           linuxdeploy_libs=()
           for so in "$appdir"/usr/bin/lib/*.so*; do

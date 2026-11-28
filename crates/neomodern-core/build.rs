@@ -4,7 +4,7 @@ fn main() {
     link_libmpv_windows();
 }
 
-/// On Windows, libmpv comes from `src-tauri/lib/` (filled by
+/// On Windows, libmpv comes from `vendor/libmpv/` (filled by
 /// `scripts/fetch-libmpv.ps1`): `mpv.lib` is the import library used at link
 /// time and `libmpv-2.dll` must sit next to every executable we produce.
 fn link_libmpv_windows() {
@@ -12,7 +12,7 @@ fn link_libmpv_windows() {
         return;
     }
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let lib_dir = manifest_dir.join("../../src-tauri/lib");
+    let lib_dir = manifest_dir.join("../../vendor/libmpv");
     println!("cargo:rerun-if-changed={}", lib_dir.display());
     let import_lib = lib_dir.join("mpv.lib");
     let dll = lib_dir.join("libmpv-2.dll");

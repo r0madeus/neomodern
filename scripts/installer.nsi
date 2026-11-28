@@ -22,8 +22,8 @@ InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NeoMo
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
-!define MUI_ICON "..\src-tauri\icons\icon.ico"
-!define MUI_UNICON "..\src-tauri\icons\icon.ico"
+!define MUI_ICON "..\assets\icons\icon.ico"
+!define MUI_UNICON "..\assets\icons\icon.ico"
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_DIRECTORY

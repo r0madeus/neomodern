@@ -31,15 +31,9 @@ jobs:
       - name: System packages
         timeout-minutes: 25
         run: |
-          ./scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev libmpv-dev libasound2-dev libdbus-1-dev
+          ./scripts/ci-apt-install.sh libssl-dev libmpv-dev libasound2-dev libdbus-1-dev
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-
-      - name: Ensure Tauri frontendDist stub exists for workspace check
-        run: |
-          mkdir -p dist
-          [ -f dist/index.html ] || printf '<!doctype html><html></html>\n' > dist/index.html
 
       - name: cargo fmt
         run: cargo fmt --all -- --check

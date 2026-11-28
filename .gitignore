@@ -23,11 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Rust / Tauri
+# Rust
 /target/
-src-tauri/target
-src-tauri/gen/schemas
 
 # libmpv (fetched by scripts/fetch-libmpv.ps1)
-src-tauri/lib/*
-!src-tauri/lib/README.md
+vendor/libmpv/*

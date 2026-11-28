@@ -3480,8 +3480,8 @@ pub fn source_provider_add(
         kind,
         enabled: true,
     };
-    let provider = build_provider(&new_cfg, state.session.net_policy())
-        .map_err(|e| e.to_string())?;
+    let provider =
+        build_provider(&new_cfg, state.session.net_policy()).map_err(|e| e.to_string())?;
     let mut updated = configs.clone();
     updated.push(new_cfg);
     save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
@@ -3520,8 +3520,8 @@ pub fn source_provider_toggle(id: String, enabled: bool) -> Result<Vec<UiSourceP
     };
     entry.enabled = enabled;
     if enabled {
-        let provider = build_provider(entry, state.session.net_policy())
-            .map_err(|e| e.to_string())?;
+        let provider =
+            build_provider(entry, state.session.net_policy()).map_err(|e| e.to_string())?;
         save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
         state.source_registry.register(provider);
     } else {

@@ -199,9 +199,8 @@ impl HttpJsonProvider {
         }
         match &config.kind {
             ProviderKind::HttpJson { base_url } => Self::new(config.id.clone(), base_url, policy),
-            #[cfg(not(target_os = "android"))]
-            ProviderKind::Cli { .. } => Err(SourceProviderError::Unsupported(
-                "CLI provider cannot be constructed as HttpJsonProvider".to_owned(),
+            _ => Err(SourceProviderError::Unsupported(
+                "non-HTTP/JSON provider cannot be constructed as HttpJsonProvider".to_owned(),
             )),
         }
     }

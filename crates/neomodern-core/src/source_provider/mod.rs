@@ -3,17 +3,24 @@
 //! Defines generic interfaces and data types for user-configured external audio
 //! catalog and stream providers. No built-in providers are registered by default.
 
+use crate::net::NetPolicy;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
+#[cfg(not(target_os = "android"))]
+pub mod cli;
 pub mod http_json;
+pub mod subsonic;
 
+#[cfg(not(target_os = "android"))]
+pub use cli::{CliJsonProvider, parse_cli_endpoint};
 pub use http_json::{
     HttpJsonProvider, load_provider_configs, save_provider_configs, validate_base_url,
 };
+pub use subsonic::{SubsonicProvider, parse_subsonic_endpoint};
 
 /// Heap-allocated future used by [`SourceProvider`] trait methods so the trait
 /// remains dyn-compatible without external macro crates.
@@ -29,9 +36,100 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub enum ProviderKind {
     /// HTTP JSON endpoint serving search, metadata, and stream resolution.
     HttpJson { base_url: String },
+    /// OpenSubsonic / Subsonic / Navidrome REST API endpoint.
+    Subsonic {
+        base_url: String,
+        username: String,
+        password: String,
+    },
     /// Local command-line adapter (desktop platforms only).
     #[cfg(not(target_os = "android"))]
     Cli { command: String, args: Vec<String> },
+}
+
+impl ProviderKind {
+    /// Returns a human-readable, credential-redacted endpoint label for UI display.
+    pub fn display_endpoint(&self) -> String {
+        match self {
+            ProviderKind::HttpJson { base_url } => base_url.clone(),
+            ProviderKind::Subsonic {
+                base_url, username, ..
+            } => format!(
+                "subsonic://{username}@{}",
+                base_url
+                    .trim_start_matches("https://")
+                    .trim_start_matches("http://")
+            ),
+            #[cfg(not(target_os = "android"))]
+            ProviderKind::Cli { command, args } => {
+                if args.is_empty() {
+                    format!("cli:{command}")
+                } else {
+                    format!("cli:{command} {}", args.join(" "))
+                }
+            }
+        }
+    }
+
+    /// Short kind tag for UI badges (`httpJson`, `subsonic`, `cli`).
+    pub fn kind_tag(&self) -> &'static str {
+        match self {
+            ProviderKind::HttpJson { .. } => "httpJson",
+            ProviderKind::Subsonic { .. } => "subsonic",
+            #[cfg(not(target_os = "android"))]
+            ProviderKind::Cli { .. } => "cli",
+        }
+    }
+}
+
+/// Parses a user-entered endpoint string into a [`ProviderKind`]:
+/// - `http://...` or `https://...` -> [`ProviderKind::HttpJson`]
+/// - `subsonic://user:pass@host...` or `subsonics://...` -> [`ProviderKind::Subsonic`]
+/// - `cli:<command> [args...]` (desktop only) -> [`ProviderKind::Cli`]
+pub fn parse_provider_kind(raw: &str) -> Result<ProviderKind, SourceProviderError> {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("subsonic://") || trimmed.starts_with("subsonics://") {
+        let (base_url, username, password) = parse_subsonic_endpoint(trimmed)?;
+        return Ok(ProviderKind::Subsonic {
+            base_url,
+            username,
+            password,
+        });
+    }
+    if trimmed.starts_with("cli:") {
+        #[cfg(not(target_os = "android"))]
+        {
+            let (command, args) = parse_cli_endpoint(trimmed)?;
+            return Ok(ProviderKind::Cli { command, args });
+        }
+        #[cfg(target_os = "android")]
+        {
+            return Err(SourceProviderError::Unsupported(
+                "local CLI source providers are only supported on desktop".to_owned(),
+            ));
+        }
+    }
+    let normalized_url = validate_base_url(trimmed)?;
+    Ok(ProviderKind::HttpJson {
+        base_url: normalized_url,
+    })
+}
+
+/// Constructs a concrete [`SourceProvider`] instance from any [`ProviderConfig`].
+pub fn build_provider(
+    config: &ProviderConfig,
+    net_policy: Arc<NetPolicy>,
+) -> Result<Arc<dyn SourceProvider>, SourceProviderError> {
+    match &config.kind {
+        ProviderKind::HttpJson { .. } => {
+            Ok(Arc::new(HttpJsonProvider::from_config(config, net_policy)?))
+        }
+        ProviderKind::Subsonic { .. } => {
+            Ok(Arc::new(SubsonicProvider::from_config(config, net_policy)?))
+        }
+        #[cfg(not(target_os = "android"))]
+        ProviderKind::Cli { .. } => Ok(Arc::new(CliJsonProvider::from_config(config)?)),
+    }
 }
 
 /// Configuration for a single external source provider entry.

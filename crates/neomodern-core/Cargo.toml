@@ -9,6 +9,9 @@ edition = "2024"
 rust-version = "1.90"
 
 [features]
+default = []
+# Opt-in legacy online/yt-dlp integration; excluded from pure K29 core builds by default.
+legacy-online = []
 test-support = []
 
 # Versions are pinned on purpose (see AGENTS.md). Check docs.rs for the

@@ -79,7 +79,7 @@ class _ExternalSourcesSettingsSectionState
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Configure a neutral HTTP/JSON provider exposing /search, /stream/{id}, and /track/{id}.',
+                  'Configure a neutral external provider: HTTP/JSON (http:// or https://), OpenSubsonic / Navidrome (subsonic://user:pass@host or subsonics://), or a desktop CLI/JSON adapter (cli:/path/to/adapter).',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
@@ -92,7 +92,7 @@ class _ExternalSourcesSettingsSectionState
                   enabled: !saving,
                   decoration: const InputDecoration(
                     labelText: 'Name',
-                    hintText: 'Self-hosted Bridge',
+                    hintText: 'Navidrome / Local Bridge',
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -100,8 +100,8 @@ class _ExternalSourcesSettingsSectionState
                   controller: urlCtrl,
                   enabled: !saving,
                   decoration: const InputDecoration(
-                    labelText: 'Base URL',
-                    hintText: 'http://127.0.0.1:8787',
+                    labelText: 'Endpoint',
+                    hintText: 'subsonics://user:pass@host:4533',
                   ),
                 ),
                 if (error != null) ...[

@@ -1,16 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
-import 'package:neomodern/ui/widgets/motion_primitives.dart';
 
-/// Spotify-style collection header matching `src/lib/CollectionHeader.svelte`.
+/// Editorial Catalog collection header (K30).
 ///
-/// Renders a full-width [TintedBackdrop.gradient] band with an optional
-/// top-left circular back button, a 208x208 cover with optional hover
-/// "Change cover" overlay, a large bold tight-tracked title, metadata line,
-/// and an action strip featuring a 56x56 [HoverPlayButton], shuffle button
-/// with an active indicator dot, optional pin button, and extra actions.
+/// Renders a restrained cover-tinted wash band, a framed 2px-radius sleeve
+/// cover, an uppercase monospace kicker, a Lora serif display title, metadata
+/// line, and an editorial Play pill CTA alongside hairline secondary controls.
 class CollectionHeader extends StatefulWidget {
   const CollectionHeader({
     super.key,
@@ -70,9 +68,9 @@ class _CollectionHeaderState extends State<CollectionHeader> {
 
   double get _titleFontSize {
     final len = widget.titleText.length;
-    if (len <= 18) return 60;
-    if (len <= 32) return 52;
-    return 44;
+    if (len <= 18) return 54;
+    if (len <= 32) return 46;
+    return 38;
   }
 
   @override
@@ -80,11 +78,11 @@ class _CollectionHeaderState extends State<CollectionHeader> {
     final gradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      stops: const [0.0, 0.72, 0.90, 1.0],
+      stops: const [0.0, 0.72, 0.92, 1.0],
       colors: [
-        widget.tint.top,
-        widget.tint.surface,
-        widget.tint.surface.withValues(alpha: 0.40),
+        widget.tint.top.withValues(alpha: 0.75),
+        widget.tint.surface.withValues(alpha: 0.45),
+        widget.tint.surface.withValues(alpha: 0.14),
         Colors.transparent,
       ],
     );
@@ -92,18 +90,14 @@ class _CollectionHeaderState extends State<CollectionHeader> {
     Widget coverWidget = Container(
       width: widget.coverSize,
       height: widget.coverSize,
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.50),
-            blurRadius: 32,
-            offset: const Offset(0, 12),
-          ),
-        ],
+        color: AppTheme.zinc900,
+        borderRadius: BorderRadius.circular(2),
+        border: Border.all(color: AppTheme.hairlineStrong),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(1),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -114,23 +108,22 @@ class _CollectionHeaderState extends State<CollectionHeader> {
                   opacity: _coverHovered ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 150),
                   child: Container(
-                    color: Colors.black.withValues(alpha: 0.55),
+                    color: Colors.black.withValues(alpha: 0.58),
                     alignment: Alignment.center,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.upload_rounded,
+                          AppIcons.upload,
                           size: 24,
-                          color: Colors.white,
+                          color: AppTheme.editorialPaper,
                         ),
                         const SizedBox(height: 6),
                         Text(
                           t('Change Cover'),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
+                          style: AppTheme.monoStyle(
+                            fontSize: 11,
+                            color: AppTheme.editorialPaper,
                           ),
                         ),
                       ],
@@ -158,201 +151,289 @@ class _CollectionHeaderState extends State<CollectionHeader> {
       );
     }
 
-    return TintedBackdrop.gradient(
-      gradient: gradient,
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  24,
-                  widget.onBack != null ? 56 : 32,
-                  24,
-                  24,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    coverWidget,
-                    const SizedBox(width: 24),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              widget.label,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white.withValues(alpha: 0.90),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            if (widget.titleWidget != null)
-                              widget.titleWidget!
-                            else
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: AppTheme.hairlineStrong),
+        ),
+      ),
+      child: TintedBackdrop.gradient(
+        gradient: gradient,
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    28,
+                    widget.onBack != null ? 56 : 32,
+                    28,
+                    22,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      coverWidget,
+                      const SizedBox(width: 26),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
                               Text(
-                                widget.titleText,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: _titleFontSize,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.05,
-                                  letterSpacing: -1.2,
-                                  color: Colors.white,
+                                widget.label.toUpperCase(),
+                                style: AppTheme.kickerStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.zinc400,
                                 ),
                               ),
-                            const SizedBox(height: 10),
-                            DefaultTextStyle(
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.white.withValues(alpha: 0.75),
+                              const SizedBox(height: 8),
+                              if (widget.titleWidget != null)
+                                widget.titleWidget!
+                              else
+                                Text(
+                                  widget.titleText,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTheme.displayStyle(
+                                    fontSize: _titleFontSize,
+                                    fontWeight: FontWeight.w400,
+                                    height: 1.04,
+                                    letterSpacing: -0.5,
+                                    color: AppTheme.editorialPaper,
+                                  ),
+                                ),
+                              const SizedBox(height: 12),
+                              DefaultTextStyle(
+                                style: const TextStyle(
+                                  fontFamily: AppTheme.fontSans,
+                                  fontSize: 13.5,
+                                  color: AppTheme.zinc400,
+                                ),
+                                child: widget.meta,
                               ),
-                              child: widget.meta,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
-                child: Row(
-                  children: [
-                    HoverPlayButton(
-                      size: 56,
-                      iconSize: 28,
-                      isPlaying: widget.isPlaying,
-                      onPressed: widget.playEnabled ? widget.onPlay : null,
-                    ),
-                    if (widget.onShuffle != null) ...[
-                      const SizedBox(width: 16),
-                      _HeaderShuffleButton(
-                        active: widget.shuffleActive,
-                        enabled: widget.playEnabled,
-                        hovered: _shuffleHovered,
-                        onHoverChanged: (v) =>
-                            setState(() => _shuffleHovered = v),
-                        onPressed: widget.onShuffle!,
-                      ),
-                    ],
-                    if (widget.isPinned != null &&
-                        widget.onTogglePin != null) ...[
-                      const SizedBox(width: 16),
-                      Tooltip(
-                        message: widget.isPinned! ? t('Unpin') : t('Pin'),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          onEnter: (_) => setState(() => _pinHovered = true),
-                          onExit: (_) => setState(() => _pinHovered = false),
-                          child: GestureDetector(
-                            onTap: widget.onTogglePin,
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: _pinHovered
-                                    ? Colors.white.withValues(alpha: 0.12)
-                                    : Colors.transparent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                widget.isPinned!
-                                    ? Icons.push_pin_rounded
-                                    : Icons.push_pin_outlined,
-                                size: 24,
-                                color: widget.isPinned!
-                                    ? AppTheme.accent400
-                                    : (_pinHovered
-                                        ? Colors.white
-                                        : Colors.white.withValues(alpha: 0.70)),
-                              ),
-                            ),
+                            ],
                           ),
                         ),
                       ),
                     ],
-                    if (widget.onMorePressed != null) ...[
-                      const SizedBox(width: 16),
-                      Tooltip(
-                        message: widget.moreTooltip ?? t('More options'),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          onEnter: (_) => setState(() => _moreHovered = true),
-                          onExit: (_) => setState(() => _moreHovered = false),
-                          child: GestureDetector(
-                            onTap: widget.onMorePressed,
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: _moreHovered
-                                    ? Colors.white.withValues(alpha: 0.12)
-                                    : Colors.transparent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.more_horiz_rounded,
-                                size: 28,
-                                color: _moreHovered
-                                    ? Colors.white
-                                    : Colors.white.withValues(alpha: 0.70),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 2, 28, 22),
+                  child: Row(
+                    children: [
+                      _EditorialPlayPill(
+                        isPlaying: widget.isPlaying,
+                        onPressed: widget.playEnabled ? widget.onPlay : null,
+                      ),
+                      if (widget.onShuffle != null) ...[
+                        const SizedBox(width: 12),
+                        _HeaderShuffleButton(
+                          active: widget.shuffleActive,
+                          enabled: widget.playEnabled,
+                          hovered: _shuffleHovered,
+                          onHoverChanged: (v) =>
+                              setState(() => _shuffleHovered = v),
+                          onPressed: widget.onShuffle!,
+                        ),
+                      ],
+                      if (widget.isPinned != null &&
+                          widget.onTogglePin != null) ...[
+                        const SizedBox(width: 10),
+                        Tooltip(
+                          message: widget.isPinned! ? t('Unpin') : t('Pin'),
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            onEnter: (_) => setState(() => _pinHovered = true),
+                            onExit: (_) => setState(() => _pinHovered = false),
+                            child: GestureDetector(
+                              onTap: widget.onTogglePin,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: _pinHovered
+                                      ? Colors.white.withValues(alpha: 0.08)
+                                      : Colors.transparent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: widget.isPinned!
+                                        ? AppTheme.accent400.withValues(alpha: 0.55)
+                                        : AppTheme.hairline,
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  widget.isPinned!
+                                      ? AppIcons.pin
+                                      : AppIcons.pin,
+                                  size: 19,
+                                  color: widget.isPinned!
+                                      ? AppTheme.accent400
+                                      : (_pinHovered
+                                          ? AppTheme.editorialPaper
+                                          : AppTheme.zinc400),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
+                      if (widget.onMorePressed != null) ...[
+                        const SizedBox(width: 10),
+                        Tooltip(
+                          message: widget.moreTooltip ?? t('More options'),
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            onEnter: (_) => setState(() => _moreHovered = true),
+                            onExit: (_) => setState(() => _moreHovered = false),
+                            child: GestureDetector(
+                              onTap: widget.onMorePressed,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: _moreHovered
+                                      ? Colors.white.withValues(alpha: 0.08)
+                                      : Colors.transparent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: AppTheme.hairline),
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  AppIcons.more,
+                                  size: 20,
+                                  color: _moreHovered
+                                      ? AppTheme.editorialPaper
+                                      : AppTheme.zinc400,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      for (final extra in widget.extraActions) ...[
+                        const SizedBox(width: 10),
+                        extra,
+                      ],
                     ],
-                    for (final extra in widget.extraActions) ...[
-                      const SizedBox(width: 12),
-                      extra,
-                    ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          if (widget.onBack != null)
-            Positioned(
-              top: 16,
-              left: 16,
-              child: Tooltip(
-                message: widget.backLabel ?? t('Back'),
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  onEnter: (_) => setState(() => _backHovered = true),
-                  onExit: (_) => setState(() => _backHovered = false),
-                  child: GestureDetector(
-                    onTap: widget.onBack,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: _backHovered
-                            ? Colors.black.withValues(alpha: 0.50)
-                            : Colors.black.withValues(alpha: 0.30),
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.arrow_back_rounded,
-                        size: 20,
-                        color: _backHovered
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.90),
+              ],
+            ),
+            if (widget.onBack != null)
+              Positioned(
+                top: 16,
+                left: 16,
+                child: Tooltip(
+                  message: widget.backLabel ?? t('Back'),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    onEnter: (_) => setState(() => _backHovered = true),
+                    onExit: (_) => setState(() => _backHovered = false),
+                    child: GestureDetector(
+                      onTap: widget.onBack,
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: _backHovered
+                              ? Colors.black.withValues(alpha: 0.55)
+                              : Colors.black.withValues(alpha: 0.35),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppTheme.hairline),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          AppIcons.back,
+                          size: 18,
+                          color: _backHovered
+                              ? AppTheme.editorialPaper
+                              : AppTheme.zinc300,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditorialPlayPill extends StatefulWidget {
+  const _EditorialPlayPill({
+    required this.isPlaying,
+    required this.onPressed,
+  });
+
+  final bool isPlaying;
+  final VoidCallback? onPressed;
+
+  @override
+  State<_EditorialPlayPill> createState() => _EditorialPlayPillState();
+}
+
+class _EditorialPlayPillState extends State<_EditorialPlayPill> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    final label = widget.isPlaying ? t('Pause') : t('Play');
+
+    return Tooltip(
+      message: label,
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.4,
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: widget.onPressed,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: _hovered && enabled
+                    ? Colors.white
+                    : AppTheme.editorialPaper,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    widget.isPlaying
+                        ? AppIcons.pause
+                        : AppIcons.play,
+                    size: 18,
+                    color: AppTheme.editorialInk,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    label.toUpperCase(),
+                    style: AppTheme.monoStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.editorialInk,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ],
+              ),
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -390,21 +471,26 @@ class _HeaderShuffleButton extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 color: hovered && enabled
-                    ? Colors.white.withValues(alpha: 0.15)
+                    ? Colors.white.withValues(alpha: 0.08)
                     : Colors.transparent,
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: active
+                      ? AppTheme.accent400.withValues(alpha: 0.55)
+                      : AppTheme.hairline,
+                ),
               ),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
                   Icon(
-                    Icons.shuffle_rounded,
-                    size: 22,
+                    AppIcons.shuffle,
+                    size: 19,
                     color: active
                         ? AppTheme.accent400
                         : (hovered
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.80)),
+                            ? AppTheme.editorialPaper
+                            : AppTheme.zinc400),
                   ),
                   if (active)
                     Positioned(

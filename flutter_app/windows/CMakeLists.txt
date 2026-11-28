@@ -87,7 +87,7 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
-set(LIBMPV_DLL "${CMAKE_CURRENT_SOURCE_DIR}/../../src-tauri/lib/libmpv-2.dll")
+set(LIBMPV_DLL "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/libmpv/libmpv-2.dll")
 if(EXISTS "${LIBMPV_DLL}")
   install(FILES "${LIBMPV_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)

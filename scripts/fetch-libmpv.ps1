@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Downloads the LGPL libmpv build for Windows into src-tauri/lib.
+  Downloads the LGPL libmpv build for Windows into vendor/libmpv.
 
 .DESCRIPTION
   Downloads one PINNED "mpv-dev-lgpl-x86_64-<date>-git-<hash>.7z" asset from
@@ -35,7 +35,7 @@
   powershell -ExecutionPolicy Bypass -File scripts/fetch-libmpv.ps1 -Latest
 #>
 param(
-    [string]$Dest = (Join-Path $PSScriptRoot '..\src-tauri\lib'),
+    [string]$Dest = (Join-Path $PSScriptRoot '..\vendor\libmpv'),
     [string]$Arch = 'x86_64',
     [switch]$Force,
     [switch]$Latest

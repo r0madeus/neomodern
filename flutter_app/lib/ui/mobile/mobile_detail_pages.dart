@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/genre_view.dart';
@@ -53,7 +54,7 @@ class MobilePageHeader extends StatelessWidget {
             IconButton(
               tooltip: t('Back'),
               icon: const Icon(
-                Icons.arrow_back_rounded,
+                AppIcons.back,
                 size: 24,
                 color: Colors.white,
               ),
@@ -111,7 +112,7 @@ class MobileSimplePage extends StatelessWidget {
                   IconButton(
                     tooltip: t('Back'),
                     icon: const Icon(
-                      Icons.arrow_back_rounded,
+                      AppIcons.back,
                       size: 24,
                       color: Colors.white,
                     ),
@@ -266,7 +267,7 @@ class MobileTrackTile extends StatelessWidget {
                 tooltip: 'More',
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(
-                  Icons.more_vert_rounded,
+                  AppIcons.more,
                   size: 18,
                   color: AppTheme.zinc400,
                 ),
@@ -455,8 +456,8 @@ class _MobileAlbumPageState extends State<MobileAlbumPage> {
                               : t('Pin'),
                           icon: Icon(
                             ctrl.isPinned('album', detail.album.id)
-                                ? Icons.push_pin_rounded
-                                : Icons.push_pin_outlined,
+                                ? AppIcons.pin
+                                : AppIcons.pin,
                             color: ctrl.isPinned('album', detail.album.id)
                                 ? AppTheme.accent400
                                 : AppTheme.zinc300,
@@ -467,7 +468,7 @@ class _MobileAlbumPageState extends State<MobileAlbumPage> {
                         IconButton(
                           tooltip: t('Shuffle'),
                           icon: const Icon(
-                            Icons.shuffle_rounded,
+                            AppIcons.shuffle,
                             color: AppTheme.zinc300,
                           ),
                           onPressed: detail.tracks.isEmpty
@@ -771,7 +772,7 @@ class _MobileArtistPageState extends State<MobileArtistPage> {
                       IconButton(
                         tooltip: t('Shuffle'),
                         icon: const Icon(
-                          Icons.shuffle_rounded,
+                          AppIcons.shuffle,
                           color: AppTheme.zinc300,
                         ),
                         onPressed: detail.tracks.isEmpty
@@ -1193,8 +1194,8 @@ class _MobilePlaylistPageState extends State<MobilePlaylistPage> {
                             : t('Pin'),
                         icon: Icon(
                           ctrl.isPinned('playlist', pl.id)
-                              ? Icons.push_pin_rounded
-                              : Icons.push_pin_outlined,
+                              ? AppIcons.pin
+                              : AppIcons.pin,
                           color: ctrl.isPinned('playlist', pl.id)
                               ? AppTheme.accent400
                               : AppTheme.zinc300,
@@ -1204,7 +1205,7 @@ class _MobilePlaylistPageState extends State<MobilePlaylistPage> {
                       IconButton(
                         tooltip: t('Shuffle'),
                         icon: const Icon(
-                          Icons.shuffle_rounded,
+                          AppIcons.shuffle,
                           color: AppTheme.zinc300,
                         ),
                         onPressed: _tracks.isEmpty
@@ -1525,7 +1526,7 @@ class _MobileFavoritesPageState extends State<MobileFavoritesPage> {
                       IconButton(
                         tooltip: t('Shuffle'),
                         icon: const Icon(
-                          Icons.shuffle_rounded,
+                          AppIcons.shuffle,
                           color: AppTheme.zinc200,
                         ),
                         onPressed: tracks.isEmpty

@@ -9,8 +9,8 @@ import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/backup_settings_section.dart';
+import 'package:neomodern/ui/modules_settings_section.dart';
 import 'package:neomodern/ui/move_folder_dialog.dart';
-import 'package:neomodern/ui/sources_view.dart';
 import 'package:neomodern/ui/sync_settings_section.dart';
 import 'package:neomodern/ui/widgets/smooth_scroll.dart';
 
@@ -770,7 +770,7 @@ class _SettingsViewState extends State<SettingsView> {
 
         const SizedBox(height: 20),
 
-        ExternalSourcesSettingsSection(controller: ctrl),
+        ModulesSettingsSection(controller: ctrl),
       ],
       ),
     );

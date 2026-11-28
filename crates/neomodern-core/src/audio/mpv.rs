@@ -413,7 +413,13 @@ impl MpvEngine {
             i.set_property("input-default-bindings", "no")?;
             i.set_property("terminal", "no")?;
             i.set_property("ytdl", "no")?;
+            #[cfg(feature = "legacy-online")]
             i.set_property("user-agent", crate::online::STREAM_USER_AGENT)?;
+            #[cfg(not(feature = "legacy-online"))]
+            i.set_property(
+                "user-agent",
+                concat!("NeoModern/", env!("CARGO_PKG_VERSION")),
+            )?;
             #[cfg(target_os = "linux")]
             if let Some(ca_bundle) = system_ca_bundle()
                 && let Err(e) = i.set_property("tls-ca-file", ca_bundle)

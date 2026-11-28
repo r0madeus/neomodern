@@ -72,11 +72,11 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
 
     final Color rowBg;
     if (widget.isSelected) {
-      rowBg = AppTheme.accent500.withValues(alpha: 0.18);
+      rowBg = AppTheme.accent500.withValues(alpha: 0.14);
     } else if (widget.isActive) {
-      rowBg = AppTheme.accent950.withValues(alpha: 0.40);
+      rowBg = Colors.white.withValues(alpha: 0.045);
     } else if (_hovered) {
-      rowBg = AppTheme.zinc800.withValues(alpha: 0.50);
+      rowBg = Colors.white.withValues(alpha: 0.035);
     } else {
       rowBg = Colors.transparent;
     }
@@ -102,7 +102,9 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
           padding: EdgeInsets.symmetric(horizontal: widget.horizontalPadding),
           decoration: BoxDecoration(
             color: rowBg,
-            borderRadius: BorderRadius.circular(6),
+            border: const Border(
+              bottom: BorderSide(color: Color(0x0DFFFFFF)),
+            ),
           ),
           child: Row(
             children: [
@@ -120,12 +122,11 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
                       )
                     : Text(
                         widget.indexLabel,
-                        style: TextStyle(
-                          fontSize: 12.5,
+                        style: AppTheme.monoStyle(
+                          fontSize: 11.5,
                           color: widget.isActive
                               ? AppTheme.accent400
-                              : AppTheme.zinc400,
-                          fontFeatures: const [FontFeature.tabularFigures()],
+                              : AppTheme.zinc500,
                         ),
                       ),
               ),
@@ -137,7 +138,7 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
                       CoverArt(
                         path: widget.track.cover,
                         size: 38,
-                        borderRadius: 4,
+                        borderRadius: 2,
                         iconSize: 16,
                       ),
                       const SizedBox(width: 12),
@@ -161,7 +162,7 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
                                   ? FontWeight.w600
                                   : FontWeight.w500,
                               color: widget.isActive
-                                  ? AppTheme.accent400
+                                  ? AppTheme.editorialPaper
                                   : AppTheme.zinc100,
                             ),
                           ),
@@ -228,10 +229,9 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
                   padding: const EdgeInsets.only(right: 14),
                   child: Text(
                     t('{n} plays', {'n': widget.playCount}),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.zinc400,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                    style: AppTheme.monoStyle(
+                      fontSize: 11.5,
+                      color: AppTheme.zinc500,
                     ),
                   ),
                 ),
@@ -244,14 +244,13 @@ class _DesktopTrackRowState extends State<DesktopTrackRow> {
               ),
               const SizedBox(width: 6),
               SizedBox(
-                width: 52,
+                width: 56,
                 child: Text(
                   formatDurationMs(widget.track.durationMs),
                   textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontSize: 12.5,
+                  style: AppTheme.monoStyle(
+                    fontSize: 11.5,
                     color: AppTheme.zinc400,
-                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
               ),

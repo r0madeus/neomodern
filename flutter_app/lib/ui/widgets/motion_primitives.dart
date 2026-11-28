@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 
@@ -222,17 +223,17 @@ class _HoverSeekBarState extends State<HoverSeekBar> {
     final Color fillColor;
     final Color trackColor;
     if (widget.light) {
-      fillColor = Colors.white;
-      trackColor = Colors.white.withValues(alpha: 0.25);
+      fillColor = AppTheme.editorialPaper;
+      trackColor = AppTheme.editorialPaper.withValues(alpha: 0.24);
     } else if (isDark) {
       fillColor = (_hovered || _dragging) && _enabled
-          ? AppTheme.accent400
-          : AppTheme.accent500;
+          ? Colors.white
+          : AppTheme.editorialPaper;
       trackColor = AppTheme.zinc700;
     } else {
       fillColor = (_hovered || _dragging) && _enabled
-          ? AppTheme.accent500
-          : AppTheme.accent600;
+          ? AppTheme.editorialInk
+          : AppTheme.zinc700;
       trackColor = AppTheme.zinc300;
     }
 
@@ -464,8 +465,8 @@ class _AnimatedSaveButtonState extends State<AnimatedSaveButton>
                 },
                 child: Icon(
                   widget.isSaved
-                      ? Icons.check_circle_rounded
-                      : Icons.add_circle_outline_rounded,
+                      ? AppIcons.saveChecked
+                      : AppIcons.saveAdd,
                   size: widget.size,
                   color: widget.isSaved ? savedColor : unsavedColor,
                 ),
@@ -562,23 +563,26 @@ class _HoverPlayButtonState extends State<HoverPlayButton> {
                   width: widget.size,
                   height: widget.size,
                   decoration: BoxDecoration(
-                    color: AppTheme.accent500,
+                    color: AppTheme.editorialPaper,
                     shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.12),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
                       ),
                     ],
                   ),
                   alignment: Alignment.center,
                   child: Icon(
                     widget.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
+                        ? AppIcons.pause
+                        : AppIcons.play,
                     size: effectiveIconSize,
-                    color: AppTheme.zinc950,
+                    color: AppTheme.editorialInk,
                   ),
                 ),
               ),
@@ -917,7 +921,7 @@ class MixCoverArt extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: Icon(
-              Icons.repeat_rounded,
+              AppIcons.repeat,
               size: 0.065 * w,
               color: Colors.white,
             ),
@@ -1113,7 +1117,7 @@ class MixCoverArt extends StatelessWidget {
                     )
                   : Center(
                       child: Icon(
-                        Icons.music_note_rounded,
+                        AppIcons.songs,
                         size: 0.24 * w,
                         color: Colors.white,
                       ),

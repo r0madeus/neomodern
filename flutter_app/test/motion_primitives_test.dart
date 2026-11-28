@@ -3,6 +3,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/tinted_backdrop.dart';
@@ -10,36 +11,36 @@ import 'package:neomodern/ui/widgets/motion_primitives.dart';
 
 void main() {
   group('AppTheme color scales & theme data', () {
-    test('exposes exact Svelte accent and zinc color scales', () {
-      expect(AppTheme.accent50, const Color(0xFFF0F5FF));
-      expect(AppTheme.accent500, const Color(0xFF7CAAFF));
-      expect(AppTheme.accent600, const Color(0xFF3A68D0));
-      expect(AppTheme.accent950, const Color(0xFF172647));
+    test('exposes Editorial Catalog accent and warm ink/paper scales', () {
+      expect(AppTheme.accent50, const Color(0xFFF3F6F3));
+      expect(AppTheme.accent500, const Color(0xFFA3C4A8));
+      expect(AppTheme.accent600, const Color(0xFF2D4F3E));
+      expect(AppTheme.accent950, const Color(0xFF121A16));
 
-      expect(AppTheme.zinc50, const Color(0xFFFAFAFB));
-      expect(AppTheme.zinc100, const Color(0xFFF3F4F6));
-      expect(AppTheme.zinc200, const Color(0xFFE5E6EB));
-      expect(AppTheme.zinc700, const Color(0xFF3D414E));
-      expect(AppTheme.zinc800, const Color(0xFF262933));
-      expect(AppTheme.zinc900, const Color(0xFF1A1C23));
-      expect(AppTheme.zinc950, const Color(0xFF111318));
+      expect(AppTheme.zinc50, const Color(0xFFF7F5F0));
+      expect(AppTheme.zinc100, const Color(0xFFF5F3EE));
+      expect(AppTheme.zinc200, const Color(0xFFE5E1D8));
+      expect(AppTheme.zinc700, const Color(0xFF333338));
+      expect(AppTheme.zinc800, const Color(0xFF232327));
+      expect(AppTheme.zinc900, const Color(0xFF17171A));
+      expect(AppTheme.zinc950, const Color(0xFF101012));
     });
 
     test('darkTheme and lightTheme configure expected scaffolds and scrollbars',
         () {
       final dark = AppTheme.darkTheme;
       expect(dark.brightness, Brightness.dark);
-      expect(dark.scaffoldBackgroundColor, const Color(0xFF111318));
-      expect(dark.colorScheme.surface, const Color(0xFF1A1C23));
-      expect(dark.dividerColor, const Color(0xFF262933));
-      expect(dark.scrollbarTheme.thickness?.resolve({}), 4);
+      expect(dark.scaffoldBackgroundColor, const Color(0xFF101012));
+      expect(dark.colorScheme.surface, const Color(0xFF17171A));
+      expect(dark.dividerColor, const Color(0xFF232327));
+      expect(dark.scrollbarTheme.thickness?.resolve({}), 3.5);
 
       final light = AppTheme.lightTheme;
       expect(light.brightness, Brightness.light);
-      expect(light.scaffoldBackgroundColor, const Color(0xFFFAFAFB));
+      expect(light.scaffoldBackgroundColor, const Color(0xFFF7F5F0));
       expect(light.colorScheme.surface, Colors.white);
-      expect(light.dividerColor, const Color(0xFFE5E6EB));
-      expect(light.scrollbarTheme.thickness?.resolve({}), 4);
+      expect(light.dividerColor, const Color(0xFFE5E1D8));
+      expect(light.scrollbarTheme.thickness?.resolve({}), 3.5);
     });
   });
 
@@ -50,40 +51,40 @@ void main() {
       expect(tintFromArgb(0xFF828488), CoverTint.neutral);
     });
 
-    test('derives clamped HSL top, surface, and dim colors for saturated RGB',
+    test('derives restrained editorial HSL top, surface, and dim colors for saturated RGB',
         () {
       final tint = tintFromArgb(0xFFFF0000);
       expect(tint, isNot(CoverTint.neutral));
       expect(
         tint.top,
-        HSLColor.fromAHSL(1.0, 0.0, 0.5, 0.30).toColor(),
+        HSLColor.fromAHSL(1.0, 0.0, 0.28, 0.19).toColor(),
       );
       expect(
         tint.surface,
-        HSLColor.fromAHSL(1.0, 0.0, 0.45, 0.24).toColor(),
+        HSLColor.fromAHSL(1.0, 0.0, 0.28 * 0.85, 0.14).toColor(),
       );
       expect(
         tint.dim,
-        HSLColor.fromAHSL(1.0, 0.0, 0.6, 0.72).toColor(),
+        HSLColor.fromAHSL(1.0, 0.0, 0.36, 0.70).toColor(),
       );
 
       final blueTint = tintFromArgb(0xFF336699);
       expect(
         blueTint.top,
-        HSLColor.fromAHSL(1.0, 210.0, 0.5, 0.30).toColor(),
+        HSLColor.fromAHSL(1.0, 210.0, 0.28, 0.19).toColor(),
       );
     });
   });
 
   group('genreColor', () {
-    test('matches exact 32-bit FNV-1a palette mapping from genreColor.ts', () {
-      expect(genreColor('Rock'), const Color(0xFF0D7A5F));
-      expect(genreColor('Electronic'), const Color(0xFFA65A18));
-      expect(genreColor('  jazz  '), const Color(0xFF146C78));
-      expect(genreColor('Jazz'), const Color(0xFF146C78));
-      expect(genreColor('Ambient'), const Color(0xFFA65A18));
-      expect(genreColor('Synthwave'), const Color(0xFF0D7A5F));
-      expect(genreColor(''), const Color(0xFFA1263D));
+    test('matches deterministic 32-bit FNV-1a editorial palette mapping', () {
+      expect(genreColor('Rock'), kGenrePalette[0]);
+      expect(genreColor('Electronic'), kGenrePalette[3]);
+      expect(genreColor('  jazz  '), kGenrePalette[4]);
+      expect(genreColor('Jazz'), kGenrePalette[4]);
+      expect(genreColor('Ambient'), kGenrePalette[3]);
+      expect(genreColor('Synthwave'), kGenrePalette[0]);
+      expect(genreColor(''), kGenrePalette[1]);
     });
   });
 
@@ -299,7 +300,7 @@ void main() {
         ),
       );
 
-      expect(find.byIcon(Icons.add_circle_outline_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.saveAdd), findsOneWidget);
       var opacity =
           tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity));
       expect(opacity.opacity, 0.0);
@@ -311,7 +312,7 @@ void main() {
 
       await tester.tap(find.byType(AnimatedSaveButton));
       await tester.pump();
-      expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.saveChecked), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 280));
     });
 
@@ -341,11 +342,11 @@ void main() {
         ),
       );
 
-      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.play), findsOneWidget);
       await tester.tap(find.byType(HoverPlayButton));
       await tester.pumpAndSettle();
       expect(tapped, 1);
-      expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.pause), findsOneWidget);
     });
 
     testWidgets('ViewFadeIn fades child into view',
@@ -443,7 +444,7 @@ void main() {
       expect(find.text('7'), findsOneWidget);
       expect(find.text('Weekly Favorites'), findsOneWidget);
       expect(find.text('On Repeat'), findsOneWidget);
-      expect(find.byIcon(Icons.repeat_rounded), findsOneWidget);
+      expect(find.byIcon(AppIcons.repeat), findsOneWidget);
       expect(find.text('Rediscover'), findsOneWidget);
       expect(find.text('✦'), findsNWidgets(3));
       expect(find.text('MIX'), findsOneWidget);

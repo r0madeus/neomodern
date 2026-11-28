@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/mobile/cover_tint.dart';
@@ -345,8 +346,8 @@ class _MiniPlayerState extends State<MiniPlayer>
                         ),
                         icon: Icon(
                           ctrl.isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
+                              ? AppIcons.pause
+                              : AppIcons.play,
                           size: 28,
                           color: AppTheme.zinc50,
                         ),

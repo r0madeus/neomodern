@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/neomodern-core",
-    "src-tauri",
     "flutter_app/rust",
 ]
 

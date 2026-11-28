@@ -8,9 +8,11 @@ import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
 import 'package:neomodern/state/system_tools.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/backup_settings_section.dart';
 import 'package:neomodern/ui/genre_view.dart';
+import 'package:neomodern/ui/modules_settings_section.dart';
 import 'package:neomodern/ui/move_folder_dialog.dart';
 import 'package:neomodern/ui/profiles_dialog.dart';
 import 'package:neomodern/ui/recap_view.dart';
@@ -63,11 +65,38 @@ void main() {
     expect(parseProfileColor('invalid'), AppColors.accent);
   });
 
-  testWidgets('AppTheme.dark configures expected dark canvas',
+  testWidgets('AppTheme configures Editorial Catalog dark and light tokens',
       (WidgetTester tester) async {
+    final dark = AppTheme.dark();
+    final light = AppTheme.light();
+
+    expect(dark.scaffoldBackgroundColor, AppTheme.zinc950);
+    expect(dark.colorScheme.primary, AppTheme.editorialPaper);
+    expect(dark.colorScheme.onPrimary, AppTheme.editorialInk);
+    expect(dark.textTheme.headlineSmall?.fontFamily, AppTheme.fontSerif);
+    expect(dark.textTheme.bodyMedium?.fontFamily, AppTheme.fontSans);
+
+    expect(light.scaffoldBackgroundColor, AppTheme.zinc50);
+    expect(light.colorScheme.primary, AppTheme.editorialInk);
+    expect(light.textTheme.headlineSmall?.fontFamily, AppTheme.fontSerif);
+
+    final display = AppTheme.displayStyle(fontSize: 32);
+    expect(display.fontFamily, AppTheme.fontSerif);
+    final mono = AppTheme.monoStyle();
+    expect(mono.fontFamily, AppTheme.fontMono);
+    expect(mono.fontFeatures, contains(const FontFeature.tabularFigures()));
+    final kicker = AppTheme.kickerStyle();
+    expect(kicker.fontFamily, AppTheme.fontMono);
+
+    // Restrained cover tint should cap saturation at editorial ink-wash levels
+    final vibrantBlueTint = tintFromArgb(0xFF0055FF);
+    final hslTop = HSLColor.fromColor(vibrantBlueTint.top);
+    expect(hslTop.saturation, lessThanOrEqualTo(0.30));
+    expect(hslTop.lightness, lessThanOrEqualTo(0.22));
+
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.dark(),
+        theme: dark,
         home: const Scaffold(body: Text('NeoModern')),
       ),
     );
@@ -159,7 +188,7 @@ void main() {
     expect(find.text('Now Playing'), findsOneWidget);
     expect(find.text('Nothing playing'), findsOneWidget);
     expect(find.text('Now playing'), findsNothing);
-    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.tap(find.byIcon(AppIcons.close));
     expect(closeCount, 1);
 
     // Queue mode header: ONLY 2 underline tabs ("Queue" and "Recently played") + Close (X).
@@ -1168,5 +1197,33 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add detected tools'), findsOneWidget);
+  });
+
+  testWidgets(
+      'ModulesSettingsSection groups Core Modules and External Providers under one panel',
+      (WidgetTester tester) async {
+    final ctrl = PlayerController();
+    addTearDown(ctrl.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ModulesSettingsSection(controller: ctrl),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Modules & Extensions'), findsOneWidget);
+    expect(find.text('CORE MODULES'), findsOneWidget);
+    expect(find.text('EXTERNAL PROVIDERS'), findsOneWidget);
+    expect(find.text('Synced Lyrics (LRCLIB)'), findsOneWidget);
+    expect(find.text('NetEase Lyrics Fallback'), findsOneWidget);
+    expect(find.text('Metadata & Artist Matching (MusicBrainz)'), findsOneWidget);
+    expect(find.text('Party Queue (LAN · Experimental)'), findsOneWidget);
+    expect(find.byType(ExternalSourcesSettingsSection), findsOneWidget);
   });
 }

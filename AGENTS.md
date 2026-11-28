@@ -7,62 +7,56 @@ are the ones every coding session must follow.
 
 ## Stack (versions are pinned – do not bump casually)
 
-- Tauri 2 (`tauri` 2.12.x), Rust edition 2024
-- Audio: libmpv through `libmpv2` **7.0.x** (not 4.x/5.x examples from the web)
-- UI: **Svelte 5 with runes** (`$state`, `$derived`, `$effect`, `$props`),
-  Vite 8, Tailwind 4 (`@tailwindcss/vite`, no `tailwind.config.js`)
-- Before writing code against a crate or npm package, check the docs for the
-  exact pinned version (docs.rs / package docs). Do not write Svelte 4
-  syntax (`export let`, `$:`, `on:click`, stores for local state).
+- Core: `crates/neomodern-core` (Rust edition 2024), bridged via `flutter_rust_bridge` (`flutter_app/rust`)
+- Audio: libmpv through `libmpv2` **7.0.x** on desktop; ExoPlayer bridge on Android
+- UI: **Flutter** (`flutter_app/`, Editorial Catalog visual language K30, bundled SIL OFL `Lora` / `Plus Jakarta Sans` / `JetBrains Mono`, `lucide_icons_flutter`)
+- Before writing code against a crate or pub package, check the docs for the exact pinned version (docs.rs / pub.dev).
 
 ## Architecture rules
 
 1. **Rust is the single source of truth.** Queue, playback state and library
-   live in Rust. The UI only renders and sends commands.
-2. **One queue only.** The queue is owned by `src-tauri/src/queue`. mpv is
+   live in `crates/neomodern-core`. Flutter only renders and sends commands.
+2. **One queue only.** The queue is owned by `crates/neomodern-core/src/queue`. mpv is
    given exactly two entries: the current track and the next one
    (`AudioEngine::load` / `AudioEngine::set_next`). Never use mpv's playlist
    as a queue, never add more than one "next" entry.
-3. **libmpv is only called inside `src-tauri/src/audio/`.** Everything else
+3. **libmpv is only called inside `crates/neomodern-core/src/audio/`.** Everything else
    uses the `AudioEngine` trait.
-4. **No big payloads over IPC.** Lists are paged. Cover art is written to the
-   cache folder and loaded with `convertFileSrc` – never base64 over IPC.
+4. **No big payloads over FFI.** Lists are paged. Cover art is written to the
+   cache folder and loaded from file paths – never base64 over FFI.
 5. **Throttle chatty data.** Playback position is sent at most ~4×/s; the UI
    interpolates between updates.
-   Events sent several times a second are listed in `src-tauri/src/ui.rs`
-   and are not sent while the page is hidden (the webview freezes hidden
-   pages and would queue them).
-6. Audio plays in Rust, never through an HTML `<audio>` element.
+6. Audio plays in native Rust/Android engines, never through web audio elements.
 
 ## Scope
 
-v0 is done; the current feature set is listed in `docs/ROADMAP.md`. New
-features need the owner's decision first (recorded in the decisions
-document); ideas without one go to a "later" list, not into the code.
-`yt-dlp` and other external programs are only run from
-`src-tauri/src/online`, always with a time limit.
+Current feature set is listed in `docs/ROADMAP.md` and `docs/SOURCE-PROVIDERS.md`. New
+features need the owner's decision first (recorded in `Kararlar.md`); ideas without one
+go to a "later" list, not into the code.
+External audio catalogs/streams plug into `crates/neomodern-core/src/source_provider`
+(`HttpJson`, `Subsonic`, desktop `Cli`); the legacy `online` module is isolated behind
+the opt-in `legacy-online` Cargo feature (`default = []`).
 PC ↔ phone sync and remote control (K21, `docs/SYNC.md`) live in
-`src-tauri/src/sync`; LAN sockets are only opened in `sync/link/server.rs`
+`crates/neomodern-core/src/sync`; LAN sockets are only opened in `sync/link/server.rs`
 (the guard test in `net.rs` counts them). Sync never changes tracks, files
 or tags, and every change to its merge rules needs the convergence tests.
 
 ## Conventions
 
 - Code, comments, identifiers, logs, commits and PRs are in English.
-- Rust: `cargo fmt`, `cargo clippy --all-targets -- -D warnings` clean.
-- Frontend: `npm run check` clean.
+- Rust: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- Flutter: `flutter analyze` and `flutter test` clean.
 - Tests must not need a sound card: mpv tests use `ao=null`.
 
 ## Commands
 
 ```bash
-npm ci
-npm run tauri dev          # run the app
-npm run check              # svelte-check + tsc
-npm test                   # UI unit tests (node --test)
-cd src-tauri && cargo test # Rust tests (needs libmpv)
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cd flutter_app && flutter pub get && flutter analyze && flutter test
 ```
 
-Linux: `libmpv-dev` and the Tauri system packages. Windows: run
+Linux: `libmpv-dev`, `libssl-dev`, `libasound2-dev`, `libdbus-1-dev`. Windows: run
 `scripts/fetch-libmpv.ps1` once; it downloads the LGPL libmpv build into
-`src-tauri/lib/`.
+`vendor/libmpv/`.

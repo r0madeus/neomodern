@@ -339,6 +339,8 @@ mod tests {
             // phone's discovery probe (broadcast, sent only when the user
             // opens the "Find computers" list or taps search).
             ("sync/link/server.rs", "UdpSocket::bind(", 3),
+            ("source_provider/subsonic.rs", "client_builder()", 1),
+            ("source_provider/cli.rs", "Command::new(", 1),
         ];
         let mut seen = std::collections::HashMap::new();
         for f in &files {

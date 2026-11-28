@@ -30,8 +30,8 @@ use neomodern_core::player::{Player, PlayerEvent, PlayerSnapshot, Status, TrackI
 use neomodern_core::queue::{RepeatMode, Track};
 use neomodern_core::session::{BackupInterval, PinnedKind, PinnedRef, SessionStore, is_stream_url};
 use neomodern_core::source_provider::{
-    ExternalTrack, HttpJsonProvider, ProviderConfig, ProviderKind, ProviderRegistry,
-    load_provider_configs, save_provider_configs, validate_base_url,
+    ExternalTrack, ProviderConfig, ProviderRegistry, build_provider, load_provider_configs,
+    parse_provider_kind, save_provider_configs,
 };
 use neomodern_core::sync::jam::host::JamStatus;
 use neomodern_core::sync::pair_link::PairQr;
@@ -1840,9 +1840,9 @@ pub async fn init_core(data_dir: String, cache_dir: String) -> Result<UiPlayerSn
         let source_registry = Arc::new(ProviderRegistry::new());
         for cfg in &configs {
             if cfg.enabled {
-                match HttpJsonProvider::from_config(cfg, session.net_policy()) {
+                match build_provider(cfg, session.net_policy()) {
                     Ok(p) => {
-                        source_registry.register(Arc::new(p));
+                        source_registry.register(p);
                     }
                     Err(e) => {
                         log::warn!("skipping invalid source provider {}: {e}", cfg.id);
@@ -3414,15 +3414,11 @@ pub async fn party_remove_guest(id: String) -> Result<UiPartyStatus, String> {
 fn map_source_configs(configs: &[ProviderConfig]) -> Vec<UiSourceProvider> {
     configs
         .iter()
-        .filter_map(|cfg| match &cfg.kind {
-            ProviderKind::HttpJson { base_url } => Some(UiSourceProvider {
-                id: cfg.id.clone(),
-                name: cfg.name.clone(),
-                base_url: base_url.clone(),
-                enabled: cfg.enabled,
-            }),
-            #[cfg(not(target_os = "android"))]
-            ProviderKind::Cli { .. } => None,
+        .map(|cfg| UiSourceProvider {
+            id: cfg.id.clone(),
+            name: cfg.name.clone(),
+            base_url: cfg.kind.display_endpoint(),
+            enabled: cfg.enabled,
         })
         .collect()
 }
@@ -3472,25 +3468,24 @@ pub fn source_provider_add(
     if clean_name.is_empty() {
         return Err("source name must not be empty".into());
     }
-    let normalized_url = validate_base_url(&base_url).map_err(|e| e.to_string())?;
+    let kind = parse_provider_kind(&base_url).map_err(|e| e.to_string())?;
     let mut configs = state
         .source_configs
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let id = generate_provider_id(&clean_name, &configs);
-    let provider = HttpJsonProvider::new(id.clone(), &normalized_url, state.session.net_policy())
-        .map_err(|e| e.to_string())?;
-    let mut updated = configs.clone();
-    updated.push(ProviderConfig {
+    let new_cfg = ProviderConfig {
         id,
         name: clean_name,
-        kind: ProviderKind::HttpJson {
-            base_url: normalized_url,
-        },
+        kind,
         enabled: true,
-    });
+    };
+    let provider =
+        build_provider(&new_cfg, state.session.net_policy()).map_err(|e| e.to_string())?;
+    let mut updated = configs.clone();
+    updated.push(new_cfg);
     save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
-    state.source_registry.register(Arc::new(provider));
+    state.source_registry.register(provider);
     *configs = updated;
     Ok(map_source_configs(&configs))
 }
@@ -3525,10 +3520,10 @@ pub fn source_provider_toggle(id: String, enabled: bool) -> Result<Vec<UiSourceP
     };
     entry.enabled = enabled;
     if enabled {
-        let provider = HttpJsonProvider::from_config(entry, state.session.net_policy())
-            .map_err(|e| e.to_string())?;
+        let provider =
+            build_provider(entry, state.session.net_policy()).map_err(|e| e.to_string())?;
         save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
-        state.source_registry.register(Arc::new(provider));
+        state.source_registry.register(provider);
     } else {
         save_provider_configs(&state.source_config_path, &updated).map_err(|e| e.to_string())?;
         state.source_registry.remove(&id);

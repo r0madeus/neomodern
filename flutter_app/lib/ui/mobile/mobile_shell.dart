@@ -10,6 +10,7 @@ import 'package:neomodern/i18n/strings.dart';
 import 'package:neomodern/platform/android_audio_bridge.dart';
 import 'package:neomodern/src/rust/api/neomodern.dart';
 import 'package:neomodern/state/player_controller.dart';
+import 'package:neomodern/theme/app_icons.dart';
 import 'package:neomodern/theme/app_theme.dart';
 import 'package:neomodern/ui/cover_art.dart';
 import 'package:neomodern/ui/mobile/mini_player.dart';
@@ -348,7 +349,7 @@ class _MobileShellState extends State<MobileShell> {
                     child: Row(
                       children: [
                         const Icon(
-                          Icons.library_music_rounded,
+                          AppIcons.library,
                           size: 20,
                           color: AppTheme.accent500,
                         ),
@@ -439,7 +440,7 @@ class _MobileShellState extends State<MobileShell> {
                           iconSize: 16,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.close_rounded),
+                          icon: const Icon(AppIcons.close),
                           onPressed: ctrl.clearError,
                         ),
                       ],
@@ -547,17 +548,17 @@ class _MobileBottomTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const items = [
-      (MobileNavTab.home, Icons.home_rounded, Icons.home_outlined, 'Home'),
+      (MobileNavTab.home, AppIcons.home, AppIcons.home, 'Home'),
       (
         MobileNavTab.search,
-        Icons.search_rounded,
-        Icons.search_rounded,
+        AppIcons.search,
+        AppIcons.search,
         'Search',
       ),
       (
         MobileNavTab.library,
-        Icons.library_music_rounded,
-        Icons.library_music_outlined,
+        AppIcons.library,
+        AppIcons.library,
         'Library',
       ),
     ];
@@ -827,13 +828,13 @@ class _HomeTabState extends State<_HomeTab> {
                             const SizedBox(width: 8),
                             _HomeChip(
                               label: t('Shuffle'),
-                              icon: Icons.shuffle_rounded,
+                              icon: AppIcons.shuffle,
                               onTap: _shuffleAll,
                             ),
                             const SizedBox(width: 8),
                             _HomeChip(
                               label: t('Recap'),
-                              icon: Icons.bar_chart_rounded,
+                              icon: AppIcons.recap,
                               onTap: widget.onOpenRecap,
                             ),
                           ],
@@ -939,20 +940,28 @@ class _HomeTabState extends State<_HomeTab> {
                 // Daily Mixes carousel
                 if (_filter == _HomeFilter.all || _filter == _HomeFilter.mixes)
                   if (feed != null && feed.mixes.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Text(
-                        'Daily Mixes',
-                        style: TextStyle(
-                          fontSize: 19,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.zinc50,
-                          letterSpacing: -0.3,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Container(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: AppTheme.hairline),
+                          ),
+                        ),
+                        child: Text(
+                          'Daily Mixes',
+                          style: AppTheme.displayStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w400,
+                            color: AppTheme.editorialPaper,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                       ),
                     ),
                     SizedBox(
-                      height: cardWidth + 58,
+                      height: cardWidth + 62,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -970,7 +979,7 @@ class _HomeTabState extends State<_HomeTab> {
                                   MixCoverArt(
                                     mix: mix,
                                     size: cardWidth,
-                                    borderRadius: 8,
+                                    borderRadius: 3,
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
@@ -1010,13 +1019,21 @@ class _HomeTabState extends State<_HomeTab> {
                     feed.recentlyPlayedAlbums.isNotEmpty) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Text(
-                      t('Recently Played'),
-                      style: const TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.zinc50,
-                        letterSpacing: -0.3,
+                    child: Container(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: AppTheme.hairline),
+                        ),
+                      ),
+                      child: Text(
+                        t('Recently Played'),
+                        style: AppTheme.displayStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w400,
+                          color: AppTheme.editorialPaper,
+                          letterSpacing: -0.2,
+                        ),
                       ),
                     ),
                   ),
@@ -1170,7 +1187,7 @@ class _HomeTabState extends State<_HomeTab> {
                       size: 56,
                       borderRadius: 0,
                       iconSize: 20,
-                      fallbackIcon: Icons.queue_music_rounded,
+                      fallbackIcon: AppIcons.queue,
                     )),
           onTap: () => tile.isAlbum
               ? widget.onOpenAlbum(tile.id)
@@ -1716,7 +1733,7 @@ class _SearchTabState extends State<_SearchTab> {
             child: Row(
               children: [
                 const Icon(
-                  Icons.search_rounded,
+                  AppIcons.search,
                   size: 20,
                   color: AppTheme.zinc600,
                 ),
@@ -1755,7 +1772,7 @@ class _SearchTabState extends State<_SearchTab> {
                       minHeight: 28,
                     ),
                     icon: const Icon(
-                      Icons.close_rounded,
+                      AppIcons.close,
                       size: 20,
                       color: AppTheme.zinc600,
                     ),
@@ -1939,7 +1956,7 @@ class _SearchTabState extends State<_SearchTab> {
                             size: 92,
                             borderRadius: 0,
                             iconSize: 32,
-                            fallbackIcon: Icons.person_rounded,
+                            fallbackIcon: AppIcons.artists,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -2092,7 +2109,7 @@ class _SearchTabState extends State<_SearchTab> {
                     border: Border.all(color: AppTheme.zinc800),
                   ),
                   child: const Icon(
-                    Icons.music_note_rounded,
+                    AppIcons.songs,
                     size: 20,
                     color: AppTheme.accent400,
                   ),
@@ -2121,7 +2138,7 @@ class _SearchTabState extends State<_SearchTab> {
                 trailing: IconButton(
                   tooltip: t('Play'),
                   icon: const Icon(
-                    Icons.play_arrow_rounded,
+                    AppIcons.play,
                     color: AppTheme.accent400,
                   ),
                   onPressed: () => ctrl.playExternalTrack(tr),
@@ -2290,7 +2307,7 @@ class _SearchTabState extends State<_SearchTab> {
                         size: 44,
                         borderRadius: 6,
                         iconSize: 20,
-                        fallbackIcon: Icons.music_note_rounded,
+                        fallbackIcon: AppIcons.songs,
                       ),
                       title: Text(
                         track.title,
@@ -2322,7 +2339,7 @@ class _SearchTabState extends State<_SearchTab> {
                                 ),
                               )
                             : const Icon(
-                                Icons.download_rounded,
+                                AppIcons.download,
                                 size: 20,
                                 color: AppTheme.zinc300,
                               ),
@@ -2710,7 +2727,7 @@ class _LibraryTabState extends State<_LibraryTab> {
                     ),
                     alignment: Alignment.center,
                     child: const Icon(
-                      Icons.library_music_rounded,
+                      AppIcons.library,
                       size: 16,
                       color: AppTheme.accent400,
                     ),
@@ -2732,7 +2749,7 @@ class _LibraryTabState extends State<_LibraryTab> {
                   IconButton(
                     tooltip: 'Search your library',
                     icon: const Icon(
-                      Icons.search_rounded,
+                      AppIcons.search,
                       size: 24,
                       color: AppTheme.zinc200,
                     ),
@@ -2746,7 +2763,7 @@ class _LibraryTabState extends State<_LibraryTab> {
                   IconButton(
                     tooltip: t('Create'),
                     icon: const Icon(
-                      Icons.add_rounded,
+                      AppIcons.plus,
                       size: 26,
                       color: AppTheme.zinc200,
                     ),
@@ -2782,7 +2799,7 @@ class _LibraryTabState extends State<_LibraryTab> {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
-                            Icons.close_rounded,
+                            AppIcons.close,
                             size: 16,
                             color: AppTheme.zinc200,
                           ),
@@ -2846,7 +2863,7 @@ class _LibraryTabState extends State<_LibraryTab> {
               child: Row(
                 children: [
                   const Icon(
-                    Icons.search_rounded,
+                    AppIcons.search,
                     size: 18,
                     color: AppTheme.zinc400,
                   ),
@@ -2883,7 +2900,7 @@ class _LibraryTabState extends State<_LibraryTab> {
                         minHeight: 24,
                       ),
                       icon: const Icon(
-                        Icons.close_rounded,
+                        AppIcons.close,
                         size: 16,
                         color: AppTheme.zinc400,
                       ),
@@ -3071,7 +3088,7 @@ class _LibraryGridTile extends StatelessWidget {
             path: entry.cover,
             borderRadius: 0,
             iconSize: 28,
-            fallbackIcon: Icons.person_rounded,
+            fallbackIcon: AppIcons.artists,
           ),
         ),
       );
@@ -3160,7 +3177,7 @@ class _LibraryListTile extends StatelessWidget {
           size: 52,
           borderRadius: 0,
           iconSize: 22,
-          fallbackIcon: Icons.person_rounded,
+          fallbackIcon: AppIcons.artists,
         ),
       );
     } else {
@@ -3211,7 +3228,7 @@ class _LibraryListTile extends StatelessWidget {
             ),
             if (entry.pinned)
               const Icon(
-                Icons.push_pin_rounded,
+                AppIcons.pin,
                 size: 16,
                 color: AppTheme.accent400,
               ),
